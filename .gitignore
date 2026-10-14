@@ -1,0 +1,33 @@
+# Python environments and build artifacts
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Local environments and credentials
+.env
+.env.*
+!.env.example
+/.aws/
+
+# Python caches and coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local editor files
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local output and operating system metadata
+*.log
+.DS_Store
+Thumbs.db
