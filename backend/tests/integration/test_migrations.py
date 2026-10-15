@@ -24,7 +24,7 @@ class MigrationTests(PostgresTestCase):
         await self.migrate("upgrade", "head")
         await self.migrate("check")
         current = await self.snapshot()
-        self.assertEqual(current[1]["alembic_version"], [("0003",)])
+        self.assertEqual(current[1]["alembic_version"], [("0004",)])
         await self.migrate("downgrade", "0001")
         self.assertEqual((await self.snapshot())[1]["alembic_version"], [("0001",)])
         await self.migrate("upgrade", "head")
@@ -107,8 +107,7 @@ class MigrationTests(PostgresTestCase):
         await self.migrate("upgrade", "0002")
         await self.populate_current_parcels()
         original = await self.snapshot()
-        await self.migrate("upgrade", "head")
-        await self.migrate("check")
+        await self.migrate("upgrade", "0003")
         current = await self.snapshot()
         self.assertEqual(current[1]["alembic_version"], [("0003",)])
         for table in ("deliveries", "returns"):
@@ -118,8 +117,11 @@ class MigrationTests(PostgresTestCase):
             self.assertEqual(current[1][table], [])
         await self.migrate("downgrade", "0002")
         self.assertEqual(await self.snapshot(), original)
-        await self.migrate("upgrade", "head")
+        await self.migrate("upgrade", "0003")
         self.assertEqual(await self.snapshot(), current)
+
+        await self.migrate("upgrade", "head")
+        await self.migrate("check")
 
     async def test_locker_downgrade_preserves_configuration_and_released_retired_history(self):
         await self.migrate("upgrade", "head")
@@ -153,3 +155,93 @@ class MigrationTests(PostgresTestCase):
                     await connection.execute(text("DELETE FROM locker_assignments WHERE compartment_id=:cell"), {"cell": cell_id})
                     await connection.execute(text("DELETE FROM locker_compartments WHERE id=:cell"), {"cell": cell_id})
                     await connection.execute(text("DELETE FROM lockers WHERE id=:locker"), {"locker": locker_id})
+
+    async def test_populated_0003_geography_upgrade_and_safe_round_trip(self) -> None:
+        await self.migrate('upgrade', '0003')
+        await self.populate_current_parcels()
+        locker_ids = [uuid4(), uuid4()]
+        cell_ids = [uuid4(), uuid4()]
+        async with self.engine.begin() as connection:
+            for index in range(2):
+                await connection.execute(text('INSERT INTO lockers(id,location_id,active) VALUES(:id,:location,:active)'), {'id': locker_ids[index], 'location': f'Site-{index}', 'active': index == 0})
+                await connection.execute(text('INSERT INTO locker_compartments(id,locker_id,width_mm,height_mm,depth_mm,enabled,retired) VALUES(:id,:locker,10,20,30,:enabled,:retired)'), {'id': cell_ids[index], 'locker': locker_ids[index], 'enabled': index == 0, 'retired': index == 1})
+                await connection.execute(text('INSERT INTO locker_assignments(id,compartment_id,delivery_id,width_mm,height_mm,depth_mm,assigned_at,released_at) VALUES(:id,:cell,:parcel,1,2,3,:assigned,:released)'), {'id': uuid4(), 'cell': cell_ids[index], 'parcel': self.delivery_ids[index], 'assigned': NOW, 'released': NOW + timedelta(seconds=1) if index else None})
+        original = await self.snapshot()
+        await self.migrate('upgrade', 'head')
+        await self.migrate('check')
+        current = await self.snapshot()
+        self.assertEqual(current[1]['alembic_version'], [('0004',)])
+        for table in ('deliveries', 'returns', 'locker_compartments', 'locker_assignments'):
+            self.assertEqual(current[0][table], original[0][table])
+            self.assertEqual(current[1][table], original[1][table])
+        self.assertEqual([tuple(row[:3]) for row in current[1]['lockers']], [tuple(row) for row in original[1]['lockers']])
+        self.assertTrue(all(all(value is None for value in row[3:]) for row in current[1]['lockers']))
+        columns = {column['name']: column for column in current[0]['lockers'][0]}
+        self.assertTrue(columns['location_id']['nullable'])
+        self.assertEqual(set(current[0]), {'alembic_version','deliveries','returns','lockers','locker_compartments','locker_assignments'})
+        await self.migrate('downgrade', '0003')
+        self.assertEqual(await self.snapshot(), original)
+        await self.migrate('upgrade', 'head')
+        self.assertEqual(await self.snapshot(), current)
+
+    async def test_geography_and_null_alias_block_downgrade_before_ddl(self) -> None:
+        await self.migrate('upgrade', 'head')
+        identifier = uuid4()
+        async with self.engine.begin() as connection:
+            await connection.execute(text('INSERT INTO lockers(id,location_id,active) VALUES(:id,:location,true)'), {'id': identifier, 'location': 'Legacy'})
+        cases = [
+            "country_code='ES',postal_code='01001',province='P',city='C',street='S',street_number='12B'",
+            'latitude=0,longitude=0',
+            'location_id=NULL',
+        ]
+        for values in cases:
+            async with self.engine.begin() as connection:
+                await connection.execute(text(f'UPDATE lockers SET {values} WHERE id=:id'), {'id': identifier})
+            before = await self.snapshot()
+            with self.assertRaisesRegex(RuntimeError, 'preserve'):
+                await self.migrate('downgrade', '0003')
+            self.assertEqual(await self.snapshot(), before)
+            async with self.engine.begin() as connection:
+                await connection.execute(text("UPDATE lockers SET location_id='Legacy',country_code=NULL,postal_code=NULL,province=NULL,city=NULL,street=NULL,street_number=NULL,latitude=NULL,longitude=NULL WHERE id=:id"), {'id': identifier})
+
+    async def test_geographic_database_checks_reject_partial_invalid_and_nonfinite_values(self) -> None:
+        from sqlalchemy.exc import IntegrityError
+        await self.migrate('upgrade', 'head')
+        identifier = uuid4()
+        async with self.engine.begin() as connection:
+            await connection.execute(text("INSERT INTO lockers(id,location_id,active) VALUES(:id,'Legacy',true)"), {'id': identifier})
+        before = await self.snapshot()
+        address = "country_code='ES',postal_code='01001',province='P',city='C',street='S',street_number='12B'"
+        invalid = [
+            "country_code='ES'", "postal_code='01001'", "province='P'", "city='C'", "street='S'", "street_number='N'",
+            address.replace("country_code='ES'", "country_code='FR'"),
+            address.replace("postal_code='01001'", "postal_code='０１００１'"),
+            address.replace("postal_code='01001'", "postal_code='1001'"),
+            address.replace("province='P'", "province=''"),
+            address.replace("city='C'", "city=' C'"),
+            address.replace("street='S'", "street=E'\\t'"),
+            address.replace("street_number='12B'", "street_number=NULL"),
+            'latitude=0', 'longitude=0', 'latitude=91,longitude=0', 'latitude=0,longitude=-181',
+            "latitude='NaN'::double precision,longitude=0", "latitude=0,longitude='NaN'::double precision",
+            "latitude='Infinity'::double precision,longitude=0", "latitude=0,longitude='-Infinity'::double precision",
+        ]
+        for whitespace in ('\u00a0', '\x1c'):
+            for text_value in (whitespace, whitespace + 'P', 'P' + whitespace, whitespace + 'P' + whitespace):
+                async with self.engine.begin() as connection:
+                    # This legal full value isolates the text constraint on each update.
+                    await connection.execute(text(f'UPDATE lockers SET {address} WHERE id=:id'), {'id': identifier})
+                valid = await self.snapshot()
+                with self.subTest(text_value=repr(text_value)), self.assertRaises(IntegrityError):
+                    async with self.engine.begin() as connection:
+                        await connection.execute(text('UPDATE lockers SET province=:value WHERE id=:id'), {'value': text_value, 'id': identifier})
+                self.assertEqual(await self.snapshot(), valid)
+                async with self.engine.begin() as connection:
+                    await connection.execute(text('UPDATE lockers SET country_code=NULL,postal_code=NULL,province=NULL,city=NULL,street=NULL,street_number=NULL WHERE id=:id'), {'id': identifier})
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(IntegrityError):
+                async with self.engine.begin() as connection:
+                    await connection.execute(text(f'UPDATE lockers SET {values} WHERE id=:id'), {'id': identifier})
+            self.assertEqual(await self.snapshot(), before)
+        async with self.engine.begin() as connection:
+            await connection.execute(text(f'UPDATE lockers SET {address},latitude=-90,longitude=180 WHERE id=:id'), {'id': identifier})
+        await self.migrate('check')

@@ -1,5 +1,6 @@
 from datetime import datetime
 from uuid import UUID
+from typing import Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, StrictStr, field_validator, model_validator
 
@@ -12,7 +13,7 @@ class ReceptionInput(BaseModel):
     locker_id: UUID | None = None
     parcel_dimensions: DimensionsInput | None = None
     @model_validator(mode="after")
-    def paired(self):
+    def paired(self) -> Self:
         if (self.locker_id is None) != (self.parcel_dimensions is None):
             raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
         return self
@@ -28,7 +29,7 @@ class CreateDelivery(ReceptionInput):
 
     @field_validator("pickup_deadline_at", mode="before")
     @classmethod
-    def deadline_is_datetime_text(cls, value):
+    def deadline_is_datetime_text(cls, value: object) -> datetime | None:
         if isinstance(value, str):
             try:
                 return datetime.fromisoformat(value)

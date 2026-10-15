@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -22,7 +23,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
     return_service = ReturnService(SqlModelReturnRepository(sessions))
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             yield
         finally:

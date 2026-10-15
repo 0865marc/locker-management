@@ -1,0 +1,119 @@
+"""Immutable transport inputs and normalized provider outcomes, without infrastructure."""
+from dataclasses import dataclass
+from enum import Enum
+
+from domain.lockers import Dimensions
+
+
+def validate_code(value: str, name: str) -> None:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f'{name} must be nonblank trimmed text')
+
+
+def _positive_integer(value: int, name: str) -> None:
+    if type(value) is not int or value < 1:
+        raise ValueError(f'{name} must be a positive integer')
+
+
+@dataclass(frozen=True)
+class ShippingQuoteRequest:
+    origin_country_code: str
+    origin_postal_code: str
+    destination_country_code: str
+    destination_postal_code: str
+    weight_grams: int
+    dimensions: Dimensions
+
+    def __post_init__(self) -> None:
+        if self.origin_country_code != 'ES' or self.destination_country_code != 'ES':
+            raise ValueError('Only country ES is supported')
+        for postal in (self.origin_postal_code, self.destination_postal_code):
+            if (not isinstance(postal, str) or len(postal) != 5
+                    or any(character not in '0123456789' for character in postal)):
+                raise ValueError('Postal codes must contain five ASCII digits')
+        if type(self.weight_grams) is not int or not 1 <= self.weight_grams <= 30000:
+            raise ValueError('weight_grams must be an integer between 1 and 30000')
+        if not isinstance(self.dimensions, Dimensions):
+            raise ValueError('dimensions must be Dimensions')
+        if any(type(axis) is not int or not 1 <= axis <= 2000 for axis in self.dimensions.axes):
+            raise ValueError('Shipping dimensions must be integers between 1 and 2000 mm')
+
+
+@dataclass(frozen=True)
+class ShippingOffer:
+    service_code: str
+    price_cents: int
+    currency: str
+    transit_days_min: int
+    transit_days_max: int
+
+    def __post_init__(self) -> None:
+        validate_code(self.service_code, 'service_code')
+        _positive_integer(self.price_cents, 'price_cents')
+        if self.currency != 'EUR':
+            raise ValueError('Only currency EUR is supported')
+        _positive_integer(self.transit_days_min, 'transit_days_min')
+        _positive_integer(self.transit_days_max, 'transit_days_max')
+        if self.transit_days_min > self.transit_days_max:
+            raise ValueError('Transit interval must be ordered')
+
+
+def _validate_offers(offers: tuple[ShippingOffer, ...]) -> None:
+    if not isinstance(offers, tuple):
+        raise ValueError('offers must be an immutable tuple')
+    codes: set[str] = set()
+    for offer in offers:
+        if not isinstance(offer, ShippingOffer):
+            raise ValueError('Every offer must be ShippingOffer')
+        offer.__post_init__()
+        if offer.service_code in codes:
+            raise ValueError('service_code must be unique within a provider')
+        codes.add(offer.service_code)
+
+
+@dataclass(frozen=True)
+class QuoteOffers:
+    offers: tuple[ShippingOffer, ...]
+
+    def __post_init__(self) -> None:
+        _validate_offers(self.offers)
+        if not self.offers:
+            raise ValueError('QuoteOffers must contain at least one offer')
+
+
+@dataclass(frozen=True)
+class NoCoverage:
+    """A valid business rejection, distinct from a technical failure."""
+
+
+class ProviderStatus(str, Enum):
+    QUOTED = 'QUOTED'
+    NOT_COVERED = 'NOT_COVERED'
+    FAILED = 'FAILED'
+
+
+class ProviderErrorCode(str, Enum):
+    PROVIDER_ERROR = 'PROVIDER_ERROR'
+    PROVIDER_TIMEOUT = 'PROVIDER_TIMEOUT'
+
+
+@dataclass(frozen=True)
+class ProviderResult:
+    provider_code: str
+    status: ProviderStatus
+    offers: tuple[ShippingOffer, ...] = ()
+    error_code: ProviderErrorCode | None = None
+
+    def __post_init__(self) -> None:
+        validate_code(self.provider_code, 'provider_code')
+        _validate_offers(self.offers)
+        if not isinstance(self.status, ProviderStatus):
+            raise ValueError('Invalid provider status')
+        if self.status is ProviderStatus.QUOTED:
+            if not self.offers or self.error_code is not None:
+                raise ValueError('QUOTED requires offers and no error')
+        elif self.status is ProviderStatus.NOT_COVERED:
+            if self.offers or self.error_code is not None:
+                raise ValueError('NOT_COVERED requires no offers and no error')
+        elif self.offers or not isinstance(self.error_code, ProviderErrorCode):
+            raise ValueError('FAILED requires no offers and a provider error code')

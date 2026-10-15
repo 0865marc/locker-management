@@ -171,6 +171,111 @@ Una salida conserva la asignación histórica y las dimensiones del paquete,
 incluso si la celda se redimensiona o retira después. Repetir una salida antigua
 tras reocupar su celda da `409` y conserva intacto al nuevo ocupante.
 
+### Dirección y coordenadas del locker
+
+`location_id` es un alias opcional; los clientes existentes pueden seguir creando
+lockers únicamente con ese alias. También se puede crear un locker con dirección
+completa y sin alias:
+
+```json
+{
+  "address": {
+    "country_code": "ES",
+    "postal_code": "01001",
+    "province": "Araba",
+    "city": "Vitoria-Gasteiz",
+    "street": "Calle Ejemplo",
+    "street_number": "12B"
+  },
+  "coordinates": {"latitude": 42.8467, "longitude": -2.6726},
+  "compartments": [{"quantity": 1, "dimensions": {"width_mm": 100, "height_mm": 200, "depth_mm": 300}}]
+}
+```
+
+El alta exige alias no nulo o dirección completa; coordenadas solas no bastan.
+La dirección admite solo país `ES`, código postal de cinco dígitos ASCII como
+`01001` y provincia, ciudad, calle y número textuales no vacíos. Se recortan estos
+textos; el número conserva valores como `12B` o `s/n`. No se consulta un catálogo
+postal ni se infieren datos. Las coordenadas son una pareja WGS84 opcional de
+números finitos: latitud entre −90 y 90 y longitud entre −180 y 180. No admiten
+booleanos, cadenas, NaN ni infinitos.
+
+Las configuraciones incluyen `location_id`, `address` y `coordinates`, también
+cuando son `null`; los históricos conservan alias y geografía nula.
+`PATCH /lockers/{id}` acepta un subconjunto no vacío de `active`, `address` y
+`coordinates`: omitir conserva, un objeto reemplaza el valor completo y `null`
+borra solo dirección o coordenadas. `active` no acepta `null`. Por ejemplo,
+`{"address":null}` conserva coordenadas y actividad. Los cambios son atómicos y
+pueden hacerse con celdas ocupadas, sin modificar identidad, alias o custodia.
+Tras borrar la dirección de un locker sin alias, este sigue accesible.
+
+Los lockers sin alias se gestionan por UUID y aparecen en `GET /lockers` sin
+filtro. El filtro `location_id` y `/lockers/availability` siguen seleccionando
+aliases exactos, recortados y sensibles a mayúsculas; no buscan por dirección,
+código postal, coordenadas o radio ni fabrican aliases.
+
+## Comparar proveedores desde Python
+
+El comparador es una utilidad interna independiente de HTTP, lockers y base de
+datos. Desde `backend/`, este ejemplo consulta los tres adaptadores simulados:
+
+```python
+import asyncio
+
+from adapters.providers.simulated_shipping import (
+    SimulatedEconomyProvider,
+    SimulatedStandardProvider,
+    SimulatedExpressProvider,
+)
+from application.shipping_quote_use_cases import QuoteShipping
+from domain.lockers import Dimensions
+from domain.shipping_quotes import ShippingQuoteRequest
+
+
+async def main() -> None:
+    comparator = QuoteShipping([
+        SimulatedEconomyProvider(),
+        SimulatedStandardProvider(),
+        SimulatedExpressProvider(),
+    ])
+    request = ShippingQuoteRequest(
+        origin_country_code="ES", origin_postal_code="01001",
+        destination_country_code="ES", destination_postal_code="01002",
+        weight_grams=1200, dimensions=Dimensions(200, 150, 100),
+    )
+    for result in await comparator.compare(request):
+        for offer in result.offers:
+            print(result.provider_code, result.status.value, offer.service_code,
+                  offer.price_cents, offer.currency,
+                  offer.transit_days_min, offer.transit_days_max)
+
+
+asyncio.run(main())
+```
+
+```text
+sim-economy QUOTED economy 330 EUR 3 3
+sim-express QUOTED express 830 EUR 1 1
+sim-standard QUOTED standard 520 EUR 2 2
+```
+
+La colección inyectada es obligatoria, no vacía y tiene códigos abiertos,
+recortados y únicos. `compare` devuelve una tupla de `ProviderResult` ordenada
+por proveedor, con ofertas ordenadas por servicio. Cada proveedor puede ofrecer
+varios servicios (`QuoteOffers`), rechazar cobertura (`NoCoverage`) o fallar de
+forma aislada. Los estados son `QUOTED`, `NOT_COVERED` y `FAILED`; los errores
+normalizados son `PROVIDER_ERROR` y `PROVIDER_TIMEOUT`, sin payloads externos.
+
+La entrada exige países `ES`, códigos postales de cinco dígitos ASCII, peso entero
+entre 1 y 30000 gramos y dimensiones entre 1 y 2000 mm. Los precios son céntimos
+enteros EUR y los plazos intervalos de días naturales desde la futura expedición.
+Los simuladores usan tarifas deterministas por peso real/volumétrico y prefijo
+postal. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
+tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
+sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
+el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
+No hay endpoint, wiring en `main.py`, almacenamiento, reserva ni contratación.
+
 ## Organización
 
 ```text
@@ -180,9 +285,11 @@ hexagonal_architecture/
 │   ├── domain/
 │   │   ├── models.py
 │   │   ├── lockers.py
+│   │   ├── shipping_quotes.py
 │   │   └── ports.py
 │   ├── application/
 │   │   ├── locker_use_cases.py
+│   │   ├── shipping_quote_use_cases.py
 │   │   └── use_cases.py
 │   ├── adapters/
 │   │   ├── http/
@@ -190,6 +297,8 @@ hexagonal_architecture/
 │   │   │   ├── schemas.py
 │   │   │   ├── locker_routes.py
 │   │   │   └── locker_schemas.py
+│   │   ├── providers/
+│   │   │   └── simulated_shipping.py
 │   │   └── database/
 │   │       ├── connection.py
 │   │       ├── sqlmodel_repositories.py
@@ -200,7 +309,8 @@ hexagonal_architecture/
 │   │           └── versions/
 │   │               ├── 0001_create_delivery_and_return.py
 │   │               ├── 0002_parcel_custody.py
-│   │               └── 0003_lockers_and_custody.py
+│   │               ├── 0003_lockers_and_custody.py
+│   │               └── 0004_locker_geography.py
 │   ├── tests/
 │   │   ├── unit/
 │   │   │   ├── test_domain.py
@@ -324,7 +434,7 @@ aunque una migración pueda afectar a varios archivos de infraestructura.
 
 Hay **un único historial para toda la base de datos**, con `deliveries`, `returns`,
 `lockers`, `locker_compartments` y `locker_assignments`. La revisión inicial `0001` conserva las columnas legacy `address` y
-`reason`; `0002` incorpora el modelo de custodia y el head actual es `0003`, que añade lockers. `upgrade 0001`
+`reason`; `0002` incorpora el modelo de custodia y `0003` añade lockers y el head actual es `0004`, que incorpora geografía nullable. `upgrade 0001`
 prepara el esquema histórico y `upgrade head` prepara el contrato de la API actual. `SQLModel.metadata` es la fuente del
 esquema para comparar modelos y base de datos; `backend/adapters/database/migrations/env.py`
 importa los modelos del adaptador para registrar sus tablas. El dominio no participa
@@ -401,6 +511,16 @@ No hay backfill ni ubicaciones, dimensiones o asignaciones ficticias. Aplica
 `alembic upgrade head` antes de arrancar la nueva aplicación; después configura
 lockers por API.
 
+El upgrade **0003 → 0004** conserva paquetes, lockers, celdas y asignaciones;
+añade dirección y coordenadas nullable y permite alias nulo, sin backfill ni índice
+postal. Aplica `alembic upgrade head` antes de desplegar la API nueva. No hay tablas
+de cotización. El downgrade **0004 → 0003** bloquea lockers y rechaza, antes de DDL,
+cualquier campo geográfico no nulo o locker sin alias. El rechazo conserva filas,
+estructura y revisión. Con geografía nula y aliases presentes, elimina únicamente
+las columnas/checks nuevos y restaura `location_id NOT NULL`, conservando custodia.
+Para volver a una aplicación que exige alias, primero verifica que todos los lockers
+lo tengan; no inventes aliases ni borres direcciones para forzar el downgrade.
+
 El downgrade **0003 → 0002** bloquea las tablas nuevas y rechaza cualquier fila
 antes de DDL, incluidas celdas retiradas y asignaciones liberadas. Mantiene íntegros
 esquema, índices, restricciones, filas y revisión 0003. Si las tres tablas están
@@ -417,7 +537,7 @@ uv run alembic current
 ```
 
 `downgrade base` solo es apropiado para una base vacía preparada para esa prueba.
-Un rollback de aplicación puede conservar el esquema 0003. Una versión antigua
+Un rollback de aplicación puede conservar el esquema actual. Una versión antigua
 no sabe liberar asignaciones: **no debe procesar salidas de paquetes asignados**.
 Detén las escrituras o conserva la versión capaz de liberarlas hasta resolverlo.
 Para recuperar datos, usa la copia de seguridad según el procedimiento operativo;
@@ -488,7 +608,7 @@ de Compose usa igualmente esquemas aislados dentro de la base dedicada indicada.
 
 Los rechazos de migración comparan snapshots completos de columnas, índices,
 restricciones, filas y revisión. Las pruebas conservan las migraciones históricas
-`0001`, `0002` y `0003`; este cambio de organización de pruebas no añade revisiones.
+`0001`, `0002` y `0003` sin cambios; `0004` añade geografía y sus guardas.
 
 ## Alcance del ejemplo
 
@@ -496,10 +616,10 @@ Las credenciales de Compose son locales y de demostración. No añadimos
 autenticación ni repositorios genéricos. Delivery y Return son paquetes independientes
 que comparten capacidad de lockers. Ubicaciones y múltiples lockers ya están incluidos.
 Quedan para otras ampliaciones notificaciones e integraciones con transportistas,
-reservas, TTL, transferencias, geobúsqueda, RabbitMQ y outbox. Las cotizaciones y
-su procesamiento asíncrono serán una fase posterior; consultar disponibilidad no
+reservas, TTL, transferencias, geobúsqueda, RabbitMQ y outbox. Los proveedores reales, la API de cotizaciones y
+su procesamiento mediante colas serán una fase posterior; consultar disponibilidad no
 contrata un envío ni reserva espacio. No se gestionan
-direcciones, instrucciones de entrega, pedidos, productos, cantidades de productos
+direcciones de Delivery/Return, instrucciones de entrega, pedidos, productos, cantidades de productos
 ni resoluciones comerciales de devolución.
 
 Compose coordina PostgreSQL, migraciones y API siguiendo

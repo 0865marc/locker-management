@@ -160,7 +160,7 @@ class PostgreSQLCustodyTests(PostgresTestCase):
         before = await self.snapshot()
         await self.migrate("upgrade", "head")
         current = await self.snapshot()
-        self.assertEqual(current[1]["alembic_version"], [("0003",)])
+        self.assertEqual(current[1]["alembic_version"], [("0004",)])
         for table in ("deliveries", "returns"):
             self.assertEqual(current[0][table], before[0][table])
             self.assertEqual(current[1][table], before[1][table])
@@ -190,6 +190,8 @@ class PostgreSQLCustodyTests(PostgresTestCase):
             if released:
                 self.assertTrue(await deliveries.save_exit(assigned.collect(NOW + timedelta(seconds=1))))
                 await lockers.retire_compartment(locker.id, assigned.compartment_id)
+            # Exercise the historical 0003 guard itself, before any geography DDL.
+            await self.migrate("downgrade", "0003")
             before = await self.snapshot()
             statements = []
             def record(connection, cursor, statement, parameters, context, executemany):
@@ -208,3 +210,4 @@ class PostgreSQLCustodyTests(PostgresTestCase):
             self.assertLess(lock, check)
             self.assertFalse(any(sql.lstrip().upper().startswith(("DROP ", "ALTER ", "DELETE "))
                                  for sql in statements))
+            await self.migrate("upgrade", "head")

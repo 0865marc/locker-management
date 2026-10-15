@@ -212,3 +212,49 @@ class LockerRepositoryTests(PostgresTestCase):
             event.remove(self.engine.sync_engine, 'before_cursor_execute', capture)
         self.assertEqual(len(statements),2)
         self.assertTrue(all(s.lstrip().upper().startswith('SELECT') for s in statements))
+
+    async def test_geography_round_trip_atomic_replacement_clearing_and_legacy_alias(self) -> None:
+        from domain.lockers import Address, Coordinates, LockerPatch
+        address = Address('ES', '01001', ' Araba ', ' Vitoria ', ' Calle ', ' 12B ')
+        coordinates = Coordinates(-90, 180)
+        locker = await self.lockers.create(None, [CompartmentBatch(1, D)], address=address, coordinates=coordinates)
+        fresh = SqlModelLockerRepository(self.sessions)
+        self.assertEqual(await fresh.get_by_id(locker.id), locker)
+        self.assertIsNone(locker.location_id)
+        self.assertIn(locker, await fresh.list_all())
+        self.assertEqual(await fresh.list_all('01001'), [])
+        self.assertEqual((await fresh.availability('01001', D)).reason, 'NO_LOCKER')
+        received = await self.deliveries.receive_in_locker(self.parcel(), locker.id, D)
+        replacement = Address('ES', '28001', 'Madrid', 'Madrid', 'Otra', 's/n')
+        patched = await fresh.update(locker.id, LockerPatch(address=replacement, coordinates=Coordinates(90, -180), address_supplied=True, coordinates_supplied=True))
+        self.assertEqual(patched.address, replacement)
+        self.assertEqual(patched.coordinates, Coordinates(90, -180))
+        self.assertEqual(patched.compartments[0].id, received.compartment_id)
+        self.assertTrue(patched.compartments[0].occupied)
+        inactive = await fresh.set_active(locker.id, False)
+        self.assertEqual((inactive.address, inactive.coordinates), (replacement, Coordinates(90, -180)))
+        cleared = await fresh.update(locker.id, LockerPatch(address_supplied=True))
+        self.assertIsNone(cleared.address)
+        self.assertEqual(cleared.coordinates, Coordinates(90, -180))
+        cleared = await fresh.update(locker.id, LockerPatch(coordinates_supplied=True))
+        self.assertEqual((cleared.location_id, cleared.address, cleared.coordinates), (None, None, None))
+        self.assertEqual(await fresh.get_by_id(locker.id), cleared)
+        self.assertTrue(await self.deliveries.save_exit(received.collect(NOW + timedelta(seconds=1))))
+        legacy = await self.create()
+        self.assertEqual((legacy.location_id, legacy.address, legacy.coordinates), ('Site', None, None))
+        self.assertEqual([item.id for item in await fresh.list_all('Site')], [legacy.id])
+
+    async def test_geography_replacement_failure_rolls_back_active_address_and_coordinates(self) -> None:
+        from domain.lockers import Address, Coordinates, LockerPatch
+        locker = await self.create()
+        def fail(session: Session) -> None:
+            raise RuntimeError('geography commit failed')
+        event.listen(Session, 'before_commit', fail)
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'geography commit'):
+                await self.lockers.update(locker.id, LockerPatch(active=False,
+                    address=Address('ES', '01001', 'P', 'C', 'S', 'N'), address_supplied=True,
+                    coordinates=Coordinates(1, 2), coordinates_supplied=True))
+        finally:
+            event.remove(Session, 'before_commit', fail)
+        self.assertEqual(await self.lockers.get_by_id(locker.id), locker)

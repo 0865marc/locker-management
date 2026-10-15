@@ -38,7 +38,7 @@ class LockerDomainTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_batches([])
         self.assertEqual(Locker(' Site ').location_id, 'Site')
-        for invalid in (' ', None, 1):
+        for invalid in (' ', 1):
             with self.assertRaises(ValueError):
                 Locker(invalid)
         with self.assertRaises(FrozenInstanceError):
@@ -57,3 +57,47 @@ class LockerDomainTests(unittest.TestCase):
                 exited = getattr(complete, action)(at)
                 for name, value in assignment.items():
                     self.assertEqual(getattr(exited, name), value)
+
+    def test_address_coordinates_and_nullable_reconstruction(self):
+        from domain.lockers import Address, Coordinates
+        address = Address('ES', '01001', ' Araba ', ' Vitoria ', ' Calle ', ' 12B ')
+        self.assertEqual((address.postal_code, address.street_number), ('01001', '12B'))
+        self.assertEqual(address.province, 'Araba')
+        self.assertEqual(Address('ES', '01001', 'P', 'C', 'S', 's/n').street_number, 's/n')
+        self.assertIsNone(Locker(address=address).location_id)
+        self.assertIsNone(Locker().address)  # Valid reconstruction after administrative clearing.
+        for postal in ('1001', '010010', '０１００１', ' 01001', 1001):
+            with self.assertRaises(ValueError):
+                Address('ES', postal, 'P', 'C', 'S', 'N')
+        for invalid in ('', ' ', None, 1):
+            with self.assertRaises(ValueError):
+                Address('ES', '01001', invalid, 'C', 'S', 'N')
+        with self.assertRaises(ValueError):
+            Address('FR', '01001', 'P', 'C', 'S', 'N')
+        self.assertEqual(Coordinates(-90, 180), Coordinates(-90.0, 180.0))
+        for latitude, longitude in ((91,0), (0,181), (float('nan'),0), (0,float('inf')), (True,0), ('1',0), (10**400, 0)):
+            with self.assertRaises(ValueError):
+                Coordinates(latitude, longitude)
+
+    def test_geography_http_schema_creation_and_patch_contract(self) -> None:
+        from pydantic import ValidationError
+        from adapters.http.locker_schemas import CreateLocker, UpdateLocker
+        address = dict(country_code='ES', postal_code='01001', province='P', city='C', street='S', street_number='s/n')
+        batches = [dict(quantity=1, dimensions=dict(width_mm=1, height_mm=2, depth_mm=3))]
+        self.assertIsNone(CreateLocker(compartments=batches, address=address).location_id)
+        self.assertIsNone(CreateLocker(compartments=batches, location_id='Legacy').address)
+        for body in ({}, {'coordinates': {'latitude': 0, 'longitude': 0}}, {'location_id': None}):
+            with self.assertRaises(ValidationError):
+                CreateLocker.model_validate(dict(compartments=batches) | body)
+        for body in ({}, {'active': None}, {'address': {'country_code': 'ES'}}, {'coordinates': {'latitude': 0}}, {'location_id': 'X'}):
+            with self.assertRaises(ValidationError):
+                UpdateLocker.model_validate(body)
+        active = UpdateLocker(active=False).domain()
+        self.assertFalse(active.address_supplied)
+        self.assertFalse(active.coordinates_supplied)
+        cleared = UpdateLocker(address=None).domain()
+        self.assertTrue(cleared.address_supplied)
+        self.assertIsNone(cleared.address)
+        replacement = UpdateLocker(address=address, coordinates={'latitude': 90, 'longitude': -180}).domain()
+        self.assertEqual(replacement.address.postal_code, '01001')
+        self.assertTrue(replacement.coordinates_supplied)

@@ -39,7 +39,7 @@ class DeliveryService:
             received_at=self.clock(),
         )
         _validate_reception(locker_id, parcel_dimensions)
-        if locker_id is not None:
+        if locker_id is not None and parcel_dimensions is not None:
             return await self.repository.receive_in_locker(delivery, locker_id, parcel_dimensions)
         await self.repository.save(delivery)
         return delivery
@@ -80,7 +80,7 @@ class ReturnService:
             received_at=self.clock(),
         )
         _validate_reception(locker_id, parcel_dimensions)
-        if locker_id is not None:
+        if locker_id is not None and parcel_dimensions is not None:
             return await self.repository.receive_in_locker(item, locker_id, parcel_dimensions)
         await self.repository.save(item)
         return item
@@ -98,7 +98,7 @@ class ReturnService:
         return updated
 
 
-def _validate_reception(locker_id, dimensions):
+def _validate_reception(locker_id: UUID | None, dimensions: Dimensions | None) -> None:
     if (locker_id is None) != (dimensions is None):
         raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
     if locker_id is not None and (not isinstance(locker_id, UUID) or not isinstance(dimensions, Dimensions)):

@@ -1,11 +1,15 @@
 from dataclasses import replace
 from uuid import uuid4
 from datetime import datetime, timezone
-from typing import overload
+from typing import overload, TypeVar
+from collections.abc import Callable
+from sqlalchemy.orm import declared_attr
+from sqlalchemy.sql.elements import SQLColumnExpression
+from domain.lockers import Dimensions
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, Column, DateTime, Text, update
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession as SqlAlchemyAsyncSession
 from sqlmodel import Field, SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -18,8 +22,9 @@ RETURN_STATE = "(status = 'AWAITING_CARRIER' AND handed_over_at IS NULL) OR (sta
 
 
 class DeliveryRow(SQLModel, table=True):
-    # SQLModel types this string override as a declared_attr descriptor.
-    __tablename__ = "deliveries"  # pyright: ignore[reportAssignmentType]
+    @declared_attr.directive
+    def __tablename__(cls) -> str:
+        return "deliveries"
 
     __table_args__ = (
         CheckConstraint(DELIVERY_STATE, name="ck_deliveries_state"),
@@ -40,8 +45,9 @@ class DeliveryRow(SQLModel, table=True):
 
 
 class ReturnRow(SQLModel, table=True):
-    # SQLModel types this string override as a declared_attr descriptor.
-    __tablename__ = "returns"  # pyright: ignore[reportAssignmentType]
+    @declared_attr.directive
+    def __tablename__(cls) -> str:
+        return "returns"
 
     __table_args__ = (
         CheckConstraint(RETURN_STATE, name="ck_returns_state"),
@@ -73,9 +79,11 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
-def _delivery(row: DeliveryRow, assignment=None, cell=None) -> Delivery:
+def _delivery(row: DeliveryRow, assignment: AssignmentRow | None = None, cell: CompartmentRow | None = None) -> Delivery:
     return Delivery(
-        **_assignment_fields(assignment, cell),
+        locker_id=cell.locker_id if assignment is not None and cell is not None else None,
+        compartment_id=cell.id if assignment is not None and cell is not None else None,
+        parcel_dimensions=dimensions(assignment) if assignment is not None else None,
         id=row.id, tracking_number=row.tracking_number, carrier_code=row.carrier_code,
         recipient_name=row.recipient_name, recipient_phone=row.recipient_phone,
         received_at=_utc(row.received_at), pickup_deadline_at=_utc(row.pickup_deadline_at),
@@ -84,9 +92,11 @@ def _delivery(row: DeliveryRow, assignment=None, cell=None) -> Delivery:
     )
 
 
-def _return(row: ReturnRow, assignment=None, cell=None) -> Return:
+def _return(row: ReturnRow, assignment: AssignmentRow | None = None, cell: CompartmentRow | None = None) -> Return:
     return Return(
-        **_assignment_fields(assignment, cell),
+        locker_id=cell.locker_id if assignment is not None and cell is not None else None,
+        compartment_id=cell.id if assignment is not None and cell is not None else None,
+        parcel_dimensions=dimensions(assignment) if assignment is not None else None,
         id=row.id, tracking_number=row.tracking_number, carrier_code=row.carrier_code,
         sender_name=row.sender_name, received_at=_utc(row.received_at),
         status=ReturnStatus(row.status), handed_over_at=_utc(row.handed_over_at),
@@ -109,7 +119,7 @@ class SqlModelDeliveryRepository:
                 collected_at=_utc(delivery.collected_at), returned_to_carrier_at=_utc(delivery.returned_to_carrier_at),
             ))
 
-    async def receive_in_locker(self, delivery, locker_id, dimensions):
+    async def receive_in_locker(self, delivery: Delivery, locker_id: UUID, dimensions: Dimensions) -> Delivery:
         return await _receive(self.sessions, delivery, locker_id, dimensions, DeliveryRow)
 
     async def list_all(self) -> list[Delivery]:
@@ -124,14 +134,14 @@ class SqlModelDeliveryRepository:
             raise ValueError("A custody exit requires a terminal delivery")
         async with self.sessions.begin() as session:
             assignment = await _lock_assignment(session, DeliveryRow, delivery.id)
-            result = await session.exec(
+            result = await SqlAlchemyAsyncSession.execute(session,
                 update(DeliveryRow).where(
                     col(DeliveryRow.id) == delivery.id,
                     col(DeliveryRow.status) == DeliveryStatus.AWAITING_PICKUP.value,
                 ).values(status=delivery.status.value, collected_at=_utc(delivery.collected_at),
-                         returned_to_carrier_at=_utc(delivery.returned_to_carrier_at))
+                         returned_to_carrier_at=_utc(delivery.returned_to_carrier_at)).returning(col(DeliveryRow.id))
             )
-            changed = result.rowcount == 1
+            changed = result.scalar_one_or_none() is not None
             if changed:
                 await _release(session, assignment, delivery.collected_at or delivery.returned_to_carrier_at)
         return changed
@@ -151,7 +161,7 @@ class SqlModelReturnRepository:
                 status=item.status.value, handed_over_at=_utc(item.handed_over_at),
             ))
 
-    async def receive_in_locker(self, item, locker_id, dimensions):
+    async def receive_in_locker(self, item: Return, locker_id: UUID, dimensions: Dimensions) -> Return:
         return await _receive(self.sessions, item, locker_id, dimensions, ReturnRow)
 
     async def list_all(self) -> list[Return]:
@@ -166,36 +176,39 @@ class SqlModelReturnRepository:
             raise ValueError("A custody exit requires a terminal return")
         async with self.sessions.begin() as session:
             assignment = await _lock_assignment(session, ReturnRow, item.id)
-            result = await session.exec(
+            result = await SqlAlchemyAsyncSession.execute(session,
                 update(ReturnRow).where(
                     col(ReturnRow.id) == item.id,
                     col(ReturnRow.status) == ReturnStatus.AWAITING_CARRIER.value,
-                ).values(status=item.status.value, handed_over_at=_utc(item.handed_over_at))
+                ).values(status=item.status.value, handed_over_at=_utc(item.handed_over_at)).returning(col(ReturnRow.id))
             )
-            changed = result.rowcount == 1
+            changed = result.scalar_one_or_none() is not None
             if changed:
                 await _release(session, assignment, item.handed_over_at)
         return changed
 
 
-def _assignment_fields(assignment, cell):
-    return dict(locker_id=cell.locker_id, compartment_id=cell.id, parcel_dimensions=dimensions(assignment)) if assignment else {}
+RowT = TypeVar('RowT', DeliveryRow, ReturnRow)
+EntityT = TypeVar('EntityT', Delivery, Return)
 
 
-def _parcel_fk(row_type):
-    return AssignmentRow.delivery_id if row_type is DeliveryRow else AssignmentRow.return_id
+def _parcel_fk(row_type: type[DeliveryRow] | type[ReturnRow]) -> SQLColumnExpression[UUID | None]:
+    return col(AssignmentRow.delivery_id) if row_type is DeliveryRow else col(AssignmentRow.return_id)
 
 
-async def _read(sessions, row_type, convert, identifier=None):
+async def _read(sessions: async_sessionmaker[AsyncSession], row_type: type[RowT],
+                convert: Callable[[RowT, AssignmentRow | None, CompartmentRow | None], EntityT],
+                identifier: UUID | None = None) -> list[EntityT]:
     async with sessions() as session:
-        query = select(row_type, AssignmentRow, CompartmentRow).outerjoin(AssignmentRow, _parcel_fk(row_type) == row_type.id).outerjoin(CompartmentRow, CompartmentRow.id == AssignmentRow.compartment_id)
+        query = select(row_type, AssignmentRow, CompartmentRow).outerjoin(AssignmentRow, _parcel_fk(row_type) == col(row_type.id)).outerjoin(CompartmentRow, col(CompartmentRow.id) == col(AssignmentRow.compartment_id))
         if identifier is not None:
-            query = query.where(row_type.id == identifier)
-        rows = await session.exec(query.order_by(row_type.id))
+            query = query.where(col(row_type.id) == identifier)
+        rows = await session.exec(query.order_by(col(row_type.id)))
         return [convert(row, assignment, cell) for row, assignment, cell in rows]
 
 
-async def _receive(sessions, entity, locker_id, parcel_dimensions, row_type):
+async def _receive(sessions: async_sessionmaker[AsyncSession], entity: EntityT, locker_id: UUID,
+                   parcel_dimensions: Dimensions, row_type: type[DeliveryRow] | type[ReturnRow]) -> EntityT:
     if entity.locker_id is not None:
         raise ValueError('Reception requires an unassigned entity')
     pending = DeliveryStatus.AWAITING_PICKUP if row_type is DeliveryRow else ReturnStatus.AWAITING_CARRIER
@@ -203,9 +216,16 @@ async def _receive(sessions, entity, locker_id, parcel_dimensions, row_type):
         raise ValueError('Reception requires pending custody')
     async with sessions.begin() as session:
         cell = await choose_cell(session, locker_id, parcel_dimensions)
-        values = {name: getattr(entity, name) for name in row_type.model_fields}
-        values['status'] = entity.status.value
-        session.add(row_type(**values))
+        if isinstance(entity, Delivery):
+            session.add(DeliveryRow(id=entity.id, tracking_number=entity.tracking_number,
+                carrier_code=entity.carrier_code, recipient_name=entity.recipient_name,
+                recipient_phone=entity.recipient_phone, received_at=entity.received_at,
+                pickup_deadline_at=entity.pickup_deadline_at, status=entity.status.value,
+                collected_at=entity.collected_at, returned_to_carrier_at=entity.returned_to_carrier_at))
+        else:
+            session.add(ReturnRow(id=entity.id, tracking_number=entity.tracking_number,
+                carrier_code=entity.carrier_code, sender_name=entity.sender_name,
+                received_at=entity.received_at, status=entity.status.value, handed_over_at=entity.handed_over_at))
         await session.flush()
         session.add(AssignmentRow(id=uuid4(), compartment_id=cell.id,
             delivery_id=entity.id if row_type is DeliveryRow else None,
@@ -217,9 +237,9 @@ async def _receive(sessions, entity, locker_id, parcel_dimensions, row_type):
     return result
 
 
-async def _lock_assignment(session, row_type, identifier):
+async def _lock_assignment(session: AsyncSession, row_type: type[DeliveryRow] | type[ReturnRow], identifier: UUID) -> AssignmentRow | None:
     # Lookup is nonlocking and immutable. Acquire locker lock before any parcel/assignment update.
-    result = await session.exec(select(AssignmentRow, CompartmentRow.locker_id).join(CompartmentRow, CompartmentRow.id == AssignmentRow.compartment_id).where(_parcel_fk(row_type) == identifier))
+    result = await session.exec(select(AssignmentRow, col(CompartmentRow.locker_id)).join(CompartmentRow, col(CompartmentRow.id) == col(AssignmentRow.compartment_id)).where(_parcel_fk(row_type) == identifier))
     found = result.one_or_none()
     if found is None:
         return None
@@ -230,11 +250,13 @@ async def _lock_assignment(session, row_type, identifier):
     return assignment
 
 
-async def _release(session, assignment, at):
+async def _release(session: AsyncSession, assignment: AssignmentRow | None, at: datetime | None) -> None:
     if assignment is None:
         return
     if assignment.released_at is not None:
         raise RuntimeError('Pending assigned parcel has no active assignment')
-    result = await session.exec(update(AssignmentRow).where(AssignmentRow.id == assignment.id, AssignmentRow.released_at == None).values(released_at=_utc(at)))
-    if result.rowcount != 1:
+    if at is None:
+        raise ValueError('A custody exit requires a timestamp')
+    result = await SqlAlchemyAsyncSession.execute(session, update(AssignmentRow).where(col(AssignmentRow.id) == assignment.id, col(AssignmentRow.released_at) == None).values(released_at=_utc(at)).returning(col(AssignmentRow.id)))
+    if result.scalar_one_or_none() is None:
         raise RuntimeError('Pending assigned parcel has no active assignment')
