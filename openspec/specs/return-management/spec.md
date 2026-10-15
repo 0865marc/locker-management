@@ -2,42 +2,66 @@
 
 ## Purpose
 
-Allow returns independent of deliveries to be recorded and retrieved, identified by UUID and with a reason validated through the existing HTTP contract.
+Record and retrieve parcels deposited by customers at a pickup point independently of deliveries, and track their one-time handover to the carrier.
 
 ## Requirements
 
 ### Requirement: Create an independent return
 
-The system SHALL create a return with a generated UUID and a reason with leading and trailing whitespace removed, without requiring an associated delivery. It SHALL save the return before responding to `POST /returns` with HTTP `201`, `id`, and `reason`.
+The system SHALL record one parcel deposited by a customer for carrier collection, with a generated UUID, required `tracking_number` and `carrier_code`, optional `sender_name`, and system-assigned UTC `received_at`. It SHALL require no associated delivery and save the return before responding to `POST /returns` with HTTP `201` and its complete representation.
+
+#### Scenario: Creation with normalized parcel data
+- **WHEN** valid tracking and carrier values with surrounding whitespace are submitted without a delivery reference
+- **THEN** the saved response contains trimmed tracking and carrier values, a generated UUID and reception timestamp, status `AWAITING_CARRIER`, and null `handed_over_at`
 
 #### Scenario: Creation with a normalized reason
-- **WHEN** `POST /returns` is submitted with `{"reason": "  Producto dañado  "}`, without a delivery reference, and the write succeeds
-- **THEN** `201` is returned with the UUID of the saved return and `reason` equal to `Producto dañado`
+- **WHEN** the legacy request `{"reason": "  Producto dañado  "}` is submitted to `POST /returns`
+- **THEN** HTTP `422` is returned and no return is saved because a commercial reason no longer represents parcel reception
 
-### Requirement: Reject empty reasons
-
-The system SHALL reject a reason that becomes empty after leading and trailing whitespace is removed, before persisting the return. Over HTTP, it SHALL respond with `422` and the validation message in `detail`.
-
-#### Scenario: Empty or whitespace-only reason
-- **WHEN** an attempt is made to create a return with `reason` equal to `""` or `" \t\n "`
-- **THEN** no return is saved and, over HTTP, `422` is returned with `detail` equal to `El motivo no puede estar vacío`
+#### Scenario: Optional sender
+- **WHEN** a sender name has surrounding whitespace, is blank, or is omitted
+- **THEN** a nonblank sender name is trimmed; a blank or omitted sender is represented as null
 
 ### Requirement: Validate the HTTP creation body
 
-The HTTP adapter SHALL require the text field `reason` and reject a missing field, a null value, or a list with HTTP `422`, without executing the use case.
+The HTTP adapter SHALL require text `tracking_number` and `carrier_code`, allow nullable text `sender_name`, and reject incorrect types, missing required fields, unknown fields, or system-managed fields with HTTP `422` without executing creation. Domain validation SHALL reject required text that is blank after trimming before persistence.
 
 #### Scenario: Invalid body
-- **WHEN** `POST /returns` is submitted with `{}`, `{"reason": null}`, or `{"reason": []}`
-- **THEN** `422` is returned without invoking return creation
+- **WHEN** a required field is missing, null, or a list, or a non-text sender is supplied
+- **THEN** HTTP `422` is returned without invoking return creation
+
+#### Scenario: Empty required text
+- **WHEN** tracking or carrier is empty or whitespace-only
+- **THEN** HTTP `422` is returned and no return is saved
+
+#### Scenario: Legacy or unapproved input
+- **WHEN** a request includes `reason`, `item_sku`, `quantity`, `requested_resolution`, `storage_location`, `sender_phone`, a supplied UUID, state, or timestamp
+- **THEN** HTTP `422` is returned without invoking return creation
 
 ### Requirement: List returns
 
-The system SHALL respond to `GET /returns` with HTTP `200` and an array of the retrieved returns, including `id` and `reason` in each item.
+The system SHALL respond to `GET /returns` with HTTP `200` and an array containing each return's UUID, tracking number, carrier, optional sender, status, reception timestamp, and nullable handover timestamp. Commercial return reasons and product or order fields SHALL NOT appear.
 
 #### Scenario: List with records
-- **WHEN** `GET /returns` is requested and saved returns exist
-- **THEN** `200` is returned with those returns and their UUIDs and reasons
+- **WHEN** pending and handed-over returns have been saved
+- **THEN** the list contains their complete persisted representations, including nullable optional fields
 
 #### Scenario: Empty list
-- **WHEN** `GET /returns` is requested and no returns exist
-- **THEN** `200` is returned with `[]`
+- **WHEN** no returns exist
+- **THEN** `GET /returns` returns `200` and `[]`
+
+### Requirement: Hand a return over to its carrier once
+
+The system SHALL allow an `AWAITING_CARRIER` return to become `HANDED_OVER` through an explicit handover operation, assigning a UTC `handed_over_at` at or after `received_at`. A repeated handover SHALL fail without changing the saved parcel or timestamp.
+
+#### Scenario: Successful handover
+- **WHEN** `POST /returns/{id}/hand-over` targets a pending return
+- **THEN** HTTP `200` returns the complete saved representation with status `HANDED_OVER` and its system-assigned handover timestamp
+
+#### Scenario: Repeated handover or invalid chronology
+- **WHEN** a handover targets a completed return or its operation timestamp would precede reception
+- **THEN** HTTP `409` is returned without changing the persisted representation
+
+#### Scenario: Unknown identifier or supplied action data
+- **WHEN** handover references an unknown UUID, uses a malformed UUID, or includes nonempty action data
+- **THEN** an unknown UUID returns `404`; malformed identifiers or supplied action data return `422`

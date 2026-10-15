@@ -1,0 +1,188 @@
+"""Real PostgreSQL checks in a unique disposable schema, never in public tables."""
+import asyncio
+from datetime import datetime, timedelta, timezone
+import os
+import unittest
+from uuid import uuid4
+
+from alembic import command
+from alembic.config import Config
+from fastapi import FastAPI
+import httpx
+from sqlalchemy import event, inspect, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
+from adapters.http.routes import create_router
+from application.use_cases import DeliveryService, ReturnService
+from domain.models import Delivery, Return
+
+URL = os.environ.get("TEST_DATABASE_URL")
+NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
+
+
+@unittest.skipUnless(URL, "TEST_DATABASE_URL is required for real PostgreSQL checks")
+class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.schema = "custody_test_" + uuid4().hex
+        self.admin = create_async_engine(URL)
+        async with self.admin.begin() as connection:
+            await connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
+        self.engine = create_async_engine(URL, connect_args={"server_settings": {"search_path": self.schema}})
+        self.sessions = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
+        await self.migrate("upgrade", "head")
+
+    async def asyncTearDown(self):
+        await self.engine.dispose()
+        try:
+            async with self.admin.begin() as connection:
+                await connection.execute(text(f'DROP SCHEMA "{self.schema}" CASCADE'))
+        finally:
+            await self.admin.dispose()
+
+    async def migrate(self, direction, revision):
+        async with self.engine.begin() as connection:
+            def run(sync_connection):
+                config = Config("alembic.ini")
+                config.attributes["connection"] = sync_connection
+                getattr(command, direction)(config, revision)
+            await connection.run_sync(run)
+
+    async def snapshot(self):
+        async with self.engine.connect() as connection:
+            def structure(sync_connection):
+                inspector = inspect(sync_connection)
+                return {table: (inspector.get_columns(table), inspector.get_check_constraints(table))
+                        for table in ("deliveries", "returns")}
+            # SQLAlchemy type objects compare by identity; render stable column definitions.
+            definitions = await connection.run_sync(structure)
+            for columns, constraints in definitions.values():
+                for column in columns:
+                    column["type"] = str(column["type"])
+            rows = {table: (await connection.execute(text(f"SELECT * FROM {table} ORDER BY 1"))).all()
+                    for table in ("deliveries", "returns", "alembic_version")}
+            return definitions, rows
+
+    async def test_concurrent_repository_exits_commit_exactly_one_winner(self):
+        examples = [
+            (Delivery(tracking_number="D-1", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW), SqlModelDeliveryRepository, "collect", "return_to_carrier"),
+            (Return(tracking_number="R-1", carrier_code="carrier-a", received_at=NOW), SqlModelReturnRepository, "hand_over", "hand_over"),
+        ]
+        for original, repository_class, first, second in examples:
+            repositories = [repository_class(self.sessions), repository_class(self.sessions)]
+            await repositories[0].save(original)
+            # Both independent reads finish before either conditional UPDATE starts.
+            snapshots = await asyncio.gather(*(repo.get_by_id(original.id) for repo in repositories))
+            contenders = [getattr(snapshots[0], first)(NOW + timedelta(seconds=1)),
+                          getattr(snapshots[1], second)(NOW + timedelta(seconds=2))]
+            results = await asyncio.gather(*(repo.save_exit(item) for repo, item in zip(repositories, contenders)))
+            self.assertCountEqual(results, [True, False])
+            winner = contenders[results.index(True)]
+            self.assertEqual(await repository_class(self.sessions).get_by_id(original.id), winner)
+            self.assertFalse(await repositories[results.index(False)].save_exit(contenders[results.index(False)]))
+            self.assertEqual(await repositories[0].get_by_id(original.id), winner)
+
+    async def test_concurrent_http_exits_return_200_and_409_and_preserve_winner(self):
+        for kind in ("delivery", "return"):
+            repository_class = SqlModelDeliveryRepository if kind == "delivery" else SqlModelReturnRepository
+            original = (Delivery(tracking_number="D-http", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW)
+                        if kind == "delivery" else Return(tracking_number="R-http", carrier_code="carrier-a", received_at=NOW))
+            await repository_class(self.sessions).save(original)
+            both_read = asyncio.Event()
+            read_count = 0
+
+            class SynchronizedRepository(repository_class):
+                async def get_by_id(inner, identifier):
+                    nonlocal read_count
+                    item = await super().get_by_id(identifier)
+                    read_count += 1
+                    if read_count == 2:
+                        both_read.set()
+                    await asyncio.wait_for(both_read.wait(), timeout=10)
+                    return item
+
+            clients = []
+            try:
+                for seconds in (1, 2):
+                    delivery_repo = SynchronizedRepository(self.sessions) if kind == "delivery" else SqlModelDeliveryRepository(self.sessions)
+                    return_repo = SynchronizedRepository(self.sessions) if kind == "return" else SqlModelReturnRepository(self.sessions)
+                    clock = lambda seconds=seconds: NOW + timedelta(seconds=seconds)
+                    app = FastAPI()
+                    app.include_router(create_router(DeliveryService(delivery_repo, clock=clock), ReturnService(return_repo, clock=clock)))
+                    clients.append(httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test"))
+                paths = ([f"/deliveries/{original.id}/collect", f"/deliveries/{original.id}/return-to-carrier"]
+                         if kind == "delivery" else [f"/returns/{original.id}/hand-over"] * 2)
+                responses = await asyncio.gather(*(client.post(path) for client, path in zip(clients, paths)))
+                self.assertCountEqual([response.status_code for response in responses], [200, 409])
+                winner = next(response.json() for response in responses if response.status_code == 200)
+                listing = await clients[0].get("/deliveries" if kind == "delivery" else "/returns")
+                self.assertEqual(listing.status_code, 200)
+                self.assertIn(winner, listing.json())
+            finally:
+                await asyncio.gather(*(client.aclose() for client in clients))
+
+    async def test_migration_empty_round_trip_has_timezone_columns_and_constraints(self):
+        original = await self.snapshot()
+        for table in ("deliveries", "returns"):
+            columns, constraints = original[0][table]
+            self.assertTrue(constraints)
+            self.assertTrue(all(column["type"] == "TIMESTAMP" for column in columns if column["name"].endswith("_at")))
+        async with self.engine.connect() as connection:
+            aware = (await connection.execute(text("SELECT data_type FROM information_schema.columns WHERE table_schema = :schema AND column_name LIKE '%\\_at' ESCAPE '\\'"), {"schema": self.schema})).scalars().all()
+            self.assertTrue(aware)
+            self.assertEqual(set(aware), {"timestamp with time zone"})
+        await self.migrate("downgrade", "0001")
+        await self.migrate("upgrade", "head")
+        self.assertEqual(await self.snapshot(), original)
+        await self.migrate("downgrade", "base")
+        await self.migrate("upgrade", "head")
+        self.assertEqual(await self.snapshot(), original)
+
+    async def test_populated_migrations_preserve_rows_schema_revision_and_lock_first(self):
+        for tables in [("deliveries",), ("returns",), ("deliveries", "returns")]:
+            await self.migrate("downgrade", "0001")
+            async with self.engine.begin() as connection:
+                for table in tables:
+                    field = "address" if table == "deliveries" else "reason"
+                    await connection.execute(text(f"INSERT INTO {table} (id, {field}) VALUES (:id, :value)"), {"id": uuid4(), "value": "Preserved legacy data"})
+            before = await self.snapshot()
+            statements = []
+            def record(connection, cursor, statement, parameters, context, executemany):
+                statements.append(statement)
+            event.listen(self.engine.sync_engine, "before_cursor_execute", record)
+            try:
+                with self.assertRaisesRegex(RuntimeError, "explicit data migration"):
+                    await self.migrate("upgrade", "head")
+            finally:
+                event.remove(self.engine.sync_engine, "before_cursor_execute", record)
+            self.assertEqual(await self.snapshot(), before)
+            lock = next(i for i, sql in enumerate(statements) if sql.startswith("LOCK TABLE deliveries, returns IN ACCESS EXCLUSIVE MODE"))
+            row_check = next(i for i, sql in enumerate(statements) if sql.startswith("SELECT 1 FROM deliveries"))
+            self.assertLess(lock, row_check)
+            async with self.engine.begin() as connection:
+                # Delete only test rows in this test's freshly-created private schema.
+                for table in tables:
+                    await connection.execute(text(f"DELETE FROM {table}"))
+            await self.migrate("upgrade", "head")
+            async with self.engine.begin() as connection:
+                for table in tables:
+                    columns = "id, tracking_number, carrier_code, received_at, status"
+                    values = ":id, 'PKG-42', 'carrier-a', :received, :status"
+                    if table == "deliveries":
+                        columns += ", recipient_name"
+                        values += ", 'Ana'"
+                    await connection.execute(text(f"INSERT INTO {table} ({columns}) VALUES ({values})"), {"id": uuid4(), "received": NOW, "status": "AWAITING_PICKUP" if table == "deliveries" else "AWAITING_CARRIER"})
+            before = await self.snapshot()
+            statements.clear()
+            event.listen(self.engine.sync_engine, "before_cursor_execute", record)
+            try:
+                with self.assertRaisesRegex(RuntimeError, "would lose parcel custody data"):
+                    await self.migrate("downgrade", "0001")
+            finally:
+                event.remove(self.engine.sync_engine, "before_cursor_execute", record)
+            self.assertEqual(await self.snapshot(), before)
+            self.assertTrue(any(sql.startswith("LOCK TABLE deliveries, returns IN ACCESS EXCLUSIVE MODE") for sql in statements))
+            async with self.engine.begin() as connection:
+                for table in tables:
+                    await connection.execute(text(f"DELETE FROM {table}"))

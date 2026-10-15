@@ -1,31 +1,143 @@
 import unittest
-from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
 
-from application.use_cases import DeliveryService, ReturnService
+from application.use_cases import DeliveryService, ParcelNotFoundError, ReturnService
+from domain.models import CustodyConflictError, Delivery, DeliveryStatus, Return, ReturnStatus
 from domain.ports import DeliveryRepository, ReturnRepository
 
 
+RECEIVED = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
+EXIT = RECEIVED + timedelta(hours=1)
+
+
 class ApplicationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_delivery_normalizes_and_persists(self):
+    def cases(self):
+        return (
+            (DeliveryService, DeliveryRepository, Delivery(tracking_number="D", carrier_code="C", recipient_name="Ana", received_at=RECEIVED), "collect", DeliveryStatus.COLLECTED, "collected_at"),
+            (DeliveryService, DeliveryRepository, Delivery(tracking_number="D", carrier_code="C", recipient_name="Ana", received_at=RECEIVED), "return_to_carrier", DeliveryStatus.RETURNED_TO_CARRIER, "returned_to_carrier_at"),
+            (ReturnService, ReturnRepository, Return(tracking_number="R", carrier_code="C", received_at=RECEIVED), "hand_over", ReturnStatus.HANDED_OVER, "handed_over_at"),
+        )
+
+    async def test_delivery_normalizes_and_persists_with_injected_clock(self):
         repository = AsyncMock(spec=DeliveryRepository)
-        delivery = await DeliveryService(repository).create("  Calle Mayor 1  ")
-        self.assertEqual(delivery.address, "Calle Mayor 1")
+        clock = Mock(return_value=RECEIVED)
+        deadline = (RECEIVED - timedelta(days=1)).astimezone(timezone(timedelta(hours=2)))
+        delivery = await DeliveryService(repository, clock).create(" PKG-42 ", " carrier-a ", " Ana García ", " +34 600 ", deadline)
+        self.assertEqual((delivery.tracking_number, delivery.carrier_code, delivery.recipient_name, delivery.recipient_phone), ("PKG-42", "carrier-a", "Ana García", "+34 600"))
+        self.assertEqual(delivery.received_at, RECEIVED)
+        self.assertIs(delivery.pickup_deadline_at.tzinfo, timezone.utc)
         repository.save.assert_awaited_once_with(delivery)
+        repository.save_exit.assert_not_awaited()
+        clock.assert_called_once_with()
 
-    async def test_return_normalizes_and_persists(self):
+    async def test_return_normalizes_and_persists_independently(self):
         repository = AsyncMock(spec=ReturnRepository)
-        item = await ReturnService(repository).create("  Producto dañado  ")
-        self.assertEqual(item.reason, "Producto dañado")
+        item = await ReturnService(repository, lambda: RECEIVED).create(" PKG-42 ", " carrier-a ", " Luis ")
+        self.assertEqual((item.tracking_number, item.carrier_code, item.sender_name), ("PKG-42", "carrier-a", "Luis"))
+        self.assertEqual(item.received_at, RECEIVED)
         repository.save.assert_awaited_once_with(item)
+        repository.get_by_id.assert_not_awaited()
 
-    async def test_empty_values_are_rejected_before_persistence(self):
-        for service_class, port in (
-            (DeliveryService, DeliveryRepository),
-            (ReturnService, ReturnRepository),
-        ):
-            for value in ("", " \t\n "):
-                with self.subTest(service=service_class.__name__, value=value):
-                    repository = AsyncMock(spec=port)
-                    with self.assertRaises(ValueError):
-                        await service_class(repository).create(value)
-                    repository.save.assert_not_awaited()
+    async def test_default_clock_assigns_aware_utc_reception(self):
+        for service_class, port, args in ((DeliveryService, DeliveryRepository, ("D", "C", "Ana")), (ReturnService, ReturnRepository, ("R", "C"))):
+            repository = AsyncMock(spec=port)
+            item = await service_class(repository).create(*args)
+            self.assertIs(item.received_at.tzinfo, timezone.utc)
+
+    async def test_invalid_creation_never_writes(self):
+        for service_class, port, args in ((DeliveryService, DeliveryRepository, ["D", "C", "Ana"]), (ReturnService, ReturnRepository, ["R", "C"])):
+            for index in range(len(args)):
+                for bad in ("", " \t\n "):
+                    with self.subTest(service=service_class.__name__, index=index, value=bad):
+                        repository = AsyncMock(spec=port)
+                        invalid = args.copy()
+                        invalid[index] = bad
+                        with self.assertRaises(ValueError):
+                            await service_class(repository, lambda: RECEIVED).create(*invalid)
+                        repository.save.assert_not_awaited()
+                        repository.save_exit.assert_not_awaited()
+        repository = AsyncMock(spec=DeliveryRepository)
+        with self.assertRaises(ValueError):
+            await DeliveryService(repository, lambda: RECEIVED).create("D", "C", "Ana", pickup_deadline_at=RECEIVED.replace(tzinfo=None))
+        repository.save.assert_not_awaited()
+
+    async def test_lists_delegate_to_the_correct_repository(self):
+        for service_class, port, item, *_ in self.cases():
+            repository = AsyncMock(spec=port)
+            repository.list_all.return_value = [item]
+            self.assertEqual(await service_class(repository).list_all(), [item])
+            repository.list_all.assert_awaited_once_with()
+            repository.save.assert_not_awaited()
+
+    async def test_successful_exits_use_clock_and_persist_before_returning(self):
+        for service_class, port, item, method, status, field in self.cases():
+            with self.subTest(method=method):
+                repository = AsyncMock(spec=port)
+                repository.get_by_id.return_value = item
+                repository.save_exit.return_value = True
+                updated = await getattr(service_class(repository, lambda: EXIT), method)(item.id)
+                repository.get_by_id.assert_awaited_once_with(item.id)
+                repository.save_exit.assert_awaited_once_with(updated)
+                repository.save.assert_not_awaited()
+                self.assertEqual(updated.status, status)
+                self.assertEqual(getattr(updated, field), EXIT)
+                self.assertEqual(updated.id, item.id)
+                self.assertIsNone(getattr(item, field))
+
+    async def test_unknown_parcels_raise_typed_absence_without_writes_or_clock(self):
+        for service_class, port, _, method, *_ in self.cases():
+            repository = AsyncMock(spec=port)
+            repository.get_by_id.return_value = None
+            clock = Mock(return_value=EXIT)
+            with self.assertRaises(ParcelNotFoundError):
+                await getattr(service_class(repository, clock), method)(uuid4())
+            repository.save.assert_not_awaited()
+            repository.save_exit.assert_not_awaited()
+            clock.assert_not_called()
+
+    async def test_repeated_incompatible_and_backwards_exits_never_write(self):
+        for service_class, port, item, method, *_ in self.cases():
+            terminal = getattr(item, method)(EXIT)
+            invalid_items = [terminal]
+            if isinstance(item, Delivery):
+                opposite = "return_to_carrier" if method == "collect" else "collect"
+                invalid_items.append(getattr(item, opposite)(EXIT))
+            for stored in invalid_items:
+                repository = AsyncMock(spec=port)
+                repository.get_by_id.return_value = stored
+                with self.assertRaises(CustodyConflictError):
+                    await getattr(service_class(repository, lambda: EXIT), method)(item.id)
+                repository.save_exit.assert_not_awaited()
+                repository.save.assert_not_awaited()
+            repository = AsyncMock(spec=port)
+            repository.get_by_id.return_value = item
+            with self.assertRaises(CustodyConflictError):
+                await getattr(service_class(repository, lambda: RECEIVED - timedelta(seconds=1)), method)(item.id)
+            repository.save_exit.assert_not_awaited()
+
+    async def test_conditional_write_loss_becomes_conflict_and_preserves_input(self):
+        for service_class, port, item, method, *_ in self.cases():
+            repository = AsyncMock(spec=port)
+            repository.get_by_id.return_value = item
+            repository.save_exit.return_value = False
+            with self.assertRaises(CustodyConflictError):
+                await getattr(service_class(repository, lambda: EXIT), method)(item.id)
+            repository.save_exit.assert_awaited_once()
+            repository.save.assert_not_awaited()
+            self.assertIn(item.status, (DeliveryStatus.AWAITING_PICKUP, ReturnStatus.AWAITING_CARRIER))
+
+    async def test_infrastructure_failures_are_propagated(self):
+        for service_class, port, item, method, *_ in self.cases():
+            repository = AsyncMock(spec=port)
+            repository.get_by_id.return_value = item
+            error = RuntimeError("commit failed")
+            repository.save_exit.side_effect = error
+            with self.assertRaises(RuntimeError) as caught:
+                await getattr(service_class(repository, lambda: EXIT), method)(item.id)
+            self.assertIs(caught.exception, error)
+        repository = AsyncMock(spec=ReturnRepository)
+        repository.save.side_effect = RuntimeError("insert failed")
+        with self.assertRaises(RuntimeError):
+            await ReturnService(repository, lambda: RECEIVED).create("R", "C")

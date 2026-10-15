@@ -1,10 +1,25 @@
 # Arquitectura hexagonal con FastAPI
 
-Ejemplo mínimo con **Delivery** (entregas) y **Return** (devoluciones).
-Cada uno permite crear y listar registros mediante un repositorio **SQLModel
-asíncrono sobre PostgreSQL**. **Alembic** gestiona las migraciones. Delivery y Return
-son independientes para centrar el ejemplo en la organización; todavía no
-relacionamos una devolución con una entrega.
+PoC de un **punto de entrega y recogida de paquetes**. **Delivery** registra un
+paquete recibido del transportista para que lo recoja el destinatario; **Return**
+registra uno depositado por el cliente para que lo retire el transportista.
+Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
+usa **SQLModel asíncrono sobre PostgreSQL** y **Alembic** gestiona las migraciones.
+
+Ambas entidades contienen `tracking_number`, `carrier_code` y `received_at` UTC
+asignado por el sistema. Delivery añade `recipient_name` obligatorio, los campos
+opcionales `recipient_phone` y `pickup_deadline_at`, `status`, `collected_at` y
+`returned_to_carrier_at`.
+Return añade `sender_name` opcional, `status` y `handed_over_at`. Los opcionales
+omitidos se representan como `null`. Los textos se recortan; los obligatorios no
+pueden estar vacíos y los opcionales blancos se normalizan a `null`.
+
+Delivery empieza en `AWAITING_PICKUP` y permite una única salida: `COLLECTED` o
+`RETURNED_TO_CARRIER`. Return empieza en `AWAITING_CARRIER` y pasa una sola vez a
+`HANDED_OVER`. Cada salida registra una fecha UTC del sistema, posterior o igual
+a la recepción. El plazo de recogida admite una fecha con zona y es informativo:
+un paquete vencido sigue pendiente y se puede recoger. Seguimiento y transportista
+no son claves únicas; el UUID identifica el registro.
 
 ## Arrancar
 
@@ -17,27 +32,47 @@ docker compose up --build
 Compose espera a que PostgreSQL esté preparado, ejecuta `alembic upgrade head`
 en el servicio `migrate` y arranca la API cuando la migración termina correctamente.
 Si conservas una base de datos de la versión anterior, consulta primero
-[cómo adoptar las tablas existentes](#base-de-datos-de-la-versión-anterior).
+[el procedimiento de migración segura](#base-de-datos-de-la-versión-anterior).
 
 Abre [la documentación interactiva](http://127.0.0.1:8000/docs), o prueba:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/deliveries \
   -H 'Content-Type: application/json' \
-  -d '{"address": "Calle Mayor 1"}'
+  -d '{"tracking_number":"PKG-42","carrier_code":"carrier-a","recipient_name":"Ana García","recipient_phone":"600123456","pickup_deadline_at":"2026-10-20T18:00:00+02:00"}'
 
 curl http://127.0.0.1:8000/deliveries
 
+# Sustituye DELIVERY_ID por el UUID de la respuesta de creación.
+curl -X POST http://127.0.0.1:8000/deliveries/DELIVERY_ID/collect
+# Sustituye OTHER_DELIVERY_ID por el UUID de otro paquete pendiente.
+curl -X POST http://127.0.0.1:8000/deliveries/OTHER_DELIVERY_ID/return-to-carrier \
+  -H 'Content-Type: application/json' -d '{}'
+
 curl -X POST http://127.0.0.1:8000/returns \
   -H 'Content-Type: application/json' \
-  -d '{"reason": "Producto equivocado"}'
+  -d '{"tracking_number":"RET-42","carrier_code":"carrier-a","sender_name":"Luis Pérez"}'
 
 curl http://127.0.0.1:8000/returns
+
+# Sustituye RETURN_ID por el UUID de la respuesta de creación.
+curl -X POST http://127.0.0.1:8000/returns/RETURN_ID/hand-over
 ```
 
-Crear devuelve `201` con un `id` UUID; listar devuelve `200` con una lista.
-Una dirección o motivo vacío, incluidos solo espacios, devuelve `422`.
-Los datos persisten en el volumen `postgres_data` al ejecutar `docker compose down`.
+Crear devuelve `201`; listar y registrar una salida devuelven `200` con la
+representación completa. Las fechas se serializan en UTC, por ejemplo
+`2026-10-20T16:00:00Z` para el plazo anterior. El sistema genera UUID, recepción,
+estado y fechas de salida; el cliente solo indica los datos de recepción y el
+plazo opcional. Recoger devuelve `COLLECTED`, una fecha `collected_at` y
+`returned_to_carrier_at: null`; devolver al transportista conserva
+`collected_at: null`. Una Return entregada devuelve `HANDED_OVER` y su fecha.
+
+Un UUID desconocido devuelve `404`; una salida repetida, incompatible o con
+cronología inválida devuelve `409` sin modificar el paquete. Un UUID mal formado,
+campos retirados, desconocidos o de sistema, tipos incorrectos, textos obligatorios
+blancos o plazos sin zona devuelven `422`. Las acciones solo aceptan ausencia de
+cuerpo o `{}`; incluso `null` se rechaza. Los datos persisten en el volumen
+`postgres_data` al ejecutar `docker compose down`.
 
 ## Organización
 
@@ -61,12 +96,15 @@ hexagonal_architecture/
 │   │           ├── env.py
 │   │           ├── script.py.mako
 │   │           └── versions/
-│   │               └── 0001_create_delivery_and_return.py
+│   │               ├── 0001_create_delivery_and_return.py
+│   │               └── 0002_parcel_custody.py
 │   ├── tests/
+│   │   ├── test_domain.py
 │   │   ├── test_application.py
 │   │   ├── test_http.py
 │   │   ├── test_repositories.py
 │   │   ├── test_migrations.py
+│   │   ├── test_postgresql.py
 │   │   └── test_main.py
 │   ├── alembic.ini
 │   ├── Dockerfile
@@ -88,7 +126,7 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | --- | --- |
 | `backend/domain/models.py` | Entidades `Delivery` y `Return` y sus validaciones. Solo Python. |
 | `backend/domain/ports.py` | Puertos de salida `DeliveryRepository` y `ReturnRepository`: lo que la aplicación necesita de la persistencia. |
-| `backend/application/use_cases.py` | Implementa los casos de uso; sus métodos públicos `create` y `list_all` actúan como puertos de entrada. Usa los puertos de salida sin conocer HTTP ni la base de datos. |
+| `backend/application/use_cases.py` | Implementa los casos de uso; sus métodos públicos `create`, `list_all` y las operaciones de salida actúan como puertos de entrada. Obtiene fechas de un reloj UTC inyectable. Usa los puertos de salida sin conocer HTTP ni la base de datos. |
 | `backend/adapters/http/routes.py` | Recibe `DeliveryService` y `ReturnService`, define las rutas y traduce errores del dominio a respuestas HTTP. |
 | `backend/adapters/http/schemas.py` | Modelos Pydantic para los cuerpos y respuestas HTTP. |
 | `backend/adapters/database/sqlmodel_repositories.py` | Modelos de persistencia y repositorios SQLModel asíncronos. Traducen entre filas y entidades del dominio. |
@@ -119,11 +157,14 @@ en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
 | --- | --- |
 | `POST /deliveries` | `SqlModelDeliveryRepository` |
 | `GET /deliveries` | `SqlModelDeliveryRepository` |
+| `POST /deliveries/{id}/collect` | `SqlModelDeliveryRepository` |
+| `POST /deliveries/{id}/return-to-carrier` | `SqlModelDeliveryRepository` |
 | `POST /returns` | `SqlModelReturnRepository` |
 | `GET /returns` | `SqlModelReturnRepository` |
+| `POST /returns/{id}/hand-over` | `SqlModelReturnRepository` |
 
-Cada servicio permite tanto crear como listar; no se separan por lectura y
-escritura. Sustituir un repositorio por otro que cumpla su puerto no requiere
+Cada servicio permite crear, listar y registrar las salidas de su entidad; no se
+separan por lectura y escritura. Sustituir un repositorio por otro que cumpla su puerto no requiere
 cambiar el dominio ni los casos de uso.
 
 No es obligatorio construir los servicios en `lifespan`: aquí solo conservan
@@ -145,7 +186,11 @@ abre su propia sesión; guardar abre una transacción con `sessions.begin()`, qu
 confirma al terminar o revierte si falla. **No hay una `AsyncSession` global**.
 Delivery y Return mantienen sus propias tablas y consultas.
 
-Cada caso de uso escribe una sola vez. Si necesitara coordinar varias escrituras
+Cada salida consulta el paquete, valida la transición inmutable en el dominio y
+ejecuta un `UPDATE` condicionado al estado pendiente. La transacción confirma
+antes de responder; ante concurrencia solo una salida puede ganar y la otra
+recibe `409`, sin sobrescribir estado ni fecha. Las restricciones de tabla
+refuerzan la coherencia entre estado y fechas. Cada caso de uso escribe una sola vez. Si necesitara coordinar varias escrituras
 atómicas, habría que ampliar el diseño para compartir una transacción entre ellas.
 
 Para cambiar PostgreSQL por MySQL se cambiarían el controlador y la configuración
@@ -156,7 +201,9 @@ aunque una migración pueda afectar a varios archivos de infraestructura.
 ## Migraciones
 
 Hay **un único historial para toda la base de datos**, con las tablas `deliveries`
-y `returns`. La revisión inicial es `0001`. `SQLModel.metadata` es la fuente del
+y `returns`. La revisión inicial `0001` conserva las columnas legacy `address` y
+`reason`; el head actual es `0002`, con el modelo de custodia. `upgrade 0001`
+prepara el esquema histórico y `upgrade head` prepara el contrato de la API actual. `SQLModel.metadata` es la fuente del
 esquema para comparar modelos y base de datos; `backend/adapters/database/migrations/env.py`
 importa los modelos del adaptador para registrar sus tablas. El dominio no participa
 en las migraciones. `backend/alembic.ini` apunta a esta carpeta
@@ -197,16 +244,22 @@ Versiona las revisiones junto con el código. Véase la
 
 ### Base de datos de la versión anterior
 
-La versión anterior creaba las tablas con `create_all()`, sin registrar un
-historial de Alembic. No apliques la revisión inicial sobre esas tablas: intentaría
-crearlas otra vez. Para adoptar esa base de datos:
+Antes de desplegar, haz una copia de seguridad y detén las escrituras. La
+revisión `0002` bloquea ambas tablas y comprueba su contenido dentro de la
+transacción PostgreSQL, antes de modificar columnas. Si cualquiera contiene
+registros legacy, **rechaza el upgrade**: faltan datos reales de seguimiento,
+transportista y recepción. El error identifica las tablas afectadas; filas,
+esquema y revisión `0001` se conservan íntegros. Preserva esa base y prepara una
+migración explícita con información real antes de continuar. No se generan datos
+ficticios ni se borran tablas para superar el rechazo.
 
-1. Haz una copia de seguridad.
-2. Comprueba que el esquema existente coincide con la revisión
-   `backend/adapters/database/migrations/versions/0001_create_delivery_and_return.py`, incluidos tipos,
-   nulabilidad y claves primarias. Si difiere, hay que reconciliarlo primero.
-3. Solo tras comprobar esa coincidencia, registra la revisión inicial y aplica
-   las posteriores:
+Si la base antigua proviene de `create_all()` y no tiene historial Alembic:
+
+1. Haz una copia de seguridad y detén las escrituras.
+2. Comprueba que coincide exactamente con
+   `backend/adapters/database/migrations/versions/0001_create_delivery_and_return.py`,
+   incluidos tipos, nulabilidad y claves primarias. Si difiere, reconcilia el esquema.
+3. Solo tras verificarlo, registra la revisión histórica:
 
    ```bash
    # Directorio de trabajo: backend/
@@ -214,9 +267,25 @@ crearlas otra vez. Para adoptar esa base de datos:
    uv run alembic upgrade head
    ```
 
-`stamp` registra una revisión sin ejecutar sus cambios: no corrige un esquema
-incompatible. Este proyecto no adopta tablas existentes automáticamente ni
-requiere borrar el volumen de datos.
+`stamp` solo registra una revisión y no transforma datos. El upgrade también
+rechazará registros existentes en esta base adoptada. Con ambas tablas vacías,
+`0002` sustituye los campos antiguos por los campos de custodia. El arranque de
+la API no crea ni migra tablas: prepara el esquema antes de arrancarla.
+
+El downgrade también bloquea las tablas y rechaza cualquier paquete existente,
+conservando los datos y la revisión `0002`. En una base de pruebas vacía se puede
+verificar el recorrido reversible desde `backend/`:
+
+```bash
+uv run alembic upgrade head
+uv run alembic downgrade 0001
+uv run alembic upgrade head
+uv run alembic current
+```
+
+`downgrade base` solo es apropiado para una base vacía preparada para esa prueba.
+Para recuperar un despliegue anterior con datos, usa la copia de seguridad según
+el procedimiento operativo; no fuerces un downgrade que perdería información.
 
 ## Pruebas
 
@@ -231,15 +300,17 @@ uv run --extra dev python -m unittest discover -s tests -v
 El núcleo usa dobles asíncronos (`AsyncMock`) de los puertos de salida.
 `test_http.py` prueba el adaptador HTTP con `AsyncMock` de `DeliveryService` y
 `ReturnService`, sin importar `main.py` ni conectar con una base de datos. Los
-repositorios se prueban con SQLite y `aiosqlite`: creación y listado, y recuperación
-tras un UUID duplicado. Las pruebas de migraciones verifican el esquema sobre una base temporal.
+repositorios se prueban con SQLite y `aiosqlite`: round trip de todos los campos,
+instantes UTC, transiciones, rollback y recuperación tras UUID duplicados.
+Las pruebas locales de migración usan una base temporal. La suite también cubre
+normalización, invariantes, reloj controlado y contratos HTTP de las siete rutas.
 Estas pruebas no sustituyen la integración con PostgreSQL.
 
 Para ejecutar solo las pruebas del núcleo, sin instalar dependencias, desde `backend/`:
 
 ```bash
 # Directorio de trabajo: backend/
-python3 -m unittest discover -s tests -p test_application.py -v
+python3 -m unittest tests.test_domain tests.test_application -v
 ```
 
 Con Compose arrancado y las migraciones aplicadas, ejecuta también la prueba HTTP
@@ -252,17 +323,25 @@ docker compose exec \
   api python -m unittest discover -s tests -v
 ```
 
-Esta prueba crea una entrega y una devolución mediante SQLModel y las lista con
-SQLModel en una segunda instancia de la aplicación. No elimina datos existentes.
-Sin `TEST_DATABASE_URL`, la prueba de integración se omite. La imagen incluye las
+La integración HTTP crea paquetes, registra salidas y verifica sus representaciones
+en una segunda instancia de aplicación. Las pruebas PostgreSQL adicionales verifican
+con sesiones independientes salidas concurrentes (un `200` y un `409`), así como
+upgrade, downgrade y conservación de datos ante rechazo; usan esquemas de prueba
+aislados. Usa una base de pruebas dedicada y migrada, con permisos para crear
+esquemas. No apuntes estas pruebas a producción. Sin `TEST_DATABASE_URL`,
+las comprobaciones PostgreSQL se omiten; SQLite no demuestra sus garantías de
+concurrencia y bloqueo. La imagen incluye las
 dependencias de pruebas mediante el extra `dev`. Si ejecutas la prueba fuera de
 Compose, migra previamente la base de datos que indique `TEST_DATABASE_URL`.
 
 ## Alcance del ejemplo
 
 Las credenciales de Compose son locales y de demostración. No añadimos
-autenticación, repositorios genéricos ni relaciones entre Delivery y Return para
-mantener visible la arquitectura.
+autenticación, repositorios genéricos ni relaciones entre Delivery y Return.
+También quedan para otras ampliaciones la ubicación de almacenamiento, múltiples
+puntos, notificaciones e integraciones con transportistas. No se gestionan
+direcciones, instrucciones de entrega, pedidos, productos, cantidades ni
+resoluciones comerciales de devolución.
 
 Compose coordina PostgreSQL, migraciones y API siguiendo
 el [control de arranque de Docker Compose](https://docs.docker.com/compose/how-tos/startup-order/).
