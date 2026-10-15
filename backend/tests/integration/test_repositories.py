@@ -1,4 +1,4 @@
-"""SQLite round trips, database invariants and rollback of custody writes."""
+"""PostgreSQL round trips, database invariants and rollback of custody writes."""
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import unittest
@@ -7,9 +7,8 @@ from uuid import uuid4
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlmodel import SQLModel
+from tests.integration.support import PostgresTestCase
 
-from adapters.database.connection import create_database
 from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
 from domain.models import Delivery, Return
 
@@ -27,15 +26,7 @@ def returned(**kwargs):
 REPOSITORIES = ((delivery, SqlModelDeliveryRepository, "collect"), (returned, SqlModelReturnRepository, "hand_over"))
 
 
-class RepositoryTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.engine, self.sessions = create_database("sqlite+aiosqlite:///:memory:")
-        async with self.engine.begin() as connection:
-            await connection.run_sync(SQLModel.metadata.create_all)
-
-    async def asyncTearDown(self):
-        await self.engine.dispose()
-
+class RepositoryTests(PostgresTestCase):
     async def test_complete_round_trip_from_new_instances(self):
         examples = [
             (SqlModelDeliveryRepository, [delivery(), delivery(recipient_phone="+34600123456", pickup_deadline_at=NOW.astimezone(timezone(timedelta(hours=2)))).return_to_carrier(NOW + timedelta(seconds=1))]),

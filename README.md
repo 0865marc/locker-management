@@ -74,6 +74,103 @@ blancos o plazos sin zona devuelven `422`. Las acciones solo aceptan ausencia de
 cuerpo o `{}`; incluso `null` se rechaza. Los datos persisten en el volumen
 `postgres_data` al ejecutar `docker compose down`.
 
+## Lockers: configuración y capacidad física
+
+Un locker pertenece a una ubicación estable `location_id`, recortada y sensible a
+mayúsculas: `MAD-01` y `mad-01` son ubicaciones diferentes. La búsqueda es exacta;
+no hay geodistancia ni catálogo externo y varios lockers pueden compartir ubicación.
+La ubicación del locker no cambia. Cada celda tiene UUID propio y medidas útiles
+`width_mm`, `height_mm`, `depth_mm`, en milímetros. Se permiten rotaciones ortogonales:
+se ordenan ambos tríos y se compara eje a eje, admitiendo igualdad. No se consideran
+diagonales ni espacio de maniobra. Se elige la celda libre compatible de menor
+volumen, con UUID ascendente como desempate.
+
+Medidas y cantidades son enteros JSON positivos; no aceptan booleanos, decimales
+ni cadenas. Las medidas admiten de 1 a 2147483647. Cada petición de creación o
+adición admite como máximo **1000 celdas nuevas en total**, sumando sus lotes;
+el límite se valida antes de crear celdas. El locker puede superar 1000 mediante
+peticiones sucesivas. Los indicadores `active` y `enabled` son booleanos estrictos.
+
+La capacidad se deriva de las celdas y sus asignaciones activas, compartidas por
+Delivery y Return. Las celdas deshabilitadas siguen configuradas, pero no se ofrecen;
+las retiradas dejan de aparecer y conservan su fila para el historial. Solo se
+pueden redimensionar, deshabilitar o retirar celdas libres. Una celda ocupada da
+`409` sin cambios. El retiro es irreversible y repetirlo da `404`. Inactivar un
+locker impide recepciones nuevas, pero permite todas las salidas.
+
+Este recorrido usa `curl` y `jq`, desde cualquier terminal con la API arrancada:
+
+```bash
+API=http://127.0.0.1:8000
+DIMENSIONS='{"width_mm":100,"height_mm":200,"depth_mm":300}'
+
+LOCKER=$(curl --fail-with-body -sS -X POST "$API/lockers" \
+  -H 'Content-Type: application/json' \
+  -d '{"location_id":"MAD-01","compartments":[{"quantity":1,"dimensions":{"width_mm":100,"height_mm":200,"depth_mm":300}}]}')
+LOCKER_ID=$(jq -r '.id' <<< "$LOCKER")
+CELL_ID=$(jq -r '.compartments[0].id' <<< "$LOCKER")
+
+curl --fail-with-body -sS "$API/lockers?location_id=MAD-01"
+curl --fail-with-body -sS "$API/lockers/$LOCKER_ID"
+curl --fail-with-body -sS "$API/lockers/availability?location_id=MAD-01&width_mm=300&height_mm=100&depth_mm=200"
+
+DELIVERY=$(curl --fail-with-body -sS -X POST "$API/deliveries" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg locker "$LOCKER_ID" --argjson dimensions "$DIMENSIONS" \
+    '{tracking_number:"D-LOCKER",carrier_code:"carrier-a",recipient_name:"Ana",locker_id:$locker,parcel_dimensions:$dimensions}')")
+DELIVERY_ID=$(jq -r '.id' <<< "$DELIVERY")
+# La única celda está ocupada: reason FULL y available_count 0.
+curl --fail-with-body -sS "$API/lockers/availability?location_id=MAD-01&width_mm=100&height_mm=200&depth_mm=300"
+curl --fail-with-body -sS -X POST "$API/deliveries/$DELIVERY_ID/collect"
+
+# Una devolución reutiliza la misma celda, porque comparte capacidad con Delivery.
+RETURN=$(curl --fail-with-body -sS -X POST "$API/returns" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg locker "$LOCKER_ID" --argjson dimensions "$DIMENSIONS" \
+    '{tracking_number:"R-LOCKER",carrier_code:"carrier-a",locker_id:$locker,parcel_dimensions:$dimensions}')")
+RETURN_ID=$(jq -r '.id' <<< "$RETURN")
+# Incluso inactivo, el locker permite liberar su devolución.
+curl --fail-with-body -sS -X PATCH "$API/lockers/$LOCKER_ID" \
+  -H 'Content-Type: application/json' -d '{"active":false}'
+curl --fail-with-body -sS -X POST "$API/returns/$RETURN_ID/hand-over"
+curl --fail-with-body -sS -X PATCH "$API/lockers/$LOCKER_ID" \
+  -H 'Content-Type: application/json' -d '{"active":true}'
+
+# Cambiar una celda libre, añadir un lote y retirar la celda original.
+curl --fail-with-body -sS -X PATCH "$API/lockers/$LOCKER_ID/compartments/$CELL_ID" \
+  -H 'Content-Type: application/json' \
+  -d '{"dimensions":{"width_mm":150,"height_mm":250,"depth_mm":350},"enabled":false}'
+curl --fail-with-body -sS -X POST "$API/lockers/$LOCKER_ID/compartments" \
+  -H 'Content-Type: application/json' \
+  -d '{"compartments":[{"quantity":2,"dimensions":{"width_mm":100,"height_mm":200,"depth_mm":300}}]}'
+curl --fail-with-body -sS -X DELETE "$API/lockers/$LOCKER_ID/compartments/$CELL_ID"
+```
+
+La disponibilidad devuelve `location_id`, `parcel_dimensions`, `checked_at` UTC,
+`reason` y una lista `lockers`. Cada elemento contiene `locker_id`, `active`,
+`compatible_count`, `available_count` y `reason`. Las compatibles son celdas
+habilitadas no retiradas, incluidas las ocupadas; las disponibles son sus libres
+si el locker está activo. La fotografía es coherente, **no reserva espacio** y no
+promete capacidad futura. Las razones son `NO_LOCKER`, `LOCKER_INACTIVE`,
+`NO_COMPATIBLE_CELL`, `FULL` y `AVAILABLE`. La recepción vuelve a comprobar bajo
+bloqueo y confirma paquete y ocupación en una sola transacción. La salida confirma
+estado y liberación de su propia asignación en otra transacción indivisible.
+
+Las dos recepciones aceptan `locker_id` y `parcel_dimensions` juntos, ambos no
+nulos, o ambos omitidos/null para seguir recibiendo sin locker. Una pareja parcial
+o un `compartment_id` suministrado devuelve `422`; locker desconocido devuelve
+`404`. Un conflicto de capacidad devuelve `409` con
+`detail: {"code":"FULL","message":"..."}` (también `LOCKER_INACTIVE` o
+`NO_COMPATIBLE_CELL`) sin guardar el paquete. No se puede ocupar una celda por ID
+ni marcarla arbitrariamente como libre.
+
+Todas las respuestas de paquetes añaden `locker_id`, `compartment_id` y
+`parcel_dimensions`; son `null` para recepciones sin locker y filas históricas.
+Los clientes que validen respuestas estrictamente deben admitir estos campos.
+Una salida conserva la asignación histórica y las dimensiones del paquete,
+incluso si la celda se redimensiona o retira después. Repetir una salida antigua
+tras reocupar su celda da `409` y conserva intacto al nuevo ocupante.
+
 ## Organización
 
 ```text
@@ -82,30 +179,44 @@ hexagonal_architecture/
 │   ├── main.py
 │   ├── domain/
 │   │   ├── models.py
+│   │   ├── lockers.py
 │   │   └── ports.py
 │   ├── application/
+│   │   ├── locker_use_cases.py
 │   │   └── use_cases.py
 │   ├── adapters/
 │   │   ├── http/
 │   │   │   ├── routes.py
-│   │   │   └── schemas.py
+│   │   │   ├── schemas.py
+│   │   │   ├── locker_routes.py
+│   │   │   └── locker_schemas.py
 │   │   └── database/
 │   │       ├── connection.py
 │   │       ├── sqlmodel_repositories.py
+│   │       ├── sqlmodel_lockers.py
 │   │       └── migrations/
 │   │           ├── env.py
 │   │           ├── script.py.mako
 │   │           └── versions/
 │   │               ├── 0001_create_delivery_and_return.py
-│   │               └── 0002_parcel_custody.py
+│   │               ├── 0002_parcel_custody.py
+│   │               └── 0003_lockers_and_custody.py
 │   ├── tests/
-│   │   ├── test_domain.py
-│   │   ├── test_application.py
-│   │   ├── test_http.py
-│   │   ├── test_repositories.py
-│   │   ├── test_migrations.py
-│   │   ├── test_postgresql.py
-│   │   └── test_main.py
+│   │   ├── unit/
+│   │   │   ├── test_domain.py
+│   │   │   ├── test_application.py
+│   │   │   ├── test_http.py
+│   │   │   ├── test_lockers.py
+│   │   │   └── test_main.py
+│   │   └── integration/
+│   │       ├── support.py
+│   │       ├── test_repositories.py
+│   │       ├── test_locker_repositories.py
+│   │       ├── test_locker_http.py
+│   │       ├── test_application_http.py
+│   │       ├── test_migrations.py
+│   │       ├── test_postgresql.py
+│   │       └── test_locker_postgresql.py
 │   ├── alembic.ini
 │   ├── Dockerfile
 │   ├── .dockerignore
@@ -125,8 +236,12 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | Archivo | Responsabilidad |
 | --- | --- |
 | `backend/domain/models.py` | Entidades `Delivery` y `Return` y sus validaciones. Solo Python. |
-| `backend/domain/ports.py` | Puertos de salida `DeliveryRepository` y `ReturnRepository`: lo que la aplicación necesita de la persistencia. |
+| `backend/domain/lockers.py` | Dimensiones, celdas, lockers y reglas físicas, sin infraestructura. |
+| `backend/domain/ports.py` | Puertos de salida `DeliveryRepository`, `ReturnRepository` y `LockerRepository`: lo que la aplicación necesita de la persistencia. |
 | `backend/application/use_cases.py` | Implementa los casos de uso; sus métodos públicos `create`, `list_all` y las operaciones de salida actúan como puertos de entrada. Obtiene fechas de un reloj UTC inyectable. Usa los puertos de salida sin conocer HTTP ni la base de datos. |
+| `backend/application/locker_use_cases.py` | Casos de uso de configuración y disponibilidad de lockers. |
+| `backend/adapters/http/locker_routes.py` y `locker_schemas.py` | Contratos HTTP de lockers y traducción de errores. |
+| `backend/adapters/database/sqlmodel_lockers.py` | Persistencia compartida de configuración y asignaciones, con bloqueo por locker. |
 | `backend/adapters/http/routes.py` | Recibe `DeliveryService` y `ReturnService`, define las rutas y traduce errores del dominio a respuestas HTTP. |
 | `backend/adapters/http/schemas.py` | Modelos Pydantic para los cuerpos y respuestas HTTP. |
 | `backend/adapters/database/sqlmodel_repositories.py` | Modelos de persistencia y repositorios SQLModel asíncronos. Traducen entre filas y entidades del dominio. |
@@ -146,10 +261,10 @@ de uso trabajar con repositorios sin depender de su implementación concreta.
 
 ### Componer los servicios
 
-`create_app()` crea una vez por aplicación `DeliveryService` y `ReturnService`,
-y conserva sus referencias en `app.state.delivery_service` y
-`app.state.return_service`. Inyecta esas mismas instancias en
-`create_router(delivery, returns)`, que construye el router de FastAPI. Las rutas
+`create_app()` crea una vez por aplicación `DeliveryService`, `ReturnService` y `LockerService`,
+y conserva sus referencias en `app.state.delivery_service`,
+`app.state.return_service` y `app.state.locker_service`. Inyecta las instancias de paquetes en
+`create_router(delivery, returns)` y el servicio de lockers en su router. Las rutas
 reutilizan los servicios recibidos, sin instanciarlos por petición ni buscarlos
 en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
 
@@ -162,9 +277,17 @@ en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
 | `POST /returns` | `SqlModelReturnRepository` |
 | `GET /returns` | `SqlModelReturnRepository` |
 | `POST /returns/{id}/hand-over` | `SqlModelReturnRepository` |
+| `POST /lockers` | `SqlModelLockerRepository` |
+| `GET /lockers` | `SqlModelLockerRepository` |
+| `GET /lockers/availability` | `SqlModelLockerRepository` |
+| `GET /lockers/{id}` | `SqlModelLockerRepository` |
+| `PATCH /lockers/{id}` | `SqlModelLockerRepository` |
+| `POST /lockers/{id}/compartments` | `SqlModelLockerRepository` |
+| `PATCH /lockers/{id}/compartments/{cell_id}` | `SqlModelLockerRepository` |
+| `DELETE /lockers/{id}/compartments/{cell_id}` | `SqlModelLockerRepository` |
 
-Cada servicio permite crear, listar y registrar las salidas de su entidad; no se
-separan por lectura y escritura. Sustituir un repositorio por otro que cumpla su puerto no requiere
+Los servicios de paquetes permiten crear, listar y registrar salidas;
+`LockerService` configura lockers y consulta disponibilidad. No se separan por lectura y escritura. Sustituir un repositorio por otro que cumpla su puerto no requiere
 cambiar el dominio ni los casos de uso.
 
 No es obligatorio construir los servicios en `lifespan`: aquí solo conservan
@@ -180,18 +303,17 @@ proporcionando el motor, las sesiones asíncronas y los tipos de columnas.
 
 ### Qué se comparte y qué se separa
 
-Los dos repositorios reciben la misma fábrica SQLAlchemy `async_sessionmaker`.
+Los tres repositorios reciben la misma fábrica SQLAlchemy `async_sessionmaker`.
 La fábrica crea sesiones SQLModel y las consultas usan `AsyncSession.exec()`. Cada operación
 abre su propia sesión; guardar abre una transacción con `sessions.begin()`, que
 confirma al terminar o revierte si falla. **No hay una `AsyncSession` global**.
-Delivery y Return mantienen sus propias tablas y consultas.
+Delivery y Return mantienen sus propias tablas y consultas; comparten `locker_assignments` para la capacidad física.
 
 Cada salida consulta el paquete, valida la transición inmutable en el dominio y
 ejecuta un `UPDATE` condicionado al estado pendiente. La transacción confirma
 antes de responder; ante concurrencia solo una salida puede ganar y la otra
 recibe `409`, sin sobrescribir estado ni fecha. Las restricciones de tabla
-refuerzan la coherencia entre estado y fechas. Cada caso de uso escribe una sola vez. Si necesitara coordinar varias escrituras
-atómicas, habría que ampliar el diseño para compartir una transacción entre ellas.
+refuerzan la coherencia entre estado y fechas. Las operaciones asignadas adquieren primero el bloqueo del locker y releen capacidad antes de escribir. El adaptador coordina las escrituras de paquete y asignación dentro de una misma transacción, sin exponer sesiones al dominio ni a los casos de uso.
 
 Para cambiar PostgreSQL por MySQL se cambiarían el controlador y la configuración
 compartida, y se revisaría la compatibilidad de los adaptadores. El dominio y
@@ -200,9 +322,9 @@ aunque una migración pueda afectar a varios archivos de infraestructura.
 
 ## Migraciones
 
-Hay **un único historial para toda la base de datos**, con las tablas `deliveries`
-y `returns`. La revisión inicial `0001` conserva las columnas legacy `address` y
-`reason`; el head actual es `0002`, con el modelo de custodia. `upgrade 0001`
+Hay **un único historial para toda la base de datos**, con `deliveries`, `returns`,
+`lockers`, `locker_compartments` y `locker_assignments`. La revisión inicial `0001` conserva las columnas legacy `address` y
+`reason`; `0002` incorpora el modelo de custodia y el head actual es `0003`, que añade lockers. `upgrade 0001`
 prepara el esquema histórico y `upgrade head` prepara el contrato de la API actual. `SQLModel.metadata` es la fuente del
 esquema para comparar modelos y base de datos; `backend/adapters/database/migrations/env.py`
 importa los modelos del adaptador para registrar sus tablas. El dominio no participa
@@ -272,8 +394,19 @@ rechazará registros existentes en esta base adoptada. Con ambas tablas vacías,
 `0002` sustituye los campos antiguos por los campos de custodia. El arranque de
 la API no crea ni migra tablas: prepara el esquema antes de arrancarla.
 
-El downgrade también bloquea las tablas y rechaza cualquier paquete existente,
-conservando los datos y la revisión `0002`. En una base de pruebas vacía se puede
+El upgrade de **0002 poblado a 0003 es aditivo**: añade las tres tablas de lockers
+vacías, con FKs, restricciones e índice único parcial para la ocupación activa.
+Conserva sin modificación paquetes pendientes y finalizados, sus columnas y valores.
+No hay backfill ni ubicaciones, dimensiones o asignaciones ficticias. Aplica
+`alembic upgrade head` antes de arrancar la nueva aplicación; después configura
+lockers por API.
+
+El downgrade **0003 → 0002** bloquea las tablas nuevas y rechaza cualquier fila
+antes de DDL, incluidas celdas retiradas y asignaciones liberadas. Mantiene íntegros
+esquema, índices, restricciones, filas y revisión 0003. Si las tres tablas están
+vacías, elimina solo esas tablas y conserva los paquetes existentes aunque estén
+poblados. El downgrade **0002 → 0001** conserva su protección: rechaza cualquier
+paquete existente y mantiene datos y revisión 0002. En una base de pruebas vacía se puede
 verificar el recorrido reversible desde `backend/`:
 
 ```bash
@@ -284,64 +417,90 @@ uv run alembic current
 ```
 
 `downgrade base` solo es apropiado para una base vacía preparada para esa prueba.
-Para recuperar un despliegue anterior con datos, usa la copia de seguridad según
-el procedimiento operativo; no fuerces un downgrade que perdería información.
+Un rollback de aplicación puede conservar el esquema 0003. Una versión antigua
+no sabe liberar asignaciones: **no debe procesar salidas de paquetes asignados**.
+Detén las escrituras o conserva la versión capaz de liberarlas hasta resolverlo.
+Para recuperar datos, usa la copia de seguridad según el procedimiento operativo;
+no fuerces un downgrade destructivo ni borres volúmenes para superar las guardas.
 
 ## Pruebas
 
-Instala las dependencias de desarrollo y ejecuta las pruebas sin PostgreSQL desde `backend/`:
+Las suites usan `unittest`: `tests/unit` contiene pruebas sin servicios y
+`tests/integration` usa PostgreSQL como único backend de integración. Instala las
+dependencias de desarrollo y ejecuta las unitarias desde `backend/`:
 
 ```bash
 # Directorio de trabajo: backend/
 uv sync --extra dev
-uv run --extra dev python -m unittest discover -s tests -v
+uv run --extra dev python -m unittest discover -s tests/unit -t . -v
 ```
 
-El núcleo usa dobles asíncronos (`AsyncMock`) de los puertos de salida.
-`test_http.py` prueba el adaptador HTTP con `AsyncMock` de `DeliveryService` y
-`ReturnService`, sin importar `main.py` ni conectar con una base de datos. Los
-repositorios se prueban con SQLite y `aiosqlite`: round trip de todos los campos,
-instantes UTC, transiciones, rollback y recuperación tras UUID duplicados.
-Las pruebas locales de migración usan una base temporal. La suite también cubre
-normalización, invariantes, reloj controlado y contratos HTTP de las siete rutas.
-Estas pruebas no sustituyen la integración con PostgreSQL.
+Las unitarias cubren dominio, reglas físicas de lockers, casos de uso con
+`AsyncMock`, adaptador HTTP con dobles de servicios y composición/lifecycle con
+motor simulado. Se pueden ejecutar sin `TEST_DATABASE_URL` ni un servidor de base
+de datos. No requieren un driver SQLite.
 
-Para ejecutar solo las pruebas del núcleo, sin instalar dependencias, desde `backend/`:
+Para integración, usa una **base de pruebas dedicada** ya existente y un usuario
+con permisos para conectar y crear/eliminar esquemas en ella. Define
+`TEST_DATABASE_URL` explícitamente con el driver `postgresql+asyncpg`; cada caso
+crea un esquema UUID aislado, lo prepara con Alembic y lo elimina al terminar,
+incluso tras un fallo. Las pruebas de historia eligen su revisión inicial y las
+de arranque sin tablas conservan el esquema vacío. No hace falta migrar `public`
+previamente; la preparación y los datos quedan dentro del esquema de cada caso.
+Usa esta base dedicada en lugar de la base de demostración o producción.
+
+Desde `backend/`, ejecuta integración o la suite completa:
 
 ```bash
-# Directorio de trabajo: backend/
-python3 -m unittest tests.test_domain tests.test_application -v
+# Solo integración.
+TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+  uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
+
+# Unitarias e integración.
+TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+  uv run --extra dev python -m unittest discover -s tests -t . -v -f
 ```
 
-Con Compose arrancado y las migraciones aplicadas, ejecuta también la prueba HTTP
-sobre PostgreSQL desde la raíz del repositorio:
+`-t .` mantiene las importaciones de paquetes inequívocas; `-f` detiene la ejecución
+ante el primer error. Integración y suite completa fallan con diagnóstico explícito
+y código distinto de cero si falta `TEST_DATABASE_URL`, el driver es incompatible,
+PostgreSQL no responde o faltan permisos. Las comprobaciones de base de datos no se
+omiten por falta de configuración y no recurren a `DATABASE_URL`.
+
+Si esa base dedicada está preparada en el PostgreSQL de Compose, ejecuta desde la
+raíz del repositorio:
 
 ```bash
-# Desde la raíz del repositorio.
 docker compose exec \
-  -e TEST_DATABASE_URL=postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal \
-  api python -m unittest discover -s tests -v
+  -e TEST_DATABASE_URL=postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal_test \
+  api python -m unittest discover -s tests/integration -t . -v -f
 ```
 
-La integración HTTP crea paquetes, registra salidas y verifica sus representaciones
-en una segunda instancia de aplicación. Las pruebas PostgreSQL adicionales verifican
-con sesiones independientes salidas concurrentes (un `200` y un `409`), así como
-upgrade, downgrade y conservación de datos ante rechazo; usan esquemas de prueba
-aislados. Usa una base de pruebas dedicada y migrada, con permisos para crear
-esquemas. No apuntes estas pruebas a producción. Sin `TEST_DATABASE_URL`,
-las comprobaciones PostgreSQL se omiten; SQLite no demuestra sus garantías de
-concurrencia y bloqueo. La imagen incluye las
-dependencias de pruebas mediante el extra `dev`. Si ejecutas la prueba fuera de
-Compose, migra previamente la base de datos que indique `TEST_DATABASE_URL`.
+La imagen incluye las dependencias de pruebas mediante el extra `dev`. El comando
+de Compose usa igualmente esquemas aislados dentro de la base dedicada indicada.
+
+| Suite de integración | Qué verifica |
+| --- | --- |
+| `test_repositories.py`, `test_locker_repositories.py` | Identidad, valores/nulls, UTC, transiciones, configuración, capacidad compartida, restricciones reales y rollback. |
+| `test_locker_http.py`, `test_application_http.py` | Las quince rutas, validación y representaciones, persistencia entre instancias de aplicación y arranque sobre esquema vacío sin DDL. |
+| `test_migrations.py` | Columnas legacy de `0001`, round trip vacío hasta base/head, metadata sin diferencias, rechazo de upgrade/downgrade destructivos y upgrade aditivo desde `0002` poblado. |
+| `test_postgresql.py`, `test_locker_postgresql.py` | `timestamptz`, FKs/checks/índice parcial, locks de migración, salidas concurrentes y última celda compartida (un `201` y un `409`), rollback del primer contendiente, configuración frente a recepción y reocupación segura con conexiones independientes y sincronización explícita. |
+
+Los rechazos de migración comparan snapshots completos de columnas, índices,
+restricciones, filas y revisión. Las pruebas conservan las migraciones históricas
+`0001`, `0002` y `0003`; este cambio de organización de pruebas no añade revisiones.
 
 ## Alcance del ejemplo
 
 Las credenciales de Compose son locales y de demostración. No añadimos
-autenticación, repositorios genéricos ni relaciones entre Delivery y Return.
-También quedan para otras ampliaciones la ubicación de almacenamiento, múltiples
-puntos, notificaciones e integraciones con transportistas. No se gestionan
-direcciones, instrucciones de entrega, pedidos, productos, cantidades ni
-resoluciones comerciales de devolución.
+autenticación ni repositorios genéricos. Delivery y Return son paquetes independientes
+que comparten capacidad de lockers. Ubicaciones y múltiples lockers ya están incluidos.
+Quedan para otras ampliaciones notificaciones e integraciones con transportistas,
+reservas, TTL, transferencias, geobúsqueda, RabbitMQ y outbox. Las cotizaciones y
+su procesamiento asíncrono serán una fase posterior; consultar disponibilidad no
+contrata un envío ni reserva espacio. No se gestionan
+direcciones, instrucciones de entrega, pedidos, productos, cantidades de productos
+ni resoluciones comerciales de devolución.
 
 Compose coordina PostgreSQL, migraciones y API siguiendo
 el [control de arranque de Docker Compose](https://docs.docker.com/compose/how-tos/startup-order/).

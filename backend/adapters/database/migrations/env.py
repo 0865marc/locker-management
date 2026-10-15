@@ -11,6 +11,7 @@ from adapters.database.connection import get_database_url
 
 # Importar los modelos registra las tablas que compara Alembic.
 from adapters.database.sqlmodel_repositories import DeliveryRow, ReturnRow
+from adapters.database.sqlmodel_lockers import LockerRow, CompartmentRow, AssignmentRow
 
 
 config = context.config

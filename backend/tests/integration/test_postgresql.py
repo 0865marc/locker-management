@@ -1,76 +1,29 @@
 """Real PostgreSQL checks in a unique disposable schema, never in public tables."""
 import asyncio
 from datetime import datetime, timedelta, timezone
-import os
-import unittest
 from uuid import uuid4
 
-from alembic import command
-from alembic.config import Config
 from fastapi import FastAPI
 import httpx
-from sqlalchemy import event, inspect, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy import event, text
 
 from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
 from adapters.http.routes import create_router
 from application.use_cases import DeliveryService, ReturnService
 from domain.models import Delivery, Return
 
-URL = os.environ.get("TEST_DATABASE_URL")
+from tests.integration.support import PostgresTestCase
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 
 
-@unittest.skipUnless(URL, "TEST_DATABASE_URL is required for real PostgreSQL checks")
-class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.schema = "custody_test_" + uuid4().hex
-        self.admin = create_async_engine(URL)
-        async with self.admin.begin() as connection:
-            await connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
-        self.engine = create_async_engine(URL, connect_args={"server_settings": {"search_path": self.schema}})
-        self.sessions = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
-        await self.migrate("upgrade", "head")
-
-    async def asyncTearDown(self):
-        await self.engine.dispose()
-        try:
-            async with self.admin.begin() as connection:
-                await connection.execute(text(f'DROP SCHEMA "{self.schema}" CASCADE'))
-        finally:
-            await self.admin.dispose()
-
-    async def migrate(self, direction, revision):
-        async with self.engine.begin() as connection:
-            def run(sync_connection):
-                config = Config("alembic.ini")
-                config.attributes["connection"] = sync_connection
-                getattr(command, direction)(config, revision)
-            await connection.run_sync(run)
-
-    async def snapshot(self):
-        async with self.engine.connect() as connection:
-            def structure(sync_connection):
-                inspector = inspect(sync_connection)
-                return {table: (inspector.get_columns(table), inspector.get_check_constraints(table))
-                        for table in ("deliveries", "returns")}
-            # SQLAlchemy type objects compare by identity; render stable column definitions.
-            definitions = await connection.run_sync(structure)
-            for columns, constraints in definitions.values():
-                for column in columns:
-                    column["type"] = str(column["type"])
-            rows = {table: (await connection.execute(text(f"SELECT * FROM {table} ORDER BY 1"))).all()
-                    for table in ("deliveries", "returns", "alembic_version")}
-            return definitions, rows
-
+class PostgreSQLCustodyTests(PostgresTestCase):
     async def test_concurrent_repository_exits_commit_exactly_one_winner(self):
         examples = [
             (Delivery(tracking_number="D-1", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW), SqlModelDeliveryRepository, "collect", "return_to_carrier"),
             (Return(tracking_number="R-1", carrier_code="carrier-a", received_at=NOW), SqlModelReturnRepository, "hand_over", "hand_over"),
         ]
         for original, repository_class, first, second in examples:
-            repositories = [repository_class(self.sessions), repository_class(self.sessions)]
+            repositories = [repository_class(self.database()[1]) for _ in range(2)]
             await repositories[0].save(original)
             # Both independent reads finish before either conditional UPDATE starts.
             snapshots = await asyncio.gather(*(repo.get_by_id(original.id) for repo in repositories))
@@ -105,8 +58,9 @@ class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
             clients = []
             try:
                 for seconds in (1, 2):
-                    delivery_repo = SynchronizedRepository(self.sessions) if kind == "delivery" else SqlModelDeliveryRepository(self.sessions)
-                    return_repo = SynchronizedRepository(self.sessions) if kind == "return" else SqlModelReturnRepository(self.sessions)
+                    _, sessions = self.database()
+                    delivery_repo = SynchronizedRepository(sessions) if kind == "delivery" else SqlModelDeliveryRepository(sessions)
+                    return_repo = SynchronizedRepository(sessions) if kind == "return" else SqlModelReturnRepository(sessions)
                     clock = lambda seconds=seconds: NOW + timedelta(seconds=seconds)
                     app = FastAPI()
                     app.include_router(create_router(DeliveryService(delivery_repo, clock=clock), ReturnService(return_repo, clock=clock)))
@@ -125,7 +79,7 @@ class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
     async def test_migration_empty_round_trip_has_timezone_columns_and_constraints(self):
         original = await self.snapshot()
         for table in ("deliveries", "returns"):
-            columns, constraints = original[0][table]
+            columns, constraints, *_ = original[0][table]
             self.assertTrue(constraints)
             self.assertTrue(all(column["type"] == "TIMESTAMP" for column in columns if column["name"].endswith("_at")))
         async with self.engine.connect() as connection:
@@ -173,6 +127,7 @@ class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
                         columns += ", recipient_name"
                         values += ", 'Ana'"
                     await connection.execute(text(f"INSERT INTO {table} ({columns}) VALUES ({values})"), {"id": uuid4(), "received": NOW, "status": "AWAITING_PICKUP" if table == "deliveries" else "AWAITING_CARRIER"})
+            await self.migrate("downgrade", "0002")
             before = await self.snapshot()
             statements.clear()
             event.listen(self.engine.sync_engine, "before_cursor_execute", record)
@@ -186,3 +141,70 @@ class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
             async with self.engine.begin() as connection:
                 for table in tables:
                     await connection.execute(text(f"DELETE FROM {table}"))
+
+    async def populate_current_parcels(self):
+        deliveries = SqlModelDeliveryRepository(self.sessions)
+        returns = SqlModelReturnRepository(self.sessions)
+        for index, transition in enumerate((None, "collect", "return_to_carrier")):
+            item = Delivery(tracking_number=f"D-{index}", carrier_code="carrier-a",
+                            recipient_name="Ana", recipient_phone="600123456",
+                            pickup_deadline_at=NOW + timedelta(days=1), received_at=NOW)
+            await deliveries.save(getattr(item, transition)(NOW + timedelta(seconds=1)) if transition else item)
+        for index, terminal in enumerate((False, True)):
+            item = Return(tracking_number=f"R-{index}", carrier_code="carrier-b", sender_name="Luis", received_at=NOW)
+            await returns.save(item.hand_over(NOW + timedelta(seconds=1)) if terminal else item)
+
+    async def test_populated_0002_upgrade_adds_only_empty_locker_storage_and_round_trips(self):
+        await self.migrate("downgrade", "0002")
+        await self.populate_current_parcels()
+        before = await self.snapshot()
+        await self.migrate("upgrade", "head")
+        current = await self.snapshot()
+        self.assertEqual(current[1]["alembic_version"], [("0003",)])
+        for table in ("deliveries", "returns"):
+            self.assertEqual(current[0][table], before[0][table])
+            self.assertEqual(current[1][table], before[1][table])
+        for table in ("lockers", "locker_compartments", "locker_assignments"):
+            self.assertEqual(current[1][table], [])
+        await self.migrate("check")
+        await self.migrate("downgrade", "0002")
+        self.assertEqual(await self.snapshot(), before)
+        await self.migrate("upgrade", "head")
+        self.assertEqual(await self.snapshot(), current)
+
+    async def test_populated_locker_downgrade_preserves_full_schema_and_history(self):
+        from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
+        from domain.lockers import CompartmentBatch, Dimensions
+
+        lockers = SqlModelLockerRepository(self.sessions)
+        locker = await lockers.create("MAD-01", [CompartmentBatch(1, Dimensions(100, 200, 300))])
+        before = await self.snapshot()
+        with self.assertRaisesRegex(RuntimeError, "(?i)(locker|custody|data)"):
+            await self.migrate("downgrade", "0002")
+        self.assertEqual(await self.snapshot(), before)
+
+        original = Delivery(tracking_number="HISTORY", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW)
+        deliveries = SqlModelDeliveryRepository(self.sessions)
+        assigned = await deliveries.receive_in_locker(original, locker.id, Dimensions(10, 20, 30))
+        for released in (False, True):
+            if released:
+                self.assertTrue(await deliveries.save_exit(assigned.collect(NOW + timedelta(seconds=1))))
+                await lockers.retire_compartment(locker.id, assigned.compartment_id)
+            before = await self.snapshot()
+            statements = []
+            def record(connection, cursor, statement, parameters, context, executemany):
+                statements.append(statement)
+            event.listen(self.engine.sync_engine, "before_cursor_execute", record)
+            try:
+                with self.assertRaisesRegex(RuntimeError, "(?i)(locker|custody|data)"):
+                    await self.migrate("downgrade", "0002")
+            finally:
+                event.remove(self.engine.sync_engine, "before_cursor_execute", record)
+            self.assertEqual(await self.snapshot(), before)
+            lock = next(i for i, sql in enumerate(statements)
+                        if sql.startswith("LOCK TABLE") and "locker" in sql)
+            check = next(i for i, sql in enumerate(statements)
+                         if sql.startswith("SELECT 1 FROM locker"))
+            self.assertLess(lock, check)
+            self.assertFalse(any(sql.lstrip().upper().startswith(("DROP ", "ALTER ", "DELETE "))
+                                 for sql in statements))

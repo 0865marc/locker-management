@@ -141,3 +141,44 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         repository.save.side_effect = RuntimeError("insert failed")
         with self.assertRaises(RuntimeError):
             await ReturnService(repository, lambda: RECEIVED).create("R", "C")
+
+    async def test_locker_reception_returns_repository_complete_entity_without_save(self):
+        from dataclasses import replace
+        from domain.lockers import Dimensions
+        for service_class, port, args in ((DeliveryService, DeliveryRepository, ('D','C','Ana')), (ReturnService, ReturnRepository, ('R','C'))):
+            repository = AsyncMock(spec=port)
+            locker_id, cell_id = uuid4(), uuid4()
+            dimensions = Dimensions(10,20,30)
+            async def receive(entity, identifier, parcel_dimensions):
+                self.assertIsNone(entity.locker_id)
+                self.assertIsNone(entity.compartment_id)
+                self.assertIsNone(entity.parcel_dimensions)
+                return replace(entity, locker_id=identifier, compartment_id=cell_id, parcel_dimensions=parcel_dimensions)
+            repository.receive_in_locker.side_effect = receive
+            result = await service_class(repository, lambda: RECEIVED).create(*args, locker_id=locker_id, parcel_dimensions=dimensions)
+            repository.save.assert_not_awaited()
+            repository.receive_in_locker.assert_awaited_once()
+            self.assertEqual((result.locker_id, result.compartment_id, result.parcel_dimensions), (locker_id,cell_id,dimensions))
+            for partial in ({'locker_id':locker_id},{'parcel_dimensions':dimensions}):
+                repository.reset_mock()
+                with self.assertRaises(ValueError):
+                    await service_class(repository, lambda:RECEIVED).create(*args,**partial)
+                repository.save.assert_not_awaited()
+                repository.receive_in_locker.assert_not_awaited()
+
+    async def test_locker_service_validates_batches_before_repository(self):
+        from application.locker_use_cases import LockerService
+        from domain.lockers import Dimensions, CompartmentBatch
+        from domain.ports import LockerRepository
+        repository = AsyncMock(spec=LockerRepository)
+        service = LockerService(repository)
+        for batches in ([], [CompartmentBatch(1001,Dimensions(1,2,3))]):
+            with self.assertRaises(ValueError):
+                await service.create('Site',batches)
+            repository.create.assert_not_awaited()
+            with self.assertRaises(ValueError):
+                await service.add_compartments(uuid4(),batches)
+            repository.add_compartments.assert_not_awaited()
+        batches = [CompartmentBatch(2,Dimensions(1,2,3))]
+        await service.create(' Site ', batches)
+        repository.create.assert_awaited_once_with('Site',batches,True)

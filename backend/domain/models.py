@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
+from domain.lockers import Dimensions
+
 
 class CustodyConflictError(ValueError):
     """The parcel cannot leave custody in the requested way or at that time."""
@@ -50,6 +52,11 @@ def _normalize_common(parcel: "Delivery | Return") -> None:
         object.__setattr__(parcel, name, _text(getattr(parcel, name), name))
     object.__setattr__(parcel, "received_at", _utc(parcel.received_at, "received_at"))
     object.__setattr__(parcel, "id", _uuid(parcel.id))
+    values = (parcel.locker_id, parcel.compartment_id, parcel.parcel_dimensions)
+    if any(v is not None for v in values):
+        if not (isinstance(parcel.locker_id, UUID) and isinstance(parcel.compartment_id, UUID)
+                and isinstance(parcel.parcel_dimensions, Dimensions)):
+            raise ValueError("La asignación debe estar completa")
 
 
 def _exit_at(at: datetime, received_at: datetime) -> datetime:
@@ -71,6 +78,10 @@ class Delivery:
     status: DeliveryStatus = DeliveryStatus.AWAITING_PICKUP
     collected_at: datetime | None = None
     returned_to_carrier_at: datetime | None = None
+
+    locker_id: UUID | None = None
+    compartment_id: UUID | None = None
+    parcel_dimensions: Dimensions | None = None
 
     def __post_init__(self) -> None:
         _normalize_common(self)
@@ -118,6 +129,10 @@ class Return:
     id: UUID = field(default_factory=uuid4)
     status: ReturnStatus = ReturnStatus.AWAITING_CARRIER
     handed_over_at: datetime | None = None
+
+    locker_id: UUID | None = None
+    compartment_id: UUID | None = None
+    parcel_dimensions: Dimensions | None = None
 
     def __post_init__(self) -> None:
         _normalize_common(self)

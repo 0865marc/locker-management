@@ -2,6 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import UUID
 
+from domain.lockers import Dimensions
 from domain.models import CustodyConflictError, Delivery, Return
 from domain.ports import DeliveryRepository, ReturnRepository
 
@@ -26,6 +27,8 @@ class DeliveryService:
         recipient_name: str,
         recipient_phone: str | None = None,
         pickup_deadline_at: datetime | None = None,
+        locker_id: UUID | None = None,
+        parcel_dimensions: Dimensions | None = None,
     ) -> Delivery:
         delivery = Delivery(
             tracking_number=tracking_number,
@@ -35,6 +38,9 @@ class DeliveryService:
             pickup_deadline_at=pickup_deadline_at,
             received_at=self.clock(),
         )
+        _validate_reception(locker_id, parcel_dimensions)
+        if locker_id is not None:
+            return await self.repository.receive_in_locker(delivery, locker_id, parcel_dimensions)
         await self.repository.save(delivery)
         return delivery
 
@@ -66,13 +72,16 @@ class ReturnService:
         self.repository = repository
         self.clock = clock
 
-    async def create(self, tracking_number: str, carrier_code: str, sender_name: str | None = None) -> Return:
+    async def create(self, tracking_number: str, carrier_code: str, sender_name: str | None = None, locker_id: UUID | None = None, parcel_dimensions: Dimensions | None = None) -> Return:
         item = Return(
             tracking_number=tracking_number,
             carrier_code=carrier_code,
             sender_name=sender_name,
             received_at=self.clock(),
         )
+        _validate_reception(locker_id, parcel_dimensions)
+        if locker_id is not None:
+            return await self.repository.receive_in_locker(item, locker_id, parcel_dimensions)
         await self.repository.save(item)
         return item
 
@@ -87,3 +96,10 @@ class ReturnService:
         if not await self.repository.save_exit(updated):
             raise CustodyConflictError("Otro proceso ya ha registrado la salida del paquete")
         return updated
+
+
+def _validate_reception(locker_id, dimensions):
+    if (locker_id is None) != (dimensions is None):
+        raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
+    if locker_id is not None and (not isinstance(locker_id, UUID) or not isinstance(dimensions, Dimensions)):
+        raise ValueError("Asignación inválida")
