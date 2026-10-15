@@ -77,7 +77,7 @@ class LockerDomainTests(unittest.TestCase):
 
     def test_geography_http_schema_creation_and_patch_contract(self) -> None:
         from pydantic import ValidationError
-        from adapters.http.locker_schemas import CreateLocker, UpdateLocker
+        from adapters.http.lockers.schemas import CreateLocker, UpdateLocker
         address = dict(country_code='ES', postal_code='01001', province='P', city='C', street='S', street_number='s/n')
         batches = [dict(quantity=1, dimensions=dict(width_mm=1, height_mm=2, depth_mm=3))]
         self.assertIsNone(CreateLocker.model_validate({'compartments': batches, 'address': address}).location_id)

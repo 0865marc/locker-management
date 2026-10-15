@@ -3,9 +3,8 @@ from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from domain.validation import CustodyConflictError
-from domain.deliveries import Delivery, DeliveryStatus
-from domain.returns import Return, ReturnStatus
+from domain.deliveries import Delivery, DeliveryStatus, DeliveryConflictError
+from domain.returns import Return, ReturnStatus, ReturnConflictError
 
 
 RECEIVED = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
@@ -100,7 +99,7 @@ class DomainTests(unittest.TestCase):
                 self.assertIsNone(original.collected_at)
                 self.assertIsNone(original.returned_to_carrier_at)
                 for repeated in ("collect", "return_to_carrier"):
-                    with self.assertRaises(CustodyConflictError):
+                    with self.assertRaises(DeliveryConflictError):
                         getattr(updated, repeated)(EXIT + timedelta(hours=1))
                 self.assertEqual(getattr(updated, field), EXIT)
 
@@ -112,14 +111,14 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(updated.handed_over_at, EXIT)
         self.assertEqual(original.status, ReturnStatus.AWAITING_CARRIER)
         self.assertIsNone(original.handed_over_at)
-        with self.assertRaises(CustodyConflictError):
+        with self.assertRaises(ReturnConflictError):
             updated.hand_over(EXIT + timedelta(hours=1))
         self.assertEqual(updated.handed_over_at, EXIT)
 
     def test_exits_reject_backwards_time_and_accept_reception_time(self) -> None:
-        for item, method in ((delivery(), "collect"), (delivery(), "return_to_carrier"), (return_parcel(), "hand_over")):
+        for item, method, conflict_error in ((delivery(), "collect", DeliveryConflictError), (delivery(), "return_to_carrier", DeliveryConflictError), (return_parcel(), "hand_over", ReturnConflictError)):
             with self.subTest(method=method):
-                with self.assertRaises(CustodyConflictError):
+                with self.assertRaises(conflict_error):
                     getattr(item, method)(RECEIVED - timedelta(microseconds=1))
                 getattr(item, method)(RECEIVED)
 

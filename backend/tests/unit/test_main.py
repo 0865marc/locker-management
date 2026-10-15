@@ -1,12 +1,14 @@
 """Composition and startup with simulated infrastructure only."""
 
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from application.delivery_use_cases import DeliveryService
-from application.return_use_cases import ReturnService
+from application.deliveries import DeliveryService
+from application.returns import ReturnService
+from domain.ports import DeliveryRepository, ReturnRepository, LockerRepository
 
 
 class CompositionTests(unittest.TestCase):
@@ -23,7 +25,7 @@ class CompositionTests(unittest.TestCase):
         delivery_repo.assert_called_once_with(sessions)
         return_repo.assert_called_once_with(sessions)
         locker_repo.assert_called_once_with(sessions)
-        from application.locker_use_cases import LockerService
+        from application.lockers import LockerService
         self.assertIsInstance(app.state.locker_service, LockerService)
         self.assertIsInstance(app.state.delivery_service, DeliveryService)
         self.assertIsInstance(app.state.return_service, ReturnService)
@@ -43,4 +45,33 @@ class CompositionTests(unittest.TestCase):
         factory.assert_called_once_with("postgresql+asyncpg://unused/unused")
         engine.connect.assert_not_called()
         engine.begin.assert_not_called()
+        engine.dispose.assert_awaited_once_with()
+
+    def test_composition_provides_real_utc_clock_for_both_receptions(self) -> None:
+        from main import create_app
+
+        engine = AsyncMock()
+        delivery_repository = AsyncMock(spec=DeliveryRepository)
+        return_repository = AsyncMock(spec=ReturnRepository)
+        locker_repository = AsyncMock(spec=LockerRepository)
+        with patch("main.create_database", return_value=(engine, object())), \
+             patch("main.SqlModelDeliveryRepository", return_value=delivery_repository), \
+             patch("main.SqlModelReturnRepository", return_value=return_repository), \
+             patch("main.SqlModelLockerRepository", return_value=locker_repository):
+            app = create_app("postgresql+asyncpg://unused/unused")
+        before = datetime.now(timezone.utc)
+        with TestClient(app) as client:
+            for path, payload in (
+                ("/deliveries", {"tracking_number": "D", "carrier_code": "C", "recipient_name": "Ana"}),
+                ("/returns", {"tracking_number": "R", "carrier_code": "C"}),
+            ):
+                with self.subTest(path=path):
+                    response = client.post(path, json=payload)
+                    self.assertEqual(response.status_code, 201)
+                    received = datetime.fromisoformat(response.json()["received_at"].replace("Z", "+00:00"))
+                    self.assertIs(received.tzinfo, timezone.utc)
+                    self.assertLessEqual(before, received)
+                    self.assertLessEqual(received, datetime.now(timezone.utc))
+        delivery_repository.save.assert_awaited_once()
+        return_repository.save.assert_awaited_once()
         engine.dispose.assert_awaited_once_with()

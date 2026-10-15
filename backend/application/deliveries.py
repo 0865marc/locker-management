@@ -2,16 +2,17 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
-from domain.deliveries import Delivery
-from domain.validation import CustodyConflictError
+from domain.deliveries import Delivery, DeliveryConflictError
 from domain.lockers import Dimensions, validate_reception
 from domain.ports import DeliveryRepository
-from application.errors import ParcelNotFoundError
-from application.clock import utc_now
+
+
+class DeliveryNotFoundError(LookupError):
+    """No parcel exists with the requested UUID in this flow."""
 
 
 class DeliveryService:
-    def __init__(self, repository: DeliveryRepository, clock: Callable[[], datetime] = utc_now) -> None:
+    def __init__(self, repository: DeliveryRepository, clock: Callable[[], datetime]) -> None:
         self.repository = repository
         self.clock = clock
 
@@ -53,10 +54,10 @@ class DeliveryService:
     async def _find(self, identifier: UUID) -> Delivery:
         delivery = await self.repository.get_by_id(identifier)
         if delivery is None:
-            raise ParcelNotFoundError("Delivery no encontrada")
+            raise DeliveryNotFoundError("Delivery no encontrada")
         return delivery
 
     async def _save_parcel_departure(self, delivery: Delivery) -> Delivery:
         if not await self.repository.save_exit(delivery):
-            raise CustodyConflictError("Otro proceso ya ha registrado la salida del paquete")
+            raise DeliveryConflictError("Otro proceso ya ha registrado la salida del paquete")
         return delivery

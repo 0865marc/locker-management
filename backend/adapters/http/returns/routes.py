@@ -1,14 +1,12 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
-from adapters.http.return_schemas import CreateReturn, ReturnResponse
+from adapters.http.returns.schemas import CreateReturn, ReturnResponse
 from adapters.http.request_validation import require_empty_action_body
-from adapters.http.locker_routes import capacity_http
-from application.return_use_cases import ReturnService
-from application.errors import ParcelNotFoundError
+from adapters.http.lockers.routes import capacity_http
+from application.returns import ReturnService, ReturnNotFoundError
 from domain.lockers import CapacityConflictError, LockerNotFoundError
-from domain.validation import CustodyConflictError
-from domain.returns import Return
+from domain.returns import Return, ReturnConflictError
 
 
 def create_return_router(returns: ReturnService) -> APIRouter:
@@ -36,9 +34,9 @@ def create_return_router(returns: ReturnService) -> APIRouter:
     async def hand_over_return(id: UUID) -> Return:
         try:
             return await returns.hand_over(id)
-        except ParcelNotFoundError as error:
+        except ReturnNotFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
-        except CustodyConflictError as error:
+        except ReturnConflictError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
     return router

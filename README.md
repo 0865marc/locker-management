@@ -227,13 +227,13 @@ from adapters.providers.simulated_shipping import (
     SimulatedStandardProvider,
     SimulatedExpressProvider,
 )
-from application.shipping_quote_use_cases import QuoteShipping
+from application.shipping_quotes import ShippingQuoteService
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 
 
 async def main() -> None:
-    comparator = QuoteShipping([
+    comparator = ShippingQuoteService([
         SimulatedEconomyProvider(),
         SimulatedStandardProvider(),
         SimulatedExpressProvider(),
@@ -261,7 +261,9 @@ sim-standard QUOTED standard 520 EUR 2 2
 
 La colección inyectada es obligatoria, no vacía y tiene códigos abiertos,
 recortados y únicos. `compare` devuelve una tupla de `ProviderResult` ordenada
-por proveedor, con ofertas ordenadas por servicio. Cada proveedor puede ofrecer
+por proveedor, con ofertas ordenadas por servicio. El resultado y sus estados
+pertenecen a `application.shipping_quotes`; las solicitudes, ofertas y
+`NoCoverage` pertenecen a `domain.shipping_quotes`. Cada proveedor puede ofrecer
 varios servicios (`QuoteOffers`), rechazar cobertura (`NoCoverage`) o fallar de
 forma aislada. Los estados son `QUOTED`, `NOT_COVERED` y `FAILED`; los errores
 normalizados son `PROVIDER_ERROR` y `PROVIDER_TIMEOUT`, sin payloads externos.
@@ -285,26 +287,27 @@ hexagonal_architecture/
 │   ├── domain/
 │   │   ├── deliveries.py
 │   │   ├── returns.py
-│   │   ├── validation.py
 │   │   ├── lockers.py
 │   │   ├── shipping_quotes.py
 │   │   └── ports.py
 │   ├── application/
-│   │   ├── delivery_use_cases.py
-│   │   ├── return_use_cases.py
-│   │   ├── locker_use_cases.py
-│   │   ├── shipping_quote_use_cases.py
-│   │   ├── errors.py
-│   │   └── clock.py
+│   │   ├── deliveries.py
+│   │   ├── returns.py
+│   │   ├── lockers.py
+│   │   └── shipping_quotes.py
 │   ├── adapters/
 │   │   ├── http/
-│   │   │   ├── delivery_routes.py
-│   │   │   ├── delivery_schemas.py
-│   │   │   ├── return_routes.py
-│   │   │   ├── return_schemas.py
-│   │   │   ├── request_validation.py
-│   │   │   ├── locker_routes.py
-│   │   │   └── locker_schemas.py
+│   │   │   ├── deliveries/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
+│   │   │   ├── returns/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
+│   │   │   ├── lockers/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
+│   │   │   ├── routes.py
+│   │   │   └── request_validation.py
 │   │   ├── providers/
 │   │   │   └── simulated_shipping.py
 │   │   └── database/
@@ -348,9 +351,9 @@ hexagonal_architecture/
 Se omiten los archivos `__init__.py`. La organización prioriza las capas:
 Delivery y Return tienen archivos propios para sus entidades, casos de uso y
 adaptadores. Las reglas compartidas de asignación y capacidad permanecen en Locker.
-Los módulos técnicos `validation.py`, `errors.py`, `clock.py` y
-`request_validation.py` conservan validación escalar, errores, reloj y validación
-del cuerpo HTTP. La conexión,
+Cada flujo conserva sus validadores y errores de dominio; sus servicios declaran
+el error de registro inexistente. HTTP agrupa rutas y esquemas en paquetes por
+área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
 los repositorios y las migraciones se agrupan en `backend/adapters/database/`; las rutas
 y los modelos HTTP, en `backend/adapters/http/`. Ambos adaptadores son externos al núcleo,
 pero se ejecutan en el mismo proceso: no son microservicios.
@@ -359,25 +362,24 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 
 | Archivo | Responsabilidad |
 | --- | --- |
-| `backend/domain/deliveries.py` | Entidad `Delivery`, estado `DeliveryStatus` y transiciones inmutables. Solo Python. |
-| `backend/domain/returns.py` | Entidad `Return`, estado `ReturnStatus` y transiciones inmutables. Solo Python. |
-| `backend/domain/validation.py` | Validadores escalares compartidos y `CustodyConflictError`. |
+| `backend/domain/deliveries.py` | Entidad `Delivery`, estado `DeliveryStatus`, validación y `DeliveryConflictError`. Solo Python. |
+| `backend/domain/returns.py` | Entidad `Return`, estado `ReturnStatus`, validación y `ReturnConflictError`. Solo Python. |
 | `backend/domain/lockers.py` | Dimensiones, celdas, lockers y reglas de asignación/recepción, sin infraestructura. |
-| `backend/domain/shipping_quotes.py` | Datos de transporte, ofertas y resultados normalizados inmutables. |
+| `backend/domain/shipping_quotes.py` | Solicitud de transporte, ofertas y respuesta de falta de cobertura (`NoCoverage`), inmutables y validadas. |
 | `backend/domain/ports.py` | Puertos de repositorios y `ShippingProvider`: contratos de salida de la aplicación. |
-| `backend/application/delivery_use_cases.py` y `return_use_cases.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas mediante los puertos de persistencia y un reloj UTC inyectable. |
-| `backend/application/errors.py` y `clock.py` | Error `ParcelNotFoundError` y reloj `utc_now`. |
-| `backend/application/locker_use_cases.py` | Casos de uso de configuración y disponibilidad de lockers. |
-| `backend/application/shipping_quote_use_cases.py` | Comparación asíncrona de proveedores inyectados. |
-| `backend/adapters/http/delivery_routes.py` y `delivery_schemas.py` | Router de Delivery y sus contratos HTTP. |
-| `backend/adapters/http/return_routes.py` y `return_schemas.py` | Router de Return y sus contratos HTTP. |
-| `backend/adapters/http/locker_routes.py` y `locker_schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
+| `backend/application/deliveries.py` y `returns.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas con reloj explícito y puertos de persistencia. Declaran `DeliveryNotFoundError` y `ReturnNotFoundError`. |
+| `backend/application/lockers.py` | Casos de uso de configuración y disponibilidad de lockers. |
+| `backend/application/shipping_quotes.py` | `ShippingQuoteService` compara proveedores inyectados; `ProviderResult`, `ProviderStatus` y `ProviderErrorCode` expresan sus resultados. |
+| `backend/adapters/http/deliveries/routes.py` y `schemas.py` | Router de Delivery y sus contratos HTTP. |
+| `backend/adapters/http/returns/routes.py` y `schemas.py` | Router de Return y sus contratos HTTP. |
+| `backend/adapters/http/lockers/routes.py` y `schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
+| `backend/adapters/http/routes.py` | Agrega los tres routers mediante `create_router`, recibiendo servicios ya construidos. |
 | `backend/adapters/http/request_validation.py` | Validación compartida de cuerpos vacíos en las acciones de salida. |
 | `backend/adapters/database/sqlmodel_deliveries.py` y `sqlmodel_returns.py` | Tablas, filas, conversiones y repositorios SQLModel de cada flujo; conservan sus consultas y transacciones. |
 | `backend/adapters/database/sqlmodel_lockers.py` | Persistencia de configuración y asignaciones, elección de celda, bloqueo/liberación y normalización UTC de persistencia. |
 | `backend/adapters/database/connection.py` | Crea el motor y la fábrica de sesiones compartidos. |
 | `backend/adapters/providers/simulated_shipping.py` | Tres adaptadores de transporte simulados, sin servicios externos. |
-| `backend/main.py` | Punto de composición: conecta repositorios, servicios y tres routers; crea la aplicación y gestiona su ciclo de vida. |
+| `backend/main.py` | Punto de composición: conecta repositorios y servicios, proporciona `utc_now` e incluye el router agregado; gestiona motor y ciclo de vida. |
 | `backend/adapters/database/migrations/env.py` | Conecta Alembic con la base de datos y con `SQLModel.metadata`. |
 | `backend/adapters/database/migrations/versions/` | Historial de cambios del esquema, independiente del arranque de la API. |
 
@@ -394,9 +396,13 @@ de uso trabajar con repositorios sin depender de su implementación concreta.
 
 `create_app()` crea una vez por aplicación `DeliveryService`, `ReturnService` y `LockerService`,
 y conserva sus referencias en `app.state.delivery_service`,
-`app.state.return_service` y `app.state.locker_service`. Inyecta cada instancia en
-su fábrica: `create_locker_router(lockers)`, `create_delivery_router(delivery)` y
-`create_return_router(returns)`. Registra los routers en ese orden. Las rutas
+`app.state.return_service` y `app.state.locker_service`. Suministra `utc_now`,
+que devuelve la hora UTC real, como segundo argumento obligatorio de
+`DeliveryService` y `ReturnService`. Los consumidores directos también deben
+proporcionar un `Callable[[], datetime]`; las pruebas usan relojes controlados.
+El agregador `create_router(delivery_service, return_service, locker_service)`
+recibe las tres instancias e incluye sus routers en orden Locker/Delivery/Return,
+sin construir dependencias. Las rutas
 reutilizan los servicios recibidos, sin instanciarlos por petición ni buscarlos
 en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
 

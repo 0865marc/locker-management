@@ -2,11 +2,11 @@ from uuid import UUID
 from math import isfinite
 from typing import Annotated, TypeGuard, TypeVar
 from collections.abc import Awaitable, Mapping, Sequence
-from application.locker_use_cases import LockerService
+from application.lockers import LockerService
 from pydantic import BeforeValidator
 from fastapi import APIRouter, HTTPException, Query, Response, Request, Depends
 from domain.lockers import CapacityConflictError, Dimensions, LockerNotFoundError, Locker, Compartment, Availability
-from adapters.http.locker_schemas import AddCompartments, AvailabilityResponse, CompartmentResponse, CreateLocker, LockerResponse, UpdateCompartment, UpdateLocker
+from adapters.http.lockers.schemas import AddCompartments, AvailabilityResponse, CompartmentResponse, CreateLocker, LockerResponse, UpdateCompartment, UpdateLocker
 
 def capacity_http(error: CapacityConflictError) -> HTTPException:
     return HTTPException(status_code=409, detail={'code': error.code, 'message': str(error)})

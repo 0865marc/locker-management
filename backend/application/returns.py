@@ -2,16 +2,17 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
-from domain.returns import Return
-from domain.validation import CustodyConflictError
+from domain.returns import Return, ReturnConflictError
 from domain.lockers import Dimensions, validate_reception
 from domain.ports import ReturnRepository
-from application.errors import ParcelNotFoundError
-from application.clock import utc_now
+
+
+class ReturnNotFoundError(LookupError):
+    """No parcel exists with the requested UUID in this flow."""
 
 
 class ReturnService:
-    def __init__(self, repository: ReturnRepository, clock: Callable[[], datetime] = utc_now) -> None:
+    def __init__(self, repository: ReturnRepository, clock: Callable[[], datetime]) -> None:
         self.repository = repository
         self.clock = clock
 
@@ -34,8 +35,8 @@ class ReturnService:
     async def hand_over(self, identifier: UUID) -> Return:
         item = await self.repository.get_by_id(identifier)
         if item is None:
-            raise ParcelNotFoundError("Return no encontrada")
+            raise ReturnNotFoundError("Return no encontrada")
         updated = item.hand_over(self.clock())
         if not await self.repository.save_exit(updated):
-            raise CustodyConflictError("Otro proceso ya ha registrado la salida del paquete")
+            raise ReturnConflictError("Otro proceso ya ha registrado la salida del paquete")
         return updated

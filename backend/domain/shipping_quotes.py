@@ -1,6 +1,5 @@
 """Immutable transport inputs and normalized provider outcomes, without infrastructure."""
 from dataclasses import dataclass
-from enum import Enum
 
 from domain.lockers import Dimensions, require_instance
 from typing import TypeGuard
@@ -91,35 +90,3 @@ class QuoteOffers:
 @dataclass(frozen=True)
 class NoCoverage:
     """A valid business rejection, distinct from a technical failure."""
-
-
-class ProviderStatus(str, Enum):
-    QUOTED = 'QUOTED'
-    NOT_COVERED = 'NOT_COVERED'
-    FAILED = 'FAILED'
-
-
-class ProviderErrorCode(str, Enum):
-    PROVIDER_ERROR = 'PROVIDER_ERROR'
-    PROVIDER_TIMEOUT = 'PROVIDER_TIMEOUT'
-
-
-@dataclass(frozen=True)
-class ProviderResult:
-    provider_code: str
-    status: ProviderStatus
-    offers: tuple[ShippingOffer, ...] = ()
-    error_code: ProviderErrorCode | None = None
-
-    def __post_init__(self) -> None:
-        validate_code(self.provider_code, 'provider_code')
-        _validate_offers(self.offers)
-        require_instance(self.status, ProviderStatus, 'Invalid provider status')
-        if self.status is ProviderStatus.QUOTED:
-            if not self.offers or self.error_code is not None:
-                raise ValueError('QUOTED requires offers and no error')
-        elif self.status is ProviderStatus.NOT_COVERED:
-            if self.offers or self.error_code is not None:
-                raise ValueError('NOT_COVERED requires no offers and no error')
-        elif self.offers or not isinstance(self.error_code, ProviderErrorCode):
-            raise ValueError('FAILED requires no offers and a provider error code')

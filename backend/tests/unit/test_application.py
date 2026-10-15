@@ -3,14 +3,13 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
+from typing import TypeAlias
 
-from application.delivery_use_cases import DeliveryService
-from application.errors import ParcelNotFoundError
-from application.return_use_cases import ReturnService
+from application.deliveries import DeliveryService, DeliveryNotFoundError
+from application.returns import ReturnService, ReturnNotFoundError
 from domain.lockers import Dimensions
-from domain.validation import CustodyConflictError
-from domain.deliveries import Delivery, DeliveryStatus
-from domain.returns import Return, ReturnStatus
+from domain.deliveries import Delivery, DeliveryStatus, DeliveryConflictError
+from domain.returns import Return, ReturnStatus, ReturnConflictError
 from domain.ports import DeliveryRepository, ReturnRepository
 
 
@@ -33,13 +32,25 @@ async def create_parcel(
                                 locker_id=locker_id, parcel_dimensions=parcel_dimensions)
 
 
+ApplicationCase: TypeAlias = tuple[
+    type[DeliveryService] | type[ReturnService],
+    object,
+    Delivery | Return,
+    str,
+    DeliveryStatus | ReturnStatus,
+    str,
+    type[LookupError],
+    type[ValueError],
+]
+
+
 class ApplicationTests(unittest.IsolatedAsyncioTestCase):
-    def cases(self) -> tuple[tuple[type[DeliveryService] | type[ReturnService], object, Delivery | Return, str, DeliveryStatus | ReturnStatus, str], ...]:
+    def cases(self) -> tuple[ApplicationCase, ...]:
         # The protocol objects are Mock specs, not concrete classes to instantiate.
         return (
-            (DeliveryService, DeliveryRepository, Delivery(tracking_number="D", carrier_code="C", recipient_name="Ana", received_at=RECEIVED), "collect", DeliveryStatus.COLLECTED, "collected_at"),
-            (DeliveryService, DeliveryRepository, Delivery(tracking_number="D", carrier_code="C", recipient_name="Ana", received_at=RECEIVED), "return_to_carrier", DeliveryStatus.RETURNED_TO_CARRIER, "returned_to_carrier_at"),
-            (ReturnService, ReturnRepository, Return(tracking_number="R", carrier_code="C", received_at=RECEIVED), "hand_over", ReturnStatus.HANDED_OVER, "handed_over_at"),
+            (DeliveryService, DeliveryRepository, Delivery(tracking_number="D", carrier_code="C", recipient_name="Ana", received_at=RECEIVED), "collect", DeliveryStatus.COLLECTED, "collected_at", DeliveryNotFoundError, DeliveryConflictError),
+            (DeliveryService, DeliveryRepository, Delivery(tracking_number="D", carrier_code="C", recipient_name="Ana", received_at=RECEIVED), "return_to_carrier", DeliveryStatus.RETURNED_TO_CARRIER, "returned_to_carrier_at", DeliveryNotFoundError, DeliveryConflictError),
+            (ReturnService, ReturnRepository, Return(tracking_number="R", carrier_code="C", received_at=RECEIVED), "hand_over", ReturnStatus.HANDED_OVER, "handed_over_at", ReturnNotFoundError, ReturnConflictError),
         )
 
     async def test_delivery_normalizes_and_persists_with_injected_clock(self) -> None:
@@ -63,12 +74,6 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         repository.save.assert_awaited_once_with(item)
         repository.get_by_id.assert_not_awaited()
 
-    async def test_default_clock_assigns_aware_utc_reception(self) -> None:
-        for service_class, port, args in ((DeliveryService, DeliveryRepository, ("D", "C", "Ana")), (ReturnService, ReturnRepository, ("R", "C"))):
-            repository = AsyncMock(spec=port)
-            item = await create_parcel(service_class(repository), args)
-            self.assertIs(item.received_at.tzinfo, timezone.utc)
-
     async def test_invalid_creation_never_writes(self) -> None:
         for service_class, port, args in ((DeliveryService, DeliveryRepository, ["D", "C", "Ana"]), (ReturnService, ReturnRepository, ["R", "C"])):
             for index in range(len(args)):
@@ -90,12 +95,12 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         for service_class, port, item, *_ in self.cases():
             repository = AsyncMock(spec=port)
             repository.list_all.return_value = [item]
-            self.assertEqual(await service_class(repository).list_all(), [item])
+            self.assertEqual(await service_class(repository, lambda: RECEIVED).list_all(), [item])
             repository.list_all.assert_awaited_once_with()
             repository.save.assert_not_awaited()
 
     async def test_successful_exits_use_clock_and_persist_before_returning(self) -> None:
-        for service_class, port, item, method, status, field in self.cases():
+        for service_class, port, item, method, status, field, *_ in self.cases():
             with self.subTest(method=method):
                 repository = AsyncMock(spec=port)
                 repository.get_by_id.return_value = item
@@ -110,18 +115,18 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(getattr(item, field))
 
     async def test_unknown_parcels_raise_typed_absence_without_writes_or_clock(self) -> None:
-        for service_class, port, _, method, *_ in self.cases():
+        for service_class, port, _, method, _, _, not_found_error, _ in self.cases():
             repository = AsyncMock(spec=port)
             repository.get_by_id.return_value = None
             clock = Mock(return_value=EXIT)
-            with self.assertRaises(ParcelNotFoundError):
+            with self.assertRaises(not_found_error):
                 await getattr(service_class(repository, clock), method)(uuid4())
             repository.save.assert_not_awaited()
             repository.save_exit.assert_not_awaited()
             clock.assert_not_called()
 
     async def test_repeated_incompatible_and_backwards_exits_never_write(self) -> None:
-        for service_class, port, item, method, *_ in self.cases():
+        for service_class, port, item, method, _, _, _, conflict_error in self.cases():
             terminal = getattr(item, method)(EXIT)
             invalid_items = [terminal]
             if isinstance(item, Delivery):
@@ -130,22 +135,22 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
             for stored in invalid_items:
                 repository = AsyncMock(spec=port)
                 repository.get_by_id.return_value = stored
-                with self.assertRaises(CustodyConflictError):
+                with self.assertRaises(conflict_error):
                     await getattr(service_class(repository, lambda: EXIT), method)(item.id)
                 repository.save_exit.assert_not_awaited()
                 repository.save.assert_not_awaited()
             repository = AsyncMock(spec=port)
             repository.get_by_id.return_value = item
-            with self.assertRaises(CustodyConflictError):
+            with self.assertRaises(conflict_error):
                 await getattr(service_class(repository, lambda: RECEIVED - timedelta(seconds=1)), method)(item.id)
             repository.save_exit.assert_not_awaited()
 
     async def test_conditional_write_loss_becomes_conflict_and_preserves_input(self) -> None:
-        for service_class, port, item, method, *_ in self.cases():
+        for service_class, port, item, method, _, _, _, conflict_error in self.cases():
             repository = AsyncMock(spec=port)
             repository.get_by_id.return_value = item
             repository.save_exit.return_value = False
-            with self.assertRaises(CustodyConflictError):
+            with self.assertRaises(conflict_error):
                 await getattr(service_class(repository, lambda: EXIT), method)(item.id)
             repository.save_exit.assert_awaited_once()
             repository.save.assert_not_awaited()
@@ -190,7 +195,7 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
                 repository.receive_in_locker.assert_not_awaited()
 
     async def test_locker_service_validates_batches_before_repository(self) -> None:
-        from application.locker_use_cases import LockerService
+        from application.lockers import LockerService
         from domain.lockers import Dimensions, CompartmentBatch
         from domain.ports import LockerRepository
         repository = AsyncMock(spec=LockerRepository)

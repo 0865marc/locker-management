@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import AwareDatetime, field_validator, ConfigDict, StrictStr
-from adapters.http.locker_schemas import ReceptionInput, AssignmentResponse
+from adapters.http.lockers.schemas import ReceptionInput, AssignmentResponse
 from domain.deliveries import DeliveryStatus
 
 

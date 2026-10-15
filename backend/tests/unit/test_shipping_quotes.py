@@ -10,14 +10,13 @@ from adapters.providers.simulated_shipping import (
     SimulatedExpressProvider,
     SimulatedStandardProvider,
 )
-from application.shipping_quote_use_cases import QuoteShipping
+from application.shipping_quotes import (
+    ShippingQuoteService, ProviderErrorCode, ProviderResult, ProviderStatus,
+)
 from domain.lockers import Dimensions
 from domain.ports import ProviderTechnicalError, ShippingProvider
 from domain.shipping_quotes import (
     NoCoverage,
-    ProviderErrorCode,
-    ProviderResult,
-    ProviderStatus,
     QuoteOffers,
     ShippingOffer,
     ShippingQuoteRequest,
@@ -124,7 +123,7 @@ class ShippingContractTests(TestCase):
         collections.extend([[ProviderDouble(code)] for code in ('', ' ', ' untrimmed', 'trailing ')])
         for collection in collections:
             with self.subTest(collection=collection), self.assertRaises(ValueError):
-                QuoteShipping(collection)
+                ShippingQuoteService(collection)
         bad_settings: list[dict[str, object]] = [
             {'max_concurrency': 0}, {'max_concurrency': True}, {'max_concurrency': 1.0},
             {'timeout_seconds': 0}, {'timeout_seconds': -1}, {'timeout_seconds': True},
@@ -133,7 +132,7 @@ class ShippingContractTests(TestCase):
         for settings in bad_settings:
             with self.subTest(settings=settings):
                 # Deliberate runtime contract checks; unittest invokes the typed constructor.
-                self.assertRaises(ValueError, QuoteShipping, [provider], **settings)
+                self.assertRaises(ValueError, ShippingQuoteService, [provider], **settings)
         self.assertEqual(provider.calls, 0)
 
 
@@ -147,7 +146,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
         fourth = ProviderDouble('independent-V4', multiple)
         providers: list[ShippingProvider] = [SimulatedStandardProvider(), SimulatedExpressProvider(),
                                              fourth, SimulatedEconomyProvider()]
-        comparator = QuoteShipping(providers)
+        comparator = ShippingQuoteService(providers)
         providers.clear()  # Configuration was copied, including its code identities.
         results = await comparator.compare(request())
         self.assertIsInstance(results, tuple)
@@ -161,7 +160,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
         self.assertTrue(all(result.status is ProviderStatus.QUOTED for result in results))
 
     async def test_simulator_extremes_rounding_zone_and_repeatability(self) -> None:
-        comparator = QuoteShipping([SimulatedEconomyProvider(), SimulatedStandardProvider(),
+        comparator = ShippingQuoteService([SimulatedEconomyProvider(), SimulatedStandardProvider(),
                                     SimulatedExpressProvider()])
         extreme = replace(request(), destination_postal_code='28001', weight_grams=30000,
                           dimensions=Dimensions(2000, 2000, 2000))
@@ -201,7 +200,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
         providers = [ProviderDouble('covered'), ProviderDouble('not-covered', no_coverage),
                      ProviderDouble('technical', technical), ProviderDouble('unexpected', unexpected),
                      ProviderDouble('malformed', malformed), ProviderDouble('external-timeout', external_timeout)]
-        results = {item.provider_code: item for item in await QuoteShipping(providers).compare(request())}
+        results = {item.provider_code: item for item in await ShippingQuoteService(providers).compare(request())}
         self.assertEqual(results['covered'].status, ProviderStatus.QUOTED)
         self.assertEqual(results['not-covered'], ProviderResult('not-covered', ProviderStatus.NOT_COVERED))
         for code in ('technical', 'unexpected', 'malformed', 'external-timeout'):
@@ -210,7 +209,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
         self.assertTrue(all(provider.calls == 1 for provider in providers))
         self.assertNotIn('secret', repr(results))
         self.assertNotIn('sensitive', repr(results))
-        all_rejected = await QuoteShipping(providers[1:]).compare(request())
+        all_rejected = await ShippingQuoteService(providers[1:]).compare(request())
         self.assertEqual(len(all_rejected), 5)
         self.assertTrue(all(not result.offers for result in all_rejected))
 
@@ -230,7 +229,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
                     object.__setattr__(invalid, 'offers', collection)
                     return invalid
 
-                results = await QuoteShipping([ProviderDouble('bad', malformed),
+                results = await ShippingQuoteService([ProviderDouble('bad', malformed),
                                                ProviderDouble('good')]).compare(request())
                 self.assertEqual(results[0].error_code, ProviderErrorCode.PROVIDER_ERROR)
                 self.assertEqual(results[0].offers, ())
@@ -244,7 +243,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
             object.__setattr__(invalid, name, getattr(request(), name))
         object.__setattr__(invalid, 'weight_grams', True)
         with self.assertRaises(ValueError):
-            await QuoteShipping([provider]).compare(invalid)
+            await ShippingQuoteService([provider]).compare(invalid)
         self.assertEqual(provider.calls, 0)
 
     async def test_default_three_slots_and_waiters_start_only_after_release(self) -> None:
@@ -267,7 +266,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
             return quote
 
         providers = [ProviderDouble(code, callback(code)) for code in 'edcba']
-        task = asyncio.create_task(QuoteShipping(providers).compare(request()))
+        task = asyncio.create_task(ShippingQuoteService(providers).compare(request()))
         try:
             await asyncio.wait_for(asyncio.gather(*(entered[code].wait() for code in 'abc')), 1)
             self.assertFalse(entered['d'].is_set())
@@ -304,7 +303,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
             finally:
                 active -= 1
 
-        comparator = QuoteShipping([ProviderDouble(code, quote) for code in 'abc'])
+        comparator = ShippingQuoteService([ProviderDouble(code, quote) for code in 'abc'])
         tasks = [asyncio.create_task(comparator.compare(request())) for _ in range(2)]
         try:
             await asyncio.wait_for(entered_six.wait(), 1)
@@ -330,7 +329,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
                 cleaned.set()
 
         provider = ProviderDouble('slow', slow)
-        results = await asyncio.wait_for(QuoteShipping([provider, ProviderDouble('fast')]).compare(request()), 4)
+        results = await asyncio.wait_for(ShippingQuoteService([provider, ProviderDouble('fast')]).compare(request()), 4)
         self.assertTrue(entered.is_set())
         self.assertTrue(cleaned.is_set())
         self.assertEqual(results[0].status, ProviderStatus.QUOTED)
@@ -360,9 +359,9 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
                 await release_cleanup.wait()
 
         waiter = ProviderDouble('b-waiter')
-        comparator = QuoteShipping([ProviderDouble('a-slow', slow), waiter],
+        comparator = ShippingQuoteService([ProviderDouble('a-slow', slow), waiter],
                                    max_concurrency=1, timeout_seconds=0.02)
-        with patch('application.shipping_quote_use_cases.asyncio.timeout', recorded_timeout):
+        with patch('application.shipping_quotes.asyncio.timeout', recorded_timeout):
             task = asyncio.create_task(comparator.compare(request()))
             try:
                 await asyncio.wait_for(cleanup_started.wait(), 1)
@@ -401,7 +400,7 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
 
         providers = [ProviderDouble(code, blocked) for code in 'abcdef']
         existing = asyncio.all_tasks()
-        task = asyncio.create_task(QuoteShipping(providers).compare(request()))
+        task = asyncio.create_task(ShippingQuoteService(providers).compare(request()))
         await asyncio.wait_for(all_active.wait(), 1)
         owned = asyncio.all_tasks() - existing
         self.assertEqual(len(owned), 7)  # Comparison plus three active and three waiting children.

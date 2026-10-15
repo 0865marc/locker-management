@@ -1,14 +1,12 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
-from adapters.http.delivery_schemas import CreateDelivery, DeliveryResponse
+from adapters.http.deliveries.schemas import CreateDelivery, DeliveryResponse
 from adapters.http.request_validation import require_empty_action_body
-from adapters.http.locker_routes import capacity_http
-from application.delivery_use_cases import DeliveryService
-from application.errors import ParcelNotFoundError
+from adapters.http.lockers.routes import capacity_http
+from application.deliveries import DeliveryService, DeliveryNotFoundError
 from domain.lockers import CapacityConflictError, LockerNotFoundError
-from domain.validation import CustodyConflictError
-from domain.deliveries import Delivery
+from domain.deliveries import Delivery, DeliveryConflictError
 
 
 def create_delivery_router(delivery: DeliveryService) -> APIRouter:
@@ -38,9 +36,9 @@ def create_delivery_router(delivery: DeliveryService) -> APIRouter:
     async def collect_delivery(id: UUID) -> Delivery:
         try:
             return await delivery.collect(id)
-        except ParcelNotFoundError as error:
+        except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
-        except CustodyConflictError as error:
+        except DeliveryConflictError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
     @router.post("/deliveries/{id}/return-to-carrier", response_model=DeliveryResponse,
@@ -48,9 +46,9 @@ def create_delivery_router(delivery: DeliveryService) -> APIRouter:
     async def return_delivery_to_carrier(id: UUID) -> Delivery:
         try:
             return await delivery.return_to_carrier(id)
-        except ParcelNotFoundError as error:
+        except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
-        except CustodyConflictError as error:
+        except DeliveryConflictError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
     return router

@@ -7,14 +7,12 @@ from httpx import Response
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from adapters.http.delivery_routes import create_delivery_router
-from adapters.http.return_routes import create_return_router
-from application.delivery_use_cases import DeliveryService
-from application.errors import ParcelNotFoundError
-from application.return_use_cases import ReturnService
-from domain.validation import CustodyConflictError
-from domain.deliveries import Delivery
-from domain.returns import Return
+from adapters.http.routes import create_router
+from application.lockers import LockerService
+from application.deliveries import DeliveryService, DeliveryNotFoundError
+from application.returns import ReturnService, ReturnNotFoundError
+from domain.deliveries import Delivery, DeliveryConflictError
+from domain.returns import Return, ReturnConflictError
 
 
 class HttpAdapterTests(unittest.TestCase):
@@ -22,8 +20,7 @@ class HttpAdapterTests(unittest.TestCase):
         self.delivery = AsyncMock(spec=DeliveryService)
         self.returns = AsyncMock(spec=ReturnService)
         app = FastAPI()
-        app.include_router(create_delivery_router(self.delivery))
-        app.include_router(create_return_router(self.returns))
+        app.include_router(create_router(self.delivery, self.returns, AsyncMock(spec=LockerService)))
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
         self.at = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
@@ -37,11 +34,11 @@ class HttpAdapterTests(unittest.TestCase):
         )
         self.actions = (
             (f"/deliveries/{self.delivery_entity.id}/collect", self.delivery.collect,
-             self.delivery_entity.collect(self.at)),
+             self.delivery_entity.collect(self.at), DeliveryNotFoundError, DeliveryConflictError),
             (f"/deliveries/{self.delivery_entity.id}/return-to-carrier", self.delivery.return_to_carrier,
-             self.delivery_entity.return_to_carrier(self.at)),
+             self.delivery_entity.return_to_carrier(self.at), DeliveryNotFoundError, DeliveryConflictError),
             (f"/returns/{self.return_entity.id}/hand-over", self.returns.hand_over,
-             self.return_entity.hand_over(self.at)),
+             self.return_entity.hand_over(self.at), ReturnNotFoundError, ReturnConflictError),
         )
 
     def assert_entity(self, response: Response, entity: Delivery | Return) -> None:
@@ -133,7 +130,7 @@ class HttpAdapterTests(unittest.TestCase):
                     self.assertEqual(response.json(), {"detail": "El texto no puede estar vacío"})
 
     def test_actions_delegate_uuid_and_return_complete_entity(self) -> None:
-        for path, operation, entity in self.actions:
+        for path, operation, entity, *_ in self.actions:
             operation.return_value = entity
             for options in ({}, {"json": {}}):
                 with self.subTest(path=path, options=options):
@@ -144,7 +141,7 @@ class HttpAdapterTests(unittest.TestCase):
                     operation.assert_awaited_once_with(entity.id)
 
     def test_invalid_action_bodies_and_identifiers_do_not_invoke_services(self) -> None:
-        for path, operation, _ in self.actions:
+        for path, operation, *_ in self.actions:
             for raw in ('null', '[]', 'false', '0', '"text"', '{"status":"COLLECTED"}', '{"id":null}', '{'):
                 with self.subTest(path=path, raw=raw):
                     response = self.client.post(path, content=raw, headers={"Content-Type": "application/json"})
@@ -156,10 +153,10 @@ class HttpAdapterTests(unittest.TestCase):
             operation.assert_not_awaited()
 
     def test_not_found_and_conflicts_have_distinct_statuses(self) -> None:
-        for path, operation, _ in self.actions:
-            for error, code in ((ParcelNotFoundError("No existe"), 404),
-                                (CustodyConflictError("Ya ha salido o perdió la carrera"), 409),
-                                (CustodyConflictError("Fecha anterior a recepción"), 409)):
+        for path, operation, _, not_found_error, conflict_error in self.actions:
+            for error, code in ((not_found_error("No existe"), 404),
+                                (conflict_error("Ya ha salido o perdió la carrera"), 409),
+                                (conflict_error("Fecha anterior a recepción"), 409)):
                 with self.subTest(path=path, code=code):
                     operation.side_effect = error
                     response = self.client.post(path)
@@ -171,7 +168,7 @@ class HttpAdapterTests(unittest.TestCase):
             service.create.side_effect = RuntimeError("Fallo de conexión")
             with self.assertRaisesRegex(RuntimeError, "Fallo de conexión"):
                 self.client.post(path, json=payload)
-        for path, operation, _ in self.actions:
+        for path, operation, *_ in self.actions:
             operation.side_effect = RuntimeError("Fallo de commit")
             with self.assertRaisesRegex(RuntimeError, "Fallo de commit"):
                 self.client.post(path)

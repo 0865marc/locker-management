@@ -10,10 +10,11 @@ from sqlalchemy import event, text
 
 from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
 from adapters.database.sqlmodel_returns import SqlModelReturnRepository
-from adapters.http.delivery_routes import create_delivery_router
-from adapters.http.return_routes import create_return_router
-from application.delivery_use_cases import DeliveryService
-from application.return_use_cases import ReturnService
+from adapters.http.routes import create_router
+from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
+from application.lockers import LockerService
+from application.deliveries import DeliveryService
+from application.returns import ReturnService
 from domain.deliveries import Delivery
 from domain.returns import Return
 
@@ -76,8 +77,11 @@ class PostgreSQLCustodyTests(PostgresTestCase):
                     return_repo = SynchronizedReturnRepository(sessions) if kind == "return" else SqlModelReturnRepository(sessions)
                     clock = lambda seconds=seconds: NOW + timedelta(seconds=seconds)
                     app = FastAPI()
-                    app.include_router(create_delivery_router(DeliveryService(delivery_repo, clock=clock)))
-                    app.include_router(create_return_router(ReturnService(return_repo, clock=clock)))
+                    app.include_router(create_router(
+                        DeliveryService(delivery_repo, clock=clock),
+                        ReturnService(return_repo, clock=clock),
+                        LockerService(SqlModelLockerRepository(sessions)),
+                    ))
                     clients.append(httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test"))
                 paths = ([f"/deliveries/{original.id}/collect", f"/deliveries/{original.id}/return-to-carrier"]
                          if kind == "delivery" else [f"/returns/{original.id}/hand-over"] * 2)
