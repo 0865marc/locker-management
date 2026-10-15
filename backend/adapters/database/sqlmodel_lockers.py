@@ -1,10 +1,9 @@
-from typing import cast
+from typing import ClassVar, cast
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Double, Index, Text, UniqueConstraint, and_, text
+from sqlalchemy import Boolean, ForeignKey, Integer, Table, Uuid, CheckConstraint, Column, DateTime, Double, Index, Text, UniqueConstraint, and_, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.orm import declared_attr
 from sqlmodel.sql.expression import Select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import SQLModel, Field, col, select
@@ -24,67 +23,98 @@ ADDRESS_CHECK = f"({ADDRESS_ABSENT}) OR (({ADDRESS_PRESENT}) AND ({ADDRESS_VALID
 COORDINATES_CHECK = "(latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL AND latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180)"
 
 
-class LockerRow(SQLModel, table=True):
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        return 'lockers'
+_locker_table = Table(
+    'lockers', SQLModel.metadata,
+    Column('id', Uuid(), primary_key=True, nullable=False),
+    Column('location_id', Text, nullable=True, index=True),
+    Column('active', Boolean(), nullable=False),
+    Column('country_code', Text),
+    Column('postal_code', Text),
+    Column('province', Text),
+    Column('city', Text),
+    Column('street', Text),
+    Column('street_number', Text),
+    Column('latitude', Double),
+    Column('longitude', Double),
+    CheckConstraint(ADDRESS_CHECK, name='ck_lockers_address'),
+    CheckConstraint(COORDINATES_CHECK, name='ck_lockers_coordinates'),
+)
 
-    __table_args__ = (
-        CheckConstraint(ADDRESS_CHECK, name='ck_lockers_address'),
-        CheckConstraint(COORDINATES_CHECK, name='ck_lockers_coordinates'),
-    )
-    id: UUID = Field(primary_key=True)
-    location_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
-    active: bool
-    country_code: str | None = Field(default=None, sa_column=Column(Text))
-    postal_code: str | None = Field(default=None, sa_column=Column(Text))
-    province: str | None = Field(default=None, sa_column=Column(Text))
-    city: str | None = Field(default=None, sa_column=Column(Text))
-    street: str | None = Field(default=None, sa_column=Column(Text))
-    street_number: str | None = Field(default=None, sa_column=Column(Text))
-    latitude: float | None = Field(default=None, sa_column=Column(Double))
-    longitude: float | None = Field(default=None, sa_column=Column(Double))
+
+class LockerRow(SQLModel, table=True):
+    __table__: ClassVar[Table] = _locker_table
+
+    id: UUID = Field(sa_column=_locker_table.c.id)
+    location_id: str | None = Field(default=None, sa_column=_locker_table.c.location_id)
+    active: bool = Field(sa_column=_locker_table.c.active)
+    country_code: str | None = Field(default=None, sa_column=_locker_table.c.country_code)
+    postal_code: str | None = Field(default=None, sa_column=_locker_table.c.postal_code)
+    province: str | None = Field(default=None, sa_column=_locker_table.c.province)
+    city: str | None = Field(default=None, sa_column=_locker_table.c.city)
+    street: str | None = Field(default=None, sa_column=_locker_table.c.street)
+    street_number: str | None = Field(default=None, sa_column=_locker_table.c.street_number)
+    latitude: float | None = Field(default=None, sa_column=_locker_table.c.latitude)
+    longitude: float | None = Field(default=None, sa_column=_locker_table.c.longitude)
+
+
+_compartment_table = Table(
+    'locker_compartments', SQLModel.metadata,
+    Column('id', Uuid(), primary_key=True, nullable=False),
+    Column('locker_id', Uuid(), ForeignKey('lockers.id', ondelete='RESTRICT'), index=True, nullable=False),
+    Column('width_mm', Integer(), nullable=False),
+    Column('height_mm', Integer(), nullable=False),
+    Column('depth_mm', Integer(), nullable=False),
+    Column('enabled', Boolean(), nullable=False),
+    Column('retired', Boolean(), nullable=False, default=False),
+    CheckConstraint('width_mm BETWEEN 1 AND 2147483647 AND height_mm BETWEEN 1 AND 2147483647 AND depth_mm BETWEEN 1 AND 2147483647', name='ck_compartments_dimensions'),
+    CheckConstraint('NOT (retired AND enabled)', name='ck_compartments_retired'),
+)
 
 
 class CompartmentRow(SQLModel, table=True):
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        return 'locker_compartments'
-    __table_args__ = (
-        CheckConstraint('width_mm BETWEEN 1 AND 2147483647 AND height_mm BETWEEN 1 AND 2147483647 AND depth_mm BETWEEN 1 AND 2147483647', name='ck_compartments_dimensions'),
-        CheckConstraint('NOT (retired AND enabled)', name='ck_compartments_retired'),
-    )
-    id: UUID = Field(primary_key=True)
-    locker_id: UUID = Field(foreign_key='lockers.id', index=True, ondelete='RESTRICT')
-    width_mm: int
-    height_mm: int
-    depth_mm: int
-    enabled: bool
-    retired: bool = False
+    __table__: ClassVar[Table] = _compartment_table
+
+    id: UUID = Field(sa_column=_compartment_table.c.id)
+    locker_id: UUID = Field(sa_column=_compartment_table.c.locker_id)
+    width_mm: int = Field(sa_column=_compartment_table.c.width_mm)
+    height_mm: int = Field(sa_column=_compartment_table.c.height_mm)
+    depth_mm: int = Field(sa_column=_compartment_table.c.depth_mm)
+    enabled: bool = Field(sa_column=_compartment_table.c.enabled)
+    retired: bool = Field(default=False, sa_column=_compartment_table.c.retired)
+
+
+_assignment_table = Table(
+    'locker_assignments', SQLModel.metadata,
+    Column('id', Uuid(), primary_key=True, nullable=False),
+    Column('compartment_id', Uuid(), ForeignKey('locker_compartments.id', ondelete='RESTRICT'), nullable=False),
+    Column('delivery_id', Uuid(), ForeignKey('deliveries.id', ondelete='RESTRICT'), nullable=True),
+    Column('return_id', Uuid(), ForeignKey('returns.id', ondelete='RESTRICT'), nullable=True),
+    Column('width_mm', Integer(), nullable=False),
+    Column('height_mm', Integer(), nullable=False),
+    Column('depth_mm', Integer(), nullable=False),
+    Column('assigned_at', DateTime(timezone=True), nullable=False),
+    Column('released_at', DateTime(timezone=True)),
+    CheckConstraint('(delivery_id IS NOT NULL AND return_id IS NULL) OR (delivery_id IS NULL AND return_id IS NOT NULL)', name='ck_assignments_parcel'),
+    CheckConstraint('width_mm BETWEEN 1 AND 2147483647 AND height_mm BETWEEN 1 AND 2147483647 AND depth_mm BETWEEN 1 AND 2147483647', name='ck_assignments_dimensions'),
+    CheckConstraint('released_at IS NULL OR released_at >= assigned_at', name='ck_assignments_release_time'),
+    UniqueConstraint('delivery_id', name='uq_assignments_delivery'),
+    UniqueConstraint('return_id', name='uq_assignments_return'),
+    Index('uq_assignments_active_compartment', 'compartment_id', unique=True, postgresql_where=text('released_at IS NULL')),
+)
 
 
 class AssignmentRow(SQLModel, table=True):
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        return 'locker_assignments'
-    __table_args__ = (
-        CheckConstraint('(delivery_id IS NOT NULL AND return_id IS NULL) OR (delivery_id IS NULL AND return_id IS NOT NULL)', name='ck_assignments_parcel'),
-        CheckConstraint('width_mm BETWEEN 1 AND 2147483647 AND height_mm BETWEEN 1 AND 2147483647 AND depth_mm BETWEEN 1 AND 2147483647', name='ck_assignments_dimensions'),
-        CheckConstraint('released_at IS NULL OR released_at >= assigned_at', name='ck_assignments_release_time'),
-        UniqueConstraint('delivery_id', name='uq_assignments_delivery'),
-        UniqueConstraint('return_id', name='uq_assignments_return'),
-        Index('uq_assignments_active_compartment', 'compartment_id', unique=True,
-              postgresql_where=text('released_at IS NULL')),
-    )
-    id: UUID = Field(primary_key=True)
-    compartment_id: UUID = Field(foreign_key='locker_compartments.id', ondelete='RESTRICT')
-    delivery_id: UUID | None = Field(default=None, foreign_key='deliveries.id', ondelete='RESTRICT')
-    return_id: UUID | None = Field(default=None, foreign_key='returns.id', ondelete='RESTRICT')
-    width_mm: int
-    height_mm: int
-    depth_mm: int
-    assigned_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
-    released_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    __table__: ClassVar[Table] = _assignment_table
+
+    id: UUID = Field(sa_column=_assignment_table.c.id)
+    compartment_id: UUID = Field(sa_column=_assignment_table.c.compartment_id)
+    delivery_id: UUID | None = Field(default=None, sa_column=_assignment_table.c.delivery_id)
+    return_id: UUID | None = Field(default=None, sa_column=_assignment_table.c.return_id)
+    width_mm: int = Field(sa_column=_assignment_table.c.width_mm)
+    height_mm: int = Field(sa_column=_assignment_table.c.height_mm)
+    depth_mm: int = Field(sa_column=_assignment_table.c.depth_mm)
+    assigned_at: datetime = Field(sa_column=_assignment_table.c.assigned_at)
+    released_at: datetime | None = Field(default=None, sa_column=_assignment_table.c.released_at)
 
 
 def dimensions(row: CompartmentRow | AssignmentRow) -> Dimensions:
@@ -103,13 +133,13 @@ async def lock_locker(session: AsyncSession, identifier: UUID) -> LockerRow:
     return row
 
 
-def configuration_query() -> Select[tuple[LockerRow, CompartmentRow | None, UUID | None]]:
+def configuration_query() -> Select[LockerRow, CompartmentRow | None, UUID | None]:
     # A single statement gives a coherent configuration/occupancy snapshot at READ COMMITTED.
     # SQLModel does not infer the nullable entities introduced by LEFT OUTER JOIN.
     statement = select(LockerRow, CompartmentRow, col(AssignmentRow.id)).outerjoin(
         CompartmentRow, and_(col(CompartmentRow.locker_id) == col(LockerRow.id), col(CompartmentRow.retired) == False)
     ).outerjoin(AssignmentRow, and_(col(AssignmentRow.compartment_id) == col(CompartmentRow.id), col(AssignmentRow.released_at) == None))
-    return cast(Select[tuple[LockerRow, CompartmentRow | None, UUID | None]], statement)
+    return cast(Select[LockerRow, CompartmentRow | None, UUID | None], statement)
 
 
 async def configurations(session: AsyncSession, identifier: UUID | None = None, location_id: str | None = None) -> list[Locker]:
@@ -234,12 +264,10 @@ class SqlModelLockerRepository:
             row.enabled, row.retired = False, True
 
     async def availability(self, location_id: str, dimensions: Dimensions) -> Availability:
-        if not isinstance(location_id, str) or not location_id.strip():
-            raise ValueError("location_id debe ser texto no vacío")
-        location_id = location_id.strip()
+        location_id = location_alias(location_id)
         checked_at = datetime.now(timezone.utc)
         lockers = await self.list_all(location_id)
-        results = []
+        results: list[LockerAvailability] = []
         for locker in lockers:
             compatible = [c for c in locker.compartments if c.enabled and dimensions.fits_in(c.dimensions)]
             available = sum(not c.occupied for c in compatible) if locker.active else 0

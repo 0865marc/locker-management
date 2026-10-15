@@ -1,14 +1,13 @@
 from dataclasses import replace
 from uuid import uuid4
 from datetime import datetime, timezone
-from typing import overload, TypeVar
+from typing import ClassVar, overload, TypeVar
 from collections.abc import Callable
-from sqlalchemy.orm import declared_attr
 from sqlalchemy.sql.elements import SQLColumnExpression
 from domain.lockers import Dimensions
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Text, update
+from sqlalchemy import Table, Uuid, CheckConstraint, Column, DateTime, Text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession as SqlAlchemyAsyncSession
 from sqlmodel import Field, SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -21,46 +20,63 @@ DELIVERY_STATE = "(status = 'AWAITING_PICKUP' AND collected_at IS NULL AND retur
 RETURN_STATE = "(status = 'AWAITING_CARRIER' AND handed_over_at IS NULL) OR (status = 'HANDED_OVER' AND handed_over_at IS NOT NULL)"
 
 
+_delivery_table = Table(
+    'deliveries', SQLModel.metadata,
+    Column('id', Uuid(), primary_key=True, nullable=False),
+    Column('tracking_number', Text, nullable=False),
+    Column('carrier_code', Text, nullable=False),
+    Column('recipient_name', Text, nullable=False),
+    Column('recipient_phone', Text),
+    Column('received_at', DateTime(timezone=True), nullable=False),
+    Column('pickup_deadline_at', DateTime(timezone=True)),
+    Column('status', Text, nullable=False),
+    Column('collected_at', DateTime(timezone=True)),
+    Column('returned_to_carrier_at', DateTime(timezone=True)),
+    CheckConstraint(DELIVERY_STATE, name='ck_deliveries_state'),
+    CheckConstraint('collected_at IS NULL OR collected_at >= received_at', name='ck_deliveries_collection_time'),
+    CheckConstraint('returned_to_carrier_at IS NULL OR returned_to_carrier_at >= received_at', name='ck_deliveries_return_time'),
+)
+
+
 class DeliveryRow(SQLModel, table=True):
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        return "deliveries"
+    __table__: ClassVar[Table] = _delivery_table
 
-    __table_args__ = (
-        CheckConstraint(DELIVERY_STATE, name="ck_deliveries_state"),
-        CheckConstraint("collected_at IS NULL OR collected_at >= received_at", name="ck_deliveries_collection_time"),
-        CheckConstraint("returned_to_carrier_at IS NULL OR returned_to_carrier_at >= received_at", name="ck_deliveries_return_time"),
-    )
+    id: UUID = Field(sa_column=_delivery_table.c.id)
+    tracking_number: str = Field(sa_column=_delivery_table.c.tracking_number)
+    carrier_code: str = Field(sa_column=_delivery_table.c.carrier_code)
+    recipient_name: str = Field(sa_column=_delivery_table.c.recipient_name)
+    recipient_phone: str | None = Field(default=None, sa_column=_delivery_table.c.recipient_phone)
+    received_at: datetime = Field(sa_column=_delivery_table.c.received_at)
+    pickup_deadline_at: datetime | None = Field(default=None, sa_column=_delivery_table.c.pickup_deadline_at)
+    status: str = Field(sa_column=_delivery_table.c.status)
+    collected_at: datetime | None = Field(default=None, sa_column=_delivery_table.c.collected_at)
+    returned_to_carrier_at: datetime | None = Field(default=None, sa_column=_delivery_table.c.returned_to_carrier_at)
 
-    id: UUID = Field(primary_key=True)
-    tracking_number: str = Field(sa_column=Column(Text, nullable=False))
-    carrier_code: str = Field(sa_column=Column(Text, nullable=False))
-    recipient_name: str = Field(sa_column=Column(Text, nullable=False))
-    recipient_phone: str | None = Field(default=None, sa_column=Column(Text))
-    received_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
-    pickup_deadline_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    status: str = Field(sa_column=Column(Text, nullable=False))
-    collected_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
-    returned_to_carrier_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+
+_return_table = Table(
+    'returns', SQLModel.metadata,
+    Column('id', Uuid(), primary_key=True, nullable=False),
+    Column('tracking_number', Text, nullable=False),
+    Column('carrier_code', Text, nullable=False),
+    Column('sender_name', Text),
+    Column('received_at', DateTime(timezone=True), nullable=False),
+    Column('status', Text, nullable=False),
+    Column('handed_over_at', DateTime(timezone=True)),
+    CheckConstraint(RETURN_STATE, name='ck_returns_state'),
+    CheckConstraint('handed_over_at IS NULL OR handed_over_at >= received_at', name='ck_returns_handover_time'),
+)
 
 
 class ReturnRow(SQLModel, table=True):
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        return "returns"
+    __table__: ClassVar[Table] = _return_table
 
-    __table_args__ = (
-        CheckConstraint(RETURN_STATE, name="ck_returns_state"),
-        CheckConstraint("handed_over_at IS NULL OR handed_over_at >= received_at", name="ck_returns_handover_time"),
-    )
-
-    id: UUID = Field(primary_key=True)
-    tracking_number: str = Field(sa_column=Column(Text, nullable=False))
-    carrier_code: str = Field(sa_column=Column(Text, nullable=False))
-    sender_name: str | None = Field(default=None, sa_column=Column(Text))
-    received_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
-    status: str = Field(sa_column=Column(Text, nullable=False))
-    handed_over_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    id: UUID = Field(sa_column=_return_table.c.id)
+    tracking_number: str = Field(sa_column=_return_table.c.tracking_number)
+    carrier_code: str = Field(sa_column=_return_table.c.carrier_code)
+    sender_name: str | None = Field(default=None, sa_column=_return_table.c.sender_name)
+    received_at: datetime = Field(sa_column=_return_table.c.received_at)
+    status: str = Field(sa_column=_return_table.c.status)
+    handed_over_at: datetime | None = Field(default=None, sa_column=_return_table.c.handed_over_at)
 
 
 @overload

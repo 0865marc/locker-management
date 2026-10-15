@@ -1,7 +1,7 @@
 from uuid import UUID
 from math import isfinite
-from typing import Annotated, TypeVar
-from collections.abc import Awaitable
+from typing import Annotated, TypeGuard, TypeVar
+from collections.abc import Awaitable, Mapping, Sequence
 from application.locker_use_cases import LockerService
 from pydantic import BeforeValidator
 from fastapi import APIRouter, HTTPException, Query, Response, Request, Depends
@@ -34,12 +34,22 @@ def _query_integer(value: object) -> int:
 QueryInteger = Annotated[int, Query(ge=1, le=2147483647), BeforeValidator(_query_integer)]
 
 
+def is_object_mapping(value: object) -> TypeGuard[Mapping[object, object]]:
+    # Every dictionary entry is an object; expose a read-only generic view.
+    return isinstance(value, dict)
+
+
+def is_object_list(value: object) -> TypeGuard[Sequence[object]]:
+    # Keep the JSON-list check while exposing its elements as objects.
+    return isinstance(value, list)
+
+
 def contains_nonfinite(value: object) -> bool:
     if isinstance(value, float):
         return not isfinite(value)
-    if isinstance(value, dict):
+    if is_object_mapping(value):
         return any(contains_nonfinite(child) for child in value.values())
-    if isinstance(value, list):
+    if is_object_list(value):
         return any(contains_nonfinite(child) for child in value)
     return False
 

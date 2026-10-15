@@ -1,6 +1,6 @@
 # Tasks
 
-El 2026-10-15 el usuario ratificó ubicación persistida del locker y comparación interna de proveedores, precisó anotaciones estándar de Python sin herramientas nuevas y solicitó el nombre add-locker-location-and-shipping-comparison. La implementación aprobada está completada y verificada; la sincronización y el archivado no se han solicitado ni realizado. Pylance/VSCode no está disponible en este entorno y no se ha instalado otro checker.
+El 2026-10-15 el usuario ratificó ubicación persistida del locker y comparación interna de proveedores, precisó anotaciones estándar de Python sin herramientas nuevas y solicitó el nombre add-locker-location-and-shipping-comparison. La implementación funcional y las correcciones de los diagnósticos aportados están verificadas mediante pruebas y revisión de contratos; no se ha vuelto a ejecutar Pylance en este entorno. La sincronización y el archivado no se han solicitado ni realizado. Pylance/VSCode no está disponible en este entorno y no se ha instalado otro checker.
 
 ## 1. Anotaciones estándar de Python
 
@@ -32,3 +32,19 @@ El 2026-10-15 el usuario ratificó ubicación persistida del locker y comparaci�
 - Anotaciones: inspección de contratos/puertos, opcionales y genéricos; auditoría AST sin parámetros o retornos sin anotar en 23 módulos productivos, incluida 0004 y excluidas migraciones históricas. Esto no equivale a diagnósticos de Pylance, que no está disponible. Sin nuevas herramientas, configuración de tipado ni dependencias.
 - Revisión independiente `sdd_reviewer` cerrada sin hallazgos pendientes. Corregidos y comprobados los dos P2: respuestas 422 para cuerpo vacío/no finitos y restricciones de texto Unicode coherentes entre Python/PostgreSQL. El revisor ejecutó además las 15 pruebas del comparador (OK en 2.067 s).
 - `openspec validate add-locker-location-and-shipping-comparison --strict` y `git diff --check` correctos. `pyproject.toml`, `uv.lock` y las migraciones 0001–0003 permanecen intactos.
+
+
+## Seguimiento de diagnósticos de Pylance
+
+El usuario aportó 29 diagnósticos tras el commit `1daa877`: 4 en `locker_routes.py` y 25 en `sqlmodel_lockers.py`. La auditoría AST y las pruebas de ejecución anteriores no demostraban compatibilidad con el analizador estático. Se reabren las tareas 1.1, 4.1 y 4.2 para corregir los contratos de `Select`, el override de `__tablename__`, los tipos de colecciones y los diagnósticos auxiliares, incluyendo el mismo patrón de tablas en `sqlmodel_repositories.py`. Se mantienen alcance y restricciones: anotaciones estándar, sin nuevos checkers, dependencias, supresiones ni cambios funcionales.
+
+
+### Corrección verificada
+
+- Los 4 diagnósticos de JSON se atienden con `TypeGuard` hacia vistas `Mapping[object, object]` y `Sequence[object]`; la recursión conserva la validación existente sin elementos `Unknown`.
+- Los 11 diagnósticos encadenados de consultas provienen del genérico incorrecto: SQLModel declara `Select` con `TypeVarTuple`, por lo que se usa `Select[LockerRow, CompartmentRow | None, UUID | None]`, no un único parámetro tupla. El cast sigue limitado a la nulabilidad real de los outer joins.
+- Los 6 diagnósticos de `__tablename__` se atienden con el mapeo estándar `__table__: ClassVar[Table]`, compartiendo cada `Column` con el `Field` de SQLModel. Se aplica también a DeliveryRow/ReturnRow. Se descarta cambiar `.directive` por `declared_attr` con callback que devuelve `str`, porque ese constructor tipado requiere un atributo mapeado y causaría otra incompatibilidad.
+- Los 6 diagnósticos de resultados se atienden con `list[LockerAvailability]`. Los 2 restantes se atienden reutilizando el validador `location_alias`, eliminando la validación duplicada y aprovechando su import.
+- Comparación independiente contra `1daa877`: DDL PostgreSQL, índices y defaults de las cinco tablas idénticos. Las pruebas de migración no detectan nuevas operaciones. Sin cambios de dependencias, configuración, migraciones, reglas de negocio ni supresiones.
+- Suite completa tras las correcciones: **95 pruebas OK en 20.176 s**, sin omisiones, con el mismo comando y PostgreSQL aislado anteriores. `git diff --check` correcto.
+- `sdd_reviewer` contrastó las 29 entradas con sus causas y los patrones repetidos, revisó las firmas instaladas de SQLModel/SQLAlchemy y cerró sin hallazgos pendientes. **No se ha ejecutado Pylance/Pyright y no se afirma un resultado de cero diagnósticos del editor**; la comprobación disponible es el informe aportado, la revisión de contratos y las pruebas de regresión.
