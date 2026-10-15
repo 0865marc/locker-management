@@ -202,17 +202,21 @@ hexagonal_architecture/
 │   │               ├── 0002_parcel_custody.py
 │   │               └── 0003_lockers_and_custody.py
 │   ├── tests/
-│   │   ├── test_domain.py
-│   │   ├── test_application.py
-│   │   ├── test_http.py
-│   │   ├── test_repositories.py
-│   │   ├── test_migrations.py
-│   │   ├── test_postgresql.py
-│   │   ├── test_lockers.py
-│   │   ├── test_locker_http.py
-│   │   ├── test_locker_repositories.py
-│   │   ├── test_locker_postgresql.py
-│   │   └── test_main.py
+│   │   ├── unit/
+│   │   │   ├── test_domain.py
+│   │   │   ├── test_application.py
+│   │   │   ├── test_http.py
+│   │   │   ├── test_lockers.py
+│   │   │   └── test_main.py
+│   │   └── integration/
+│   │       ├── support.py
+│   │       ├── test_repositories.py
+│   │       ├── test_locker_repositories.py
+│   │       ├── test_locker_http.py
+│   │       ├── test_application_http.py
+│   │       ├── test_migrations.py
+│   │       ├── test_postgresql.py
+│   │       └── test_locker_postgresql.py
 │   ├── alembic.ini
 │   ├── Dockerfile
 │   ├── .dockerignore
@@ -421,63 +425,70 @@ no fuerces un downgrade destructivo ni borres volúmenes para superar las guarda
 
 ## Pruebas
 
-Instala las dependencias de desarrollo y ejecuta las pruebas sin PostgreSQL desde `backend/`:
+Las suites usan `unittest`: `tests/unit` contiene pruebas sin servicios y
+`tests/integration` usa PostgreSQL como único backend de integración. Instala las
+dependencias de desarrollo y ejecuta las unitarias desde `backend/`:
 
 ```bash
 # Directorio de trabajo: backend/
 uv sync --extra dev
-uv run --extra dev python -m unittest discover -s tests -v
+uv run --extra dev python -m unittest discover -s tests/unit -t . -v
 ```
 
-El núcleo usa dobles asíncronos (`AsyncMock`) de los puertos de salida.
-`test_http.py` prueba el adaptador HTTP con `AsyncMock` de `DeliveryService` y
-`ReturnService`, sin importar `main.py` ni conectar con una base de datos. Los
-repositorios se prueban con SQLite y `aiosqlite`: round trip de todos los campos,
-instantes UTC, transiciones, rollback y recuperación tras UUID duplicados.
-Las pruebas locales de migración usan una base temporal. La suite también cubre
-normalización, invariantes, reloj controlado y contratos HTTP de las quince rutas y las reglas de lockers.
-Estas pruebas no sustituyen la integración con PostgreSQL.
+Las unitarias cubren dominio, reglas físicas de lockers, casos de uso con
+`AsyncMock`, adaptador HTTP con dobles de servicios y composición/lifecycle con
+motor simulado. Se pueden ejecutar sin `TEST_DATABASE_URL` ni un servidor de base
+de datos. No requieren un driver SQLite.
 
-Para ejecutar solo las pruebas del núcleo, sin instalar dependencias, desde `backend/`:
+Para integración, usa una **base de pruebas dedicada** ya existente y un usuario
+con permisos para conectar y crear/eliminar esquemas en ella. Define
+`TEST_DATABASE_URL` explícitamente con el driver `postgresql+asyncpg`; cada caso
+crea un esquema UUID aislado, lo prepara con Alembic y lo elimina al terminar,
+incluso tras un fallo. Las pruebas de historia eligen su revisión inicial y las
+de arranque sin tablas conservan el esquema vacío. No hace falta migrar `public`
+previamente; la preparación y los datos quedan dentro del esquema de cada caso.
+Usa esta base dedicada en lugar de la base de demostración o producción.
+
+Desde `backend/`, ejecuta integración o la suite completa:
 
 ```bash
-# Directorio de trabajo: backend/
-python3 -m unittest tests.test_domain tests.test_application -v
+# Solo integración.
+TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+  uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
+
+# Unitarias e integración.
+TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+  uv run --extra dev python -m unittest discover -s tests -t . -v -f
 ```
 
-Prepara una **base de pruebas dedicada**, con un usuario con permiso para crear
-esquemas, y aplica `alembic upgrade head` con `DATABASE_URL` apuntando a ella.
-`TEST_DATABASE_URL` selecciona la base de integración; la prueba HTTP de aplicación
-usa sus tablas migradas y las pruebas de concurrencia/migraciones crean esquemas
-únicos y los eliminan al terminar. No uses la base de demostración ni producción.
-Desde `backend/`, por ejemplo:
+`-t .` mantiene las importaciones de paquetes inequívocas; `-f` detiene la ejecución
+ante el primer error. Integración y suite completa fallan con diagnóstico explícito
+y código distinto de cero si falta `TEST_DATABASE_URL`, el driver es incompatible,
+PostgreSQL no responde o faltan permisos. Las comprobaciones de base de datos no se
+omiten por falta de configuración y no recurren a `DATABASE_URL`.
+
+Si esa base dedicada está preparada en el PostgreSQL de Compose, ejecuta desde la
+raíz del repositorio:
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test uv run alembic upgrade head
-TEST_DATABASE_URL=postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test \
-  uv run --extra dev python -m unittest discover -s tests -v
-```
-
-Si has preparado esa base dedicada en el PostgreSQL de Compose, desde la raíz:
-
-```bash
-# Desde la raíz del repositorio.
 docker compose exec \
   -e TEST_DATABASE_URL=postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal_test \
-  api python -m unittest discover -s tests -v
+  api python -m unittest discover -s tests/integration -t . -v -f
 ```
 
-La integración HTTP crea paquetes, registra salidas y verifica sus representaciones
-en una segunda instancia de aplicación. Las pruebas PostgreSQL adicionales verifican
-con conexiones independientes y sincronización explícita la última celda compartida
-(un `201` y un `409`), rollback del primer contendiente, configuración frente a
-recepción, salidas concurrentes y reocupación segura. Comprueban además restricciones,
-upgrade aditivo y downgrade protegido con snapshots completos.
-Sin `TEST_DATABASE_URL`,
-las comprobaciones PostgreSQL se omiten; SQLite no demuestra sus garantías de
-concurrencia y bloqueo. La imagen incluye las
-dependencias de pruebas mediante el extra `dev`. Si ejecutas la prueba fuera de
-Compose, migra previamente la base de datos que indique `TEST_DATABASE_URL`.
+La imagen incluye las dependencias de pruebas mediante el extra `dev`. El comando
+de Compose usa igualmente esquemas aislados dentro de la base dedicada indicada.
+
+| Suite de integración | Qué verifica |
+| --- | --- |
+| `test_repositories.py`, `test_locker_repositories.py` | Identidad, valores/nulls, UTC, transiciones, configuración, capacidad compartida, restricciones reales y rollback. |
+| `test_locker_http.py`, `test_application_http.py` | Las quince rutas, validación y representaciones, persistencia entre instancias de aplicación y arranque sobre esquema vacío sin DDL. |
+| `test_migrations.py` | Columnas legacy de `0001`, round trip vacío hasta base/head, metadata sin diferencias, rechazo de upgrade/downgrade destructivos y upgrade aditivo desde `0002` poblado. |
+| `test_postgresql.py`, `test_locker_postgresql.py` | `timestamptz`, FKs/checks/índice parcial, locks de migración, salidas concurrentes y última celda compartida (un `201` y un `409`), rollback del primer contendiente, configuración frente a recepción y reocupación segura con conexiones independientes y sincronización explícita. |
+
+Los rechazos de migración comparan snapshots completos de columnas, índices,
+restricciones, filas y revisión. Las pruebas conservan las migraciones históricas
+`0001`, `0002` y `0003`; este cambio de organización de pruebas no añade revisiones.
 
 ## Alcance del ejemplo
 

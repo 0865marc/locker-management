@@ -1,84 +1,29 @@
 """Real PostgreSQL checks in a unique disposable schema, never in public tables."""
 import asyncio
 from datetime import datetime, timedelta, timezone
-import os
-import unittest
 from uuid import uuid4
 
-from alembic import command
-from alembic.config import Config
 from fastapi import FastAPI
 import httpx
-from sqlalchemy import event, inspect, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy import event, text
 
 from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
 from adapters.http.routes import create_router
 from application.use_cases import DeliveryService, ReturnService
 from domain.models import Delivery, Return
 
-URL = os.environ.get("TEST_DATABASE_URL")
+from tests.integration.support import PostgresTestCase
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 
 
-@unittest.skipUnless(URL, "TEST_DATABASE_URL is required for real PostgreSQL checks")
-class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.schema = "custody_test_" + uuid4().hex
-        self.admin = create_async_engine(URL)
-        async with self.admin.begin() as connection:
-            await connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
-        self.engine = create_async_engine(URL, connect_args={"server_settings": {"search_path": self.schema}})
-        self.sessions = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
-        await self.migrate("upgrade", "head")
-
-    async def asyncTearDown(self):
-        await self.engine.dispose()
-        try:
-            async with self.admin.begin() as connection:
-                await connection.execute(text(f'DROP SCHEMA "{self.schema}" CASCADE'))
-        finally:
-            await self.admin.dispose()
-
-    async def migrate(self, direction, revision):
-        async with self.engine.begin() as connection:
-            def run(sync_connection):
-                config = Config("alembic.ini")
-                config.attributes["connection"] = sync_connection
-                getattr(command, direction)(config, revision)
-            await connection.run_sync(run)
-
-    async def snapshot(self):
-        async with self.engine.connect() as connection:
-            def structure(sync_connection):
-                inspector = inspect(sync_connection)
-                definitions = {}
-                for table in sorted(inspector.get_table_names()):
-                    columns = inspector.get_columns(table)
-                    for column in columns:
-                        column["type"] = str(column["type"])
-                    indexes = inspector.get_indexes(table)
-                    for index in indexes:
-                        index["dialect_options"] = {
-                            key: str(value) for key, value in index.get("dialect_options", {}).items()}
-                    definitions[table] = (
-                        columns, inspector.get_check_constraints(table),
-                        inspector.get_foreign_keys(table), inspector.get_unique_constraints(table),
-                        indexes, inspector.get_pk_constraint(table))
-                return definitions
-            definitions = await connection.run_sync(structure)
-            rows = {table: (await connection.execute(text(f'SELECT * FROM "{table}" ORDER BY 1'))).all()
-                    for table in definitions}
-            return definitions, rows
-
+class PostgreSQLCustodyTests(PostgresTestCase):
     async def test_concurrent_repository_exits_commit_exactly_one_winner(self):
         examples = [
             (Delivery(tracking_number="D-1", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW), SqlModelDeliveryRepository, "collect", "return_to_carrier"),
             (Return(tracking_number="R-1", carrier_code="carrier-a", received_at=NOW), SqlModelReturnRepository, "hand_over", "hand_over"),
         ]
         for original, repository_class, first, second in examples:
-            repositories = [repository_class(self.sessions), repository_class(self.sessions)]
+            repositories = [repository_class(self.database()[1]) for _ in range(2)]
             await repositories[0].save(original)
             # Both independent reads finish before either conditional UPDATE starts.
             snapshots = await asyncio.gather(*(repo.get_by_id(original.id) for repo in repositories))
@@ -113,8 +58,9 @@ class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
             clients = []
             try:
                 for seconds in (1, 2):
-                    delivery_repo = SynchronizedRepository(self.sessions) if kind == "delivery" else SqlModelDeliveryRepository(self.sessions)
-                    return_repo = SynchronizedRepository(self.sessions) if kind == "return" else SqlModelReturnRepository(self.sessions)
+                    _, sessions = self.database()
+                    delivery_repo = SynchronizedRepository(sessions) if kind == "delivery" else SqlModelDeliveryRepository(sessions)
+                    return_repo = SynchronizedRepository(sessions) if kind == "return" else SqlModelReturnRepository(sessions)
                     clock = lambda seconds=seconds: NOW + timedelta(seconds=seconds)
                     app = FastAPI()
                     app.include_router(create_router(DeliveryService(delivery_repo, clock=clock), ReturnService(return_repo, clock=clock)))
@@ -220,12 +166,7 @@ class PostgreSQLCustodyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(current[1][table], before[1][table])
         for table in ("lockers", "locker_compartments", "locker_assignments"):
             self.assertEqual(current[1][table], [])
-        async with self.engine.begin() as connection:
-            def check(sync_connection):
-                config = Config("alembic.ini")
-                config.attributes["connection"] = sync_connection
-                command.check(config)
-            await connection.run_sync(check)
+        await self.migrate("check")
         await self.migrate("downgrade", "0002")
         self.assertEqual(await self.snapshot(), before)
         await self.migrate("upgrade", "head")

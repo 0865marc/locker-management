@@ -39,7 +39,7 @@ class AssignmentRow(SQLModel, table=True):
         UniqueConstraint('delivery_id', name='uq_assignments_delivery'),
         UniqueConstraint('return_id', name='uq_assignments_return'),
         Index('uq_assignments_active_compartment', 'compartment_id', unique=True,
-              postgresql_where=text('released_at IS NULL'), sqlite_where=text('released_at IS NULL')),
+              postgresql_where=text('released_at IS NULL')),
     )
     id: UUID = Field(primary_key=True)
     compartment_id: UUID = Field(foreign_key='locker_compartments.id', ondelete='RESTRICT')

@@ -1,4 +1,4 @@
-"""Sequential SQLite persistence checks; PostgreSQL tests prove concurrency separately."""
+"""Sequential PostgreSQL invariants; concurrency is checked separately."""
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -6,8 +6,8 @@ from uuid import uuid4
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlmodel import SQLModel, select
-from adapters.database.connection import create_database
+from tests.integration.support import PostgresTestCase
+from sqlmodel import select
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository, AssignmentRow, CompartmentRow
 from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
 from domain.lockers import Dimensions, CompartmentBatch, CapacityConflictError, LockerNotFoundError
@@ -16,17 +16,12 @@ from domain.models import Delivery, Return
 D = Dimensions(10, 20, 30)
 NOW = datetime(2026, 10, 15, tzinfo=timezone.utc)
 
-class LockerRepositoryTests(unittest.IsolatedAsyncioTestCase):
+class LockerRepositoryTests(PostgresTestCase):
     async def asyncSetUp(self):
-        self.engine, self.sessions = create_database('sqlite+aiosqlite:///:memory:')
-        async with self.engine.begin() as connection:
-            await connection.run_sync(SQLModel.metadata.create_all)
+        await super().asyncSetUp()
         self.lockers = SqlModelLockerRepository(self.sessions)
         self.deliveries = SqlModelDeliveryRepository(self.sessions)
         self.returns = SqlModelReturnRepository(self.sessions)
-
-    async def asyncTearDown(self):
-        await self.engine.dispose()
 
     async def create(self, quantity=1, active=True, location='Site'):
         return await self.lockers.create(location, [CompartmentBatch(quantity, D)], active)

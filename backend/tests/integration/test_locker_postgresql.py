@@ -1,26 +1,17 @@
 """PostgreSQL capacity races with independent connections and observed database locks."""
 import asyncio
 from datetime import datetime, timedelta, timezone
-import os
-import unittest
-from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from alembic import command
-from alembic.config import Config
-import httpx
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
 from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
 from domain.lockers import CompartmentBatch, Dimensions
 from domain.models import Delivery, Return
-from main import create_app
+from tests.integration.support import PostgresTestCase
 
-URL = os.environ.get("TEST_DATABASE_URL")
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 DIMENSIONS = {"width_mm": 100, "height_mm": 200, "depth_mm": 300}
 
@@ -54,46 +45,10 @@ class StatementGate:
         event.remove(self.engine.sync_engine, "after_cursor_execute", self.after)
 
 
-@unittest.skipUnless(URL, "TEST_DATABASE_URL is required for real PostgreSQL locker checks")
-class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
+class PostgreSQLLockerTests(PostgresTestCase):
     async def asyncSetUp(self):
-        self.schema = "locker_test_" + uuid4().hex
-        self.admin = create_async_engine(URL)
-        async with self.admin.begin() as connection:
-            await connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
-        self.engines = []
-        self.clients = []
-        self.engine, self.sessions = self.database()
-        async with self.engine.begin() as connection:
-            def migrate(sync_connection):
-                config = Config("alembic.ini")
-                config.attributes["connection"] = sync_connection
-                command.upgrade(config, "head")
-            await connection.run_sync(migrate)
+        await super().asyncSetUp()
         self.lockers = SqlModelLockerRepository(self.sessions)
-
-    def database(self):
-        engine = create_async_engine(URL, connect_args={"server_settings": {"search_path": self.schema}})
-        self.engines.append(engine)
-        return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    def actor(self):
-        engine, sessions = self.database()
-        # Keep production routing/composition, while isolating each actor's connection pool.
-        with patch("main.create_database", return_value=(engine, sessions)):
-            app = create_app(URL)
-        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
-        self.clients.append(client)
-        return client, engine
-
-    async def asyncTearDown(self):
-        await asyncio.gather(*(client.aclose() for client in self.clients))
-        await asyncio.gather(*(engine.dispose() for engine in self.engines))
-        try:
-            async with self.admin.begin() as connection:
-                await connection.execute(text(f'DROP SCHEMA "{self.schema}" CASCADE'))
-        finally:
-            await self.admin.dispose()
 
     async def locker(self, quantity=1):
         return await self.lockers.create("MAD-01", [CompartmentBatch(quantity, Dimensions(**DIMENSIONS))])
@@ -151,8 +106,8 @@ class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
         for first_kind, second_kind in (("deliveries", "returns"), ("returns", "deliveries")):
             with self.subTest(first_kind=first_kind):
                 locker = await self.locker()
-                first, first_engine = self.actor()
-                second, second_engine = self.actor()
+                first, first_engine = await self.actor()
+                second, second_engine = await self.actor()
                 before = await self.counts()
                 responses = await self.competing(first_engine,
                     lambda: self.receive(first, first_kind, locker.id, "WINNER"), second_engine,
@@ -172,8 +127,8 @@ class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
         for first_kind, second_kind in (("deliveries", "returns"), ("returns", "deliveries")):
             with self.subTest(first_kind=first_kind):
                 locker = await self.locker()
-                first, first_engine = self.actor()
-                second, second_engine = self.actor()
+                first, first_engine = await self.actor()
+                second, second_engine = await self.actor()
                 before = await self.counts()
                 results = await self.competing(first_engine,
                     lambda: self.receive(first, first_kind, locker.id, "ROLLBACK"), second_engine,
@@ -193,8 +148,8 @@ class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
                                     ("retire", "NO_COMPATIBLE_CELL"), ("inactive", "LOCKER_INACTIVE")):
             with self.subTest(operation=operation):
                 locker = await self.locker()
-                config, config_engine = self.actor()
-                receiver, receive_engine = self.actor()
+                config, config_engine = await self.actor()
+                receiver, receive_engine = await self.actor()
                 cell_path = f"/lockers/{locker.id}/compartments/{locker.compartments[0].id}"
                 async def configure():
                     if operation == "retire":
@@ -216,8 +171,8 @@ class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
         for operation in ("resize", "disable", "retire", "inactive"):
             with self.subTest(operation=operation):
                 locker = await self.locker()
-                receiver, receive_engine = self.actor()
-                config, config_engine = self.actor()
+                receiver, receive_engine = await self.actor()
+                config, config_engine = await self.actor()
                 cell_path = f"/lockers/{locker.id}/compartments/{locker.compartments[0].id}"
                 async def configure():
                     if operation == "retire":
@@ -244,8 +199,8 @@ class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
         for kind, action in (("deliveries", "collect"), ("deliveries", "return-to-carrier"), ("returns", "hand-over")):
             with self.subTest(kind=kind, action=action):
                 locker = await self.locker()
-                first, first_engine = self.actor()
-                second, second_engine = self.actor()
+                first, first_engine = await self.actor()
+                second, second_engine = await self.actor()
                 original = (await self.receive(first, kind, locker.id, "A")).json()
                 path = f'/{kind}/{original["id"]}/{action}'
                 results = await self.competing(first_engine, lambda: first.post(path),
@@ -271,7 +226,7 @@ class PostgreSQLLockerTests(unittest.IsolatedAsyncioTestCase):
                                       ("returns", "hand-over", "AWAITING_CARRIER")):
             with self.subTest(action=action):
                 locker = await self.locker()
-                client, engine = self.actor()
+                client, engine = await self.actor()
                 original = (await self.receive(client, kind, locker.id)).json()
                 gate = StatementGate(engine, "UPDATE locker_assignments", fail=True)
                 gate.release.set()

@@ -66,10 +66,11 @@ def _utc(value: None) -> None: ...
 
 
 def _utc(value: datetime | None) -> datetime | None:
-    # SQLite returns naive timestamps for values stored in UTC.
     if value is None:
         return None
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("Timestamp must include a timezone")
+    return value.astimezone(timezone.utc)
 
 
 def _delivery(row: DeliveryRow, assignment=None, cell=None) -> Delivery:
