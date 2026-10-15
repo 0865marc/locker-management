@@ -1,10 +1,10 @@
 # Tasks
 
-El 2026-10-15 el usuario ratificó ubicación persistida del locker y comparación interna de proveedores, precisó anotaciones estándar de Python sin herramientas nuevas y solicitó el nombre add-locker-location-and-shipping-comparison. La implementación funcional y las correcciones de los diagnósticos aportados están verificadas mediante pruebas y revisión de contratos; no se ha vuelto a ejecutar Pylance en este entorno. La sincronización y el archivado no se han solicitado ni realizado. Pylance/VSCode no está disponible en este entorno y no se ha instalado otro checker.
+Las tareas 1–4 y sus evidencias corresponden a la implementación y correcciones previas. La nueva petición explícita autoriza añadir Pyright, corregir todo el backend analizado y exigir el chequeo al cerrar cada spec; sustituye la restricción anterior de no añadir checker/dependencias. Las tareas 5.1–5.3 están completadas con evidencia actual al final de este documento. No se han solicitado ni realizado sincronización/archivado.
 
 ## 1. Anotaciones estándar de Python
 
-- [x] 1.1 Completar anotaciones estándar de parámetros, retornos, colecciones, genéricos y opcionales en funciones existentes afectadas de Locker/Dimensions, servicios, HTTP, repositorios, recepción/custodia y composición, y mantenerlas en todo código nuevo. Corregir narrowing e incompatibilidades entre puertos/adaptadores sin Any o supresiones para ocultarlas; revisar contratos y ejecutar pruebas existentes afectadas. Revisar Pylance en VSCode si está disponible, registrando su disponibilidad real, sin instalar/configurar otro checker ni modificar dependencias; mantener migraciones históricas intactas.
+- [x] 1.1 Completar anotaciones estándar de parámetros, retornos, colecciones, genéricos y opcionales en funciones existentes afectadas de Locker/Dimensions, servicios, HTTP, repositorios, recepción/custodia y composición, y mantenerlas en todo código nuevo. Corregir narrowing e incompatibilidades entre puertos/adaptadores sin Any o supresiones para ocultarlas; revisar contratos y ejecutar pruebas existentes afectadas. Revisar Pylance en VSCode si está disponible, registrando su disponibilidad real bajo la restricción de herramientas de aquella fase, hoy sustituida; mantener migraciones históricas intactas.
 
 ## 2. Ubicación de lockers
 
@@ -23,7 +23,7 @@ El 2026-10-15 el usuario ratificó ubicación persistida del locker y comparaci�
 - [x] 4.2 Solicitar revisión independiente de la implementación a `sdd_reviewer`, resolver hallazgos y repetir las verificaciones afectadas antes de declarar completa la implementación, conforme a AGENTS.md.
 
 
-## Evidencia de verificación (2026-10-15)
+## Evidencia histórica de verificación (2026-10-15, anterior a Pyright)
 
 - Suite completa: `TEST_DATABASE_URL=… UV_CACHE_DIR=/tmp/uv-cache uv run --offline --extra dev python -m unittest discover -s tests -t . -v -f`, desde `backend/`: **95 pruebas OK en 21.430 s**, sin omisiones. PostgreSQL 17 local, base dedicada `hexagonal_test` y esquemas aislados por prueba; incluye migraciones, metadata, rollback y concurrencia de custodia.
 - Unitarias: `env -u TEST_DATABASE_URL UV_CACHE_DIR=/tmp/uv-cache uv run --offline --extra dev python -m unittest discover -s tests/unit -t . -v`: **51 pruebas OK en 2.744 s**, sin base configurada ni conexiones a ella. TestClient/AnyIO requirió habilitar sockets en el sandbox; no se cambiaron pruebas ni dependencias para ello.
@@ -34,12 +34,12 @@ El 2026-10-15 el usuario ratificó ubicación persistida del locker y comparaci�
 - `openspec validate add-locker-location-and-shipping-comparison --strict` y `git diff --check` correctos. `pyproject.toml`, `uv.lock` y las migraciones 0001–0003 permanecen intactos.
 
 
-## Seguimiento de diagnósticos de Pylance
+## Seguimiento histórico de diagnósticos de Pylance (anterior a Pyright)
 
-El usuario aportó 29 diagnósticos tras el commit `1daa877`: 4 en `locker_routes.py` y 25 en `sqlmodel_lockers.py`. La auditoría AST y las pruebas de ejecución anteriores no demostraban compatibilidad con el analizador estático. Se reabren las tareas 1.1, 4.1 y 4.2 para corregir los contratos de `Select`, el override de `__tablename__`, los tipos de colecciones y los diagnósticos auxiliares, incluyendo el mismo patrón de tablas en `sqlmodel_repositories.py`. Se mantienen alcance y restricciones: anotaciones estándar, sin nuevos checkers, dependencias, supresiones ni cambios funcionales.
+El usuario aportó 29 diagnósticos tras el commit `1daa877`: 4 en `locker_routes.py` y 25 en `sqlmodel_lockers.py`. La auditoría AST y las pruebas de ejecución anteriores no demostraban compatibilidad con el analizador estático. Se reabren las tareas 1.1, 4.1 y 4.2 para corregir los contratos de `Select`, el override de `__tablename__`, los tipos de colecciones y los diagnósticos auxiliares, incluyendo el mismo patrón de tablas en `sqlmodel_repositories.py`. En esa etapa se mantenían anotaciones estándar, sin nuevos checkers, dependencias, supresiones ni cambios funcionales; la petición actual sustituye la restricción de herramientas.
 
 
-### Corrección verificada
+### Corrección verificada en aquella etapa
 
 - Los 4 diagnósticos de JSON se atienden con `TypeGuard` hacia vistas `Mapping[object, object]` y `Sequence[object]`; la recursión conserva la validación existente sin elementos `Unknown`.
 - Los 11 diagnósticos encadenados de consultas provienen del genérico incorrecto: SQLModel declara `Select` con `TypeVarTuple`, por lo que se usa `Select[LockerRow, CompartmentRow | None, UUID | None]`, no un único parámetro tupla. El cast sigue limitado a la nulabilidad real de los outer joins.
@@ -48,3 +48,21 @@ El usuario aportó 29 diagnósticos tras el commit `1daa877`: 4 en `locker_route
 - Comparación independiente contra `1daa877`: DDL PostgreSQL, índices y defaults de las cinco tablas idénticos. Las pruebas de migración no detectan nuevas operaciones. Sin cambios de dependencias, configuración, migraciones, reglas de negocio ni supresiones.
 - Suite completa tras las correcciones: **95 pruebas OK en 20.176 s**, sin omisiones, con el mismo comando y PostgreSQL aislado anteriores. `git diff --check` correcto.
 - `sdd_reviewer` contrastó las 29 entradas con sus causas y los patrones repetidos, revisó las firmas instaladas de SQLModel/SQLAlchemy y cerró sin hallazgos pendientes. **No se ha ejecutado Pylance/Pyright y no se afirma un resultado de cero diagnósticos del editor**; la comprobación disponible es el informe aportado, la revisión de contratos y las pruebas de regresión.
+
+## 5. Pyright y regla permanente de verificación
+
+- [x] 5.1 Añadir Pyright al extra dev/uv.lock y pyrightconfig.json en raíz con backend incluido, producción strict, pruebas standard, Python 3.11, entorno/imports de backend y exclusiones acotadas de design.md. Documentar en README `uv run --extra dev pyright --project .. --warnings`, instalación y selección de intérprete; exigir su ejecución al completar cada spec en AGENTS.md y evidencia en sdd_builder/sdd_reviewer sin cambiar modelos/ajustes. Verificar que el comando carga esa configuración y analiza todo el alcance sin servicios, registrando sus diagnósticos iniciales.
+- [x] 5.2 Corregir todos los diagnósticos del backend analizado, incluidos tests y migraciones no históricas, mediante anotaciones, genéricos, protocolos y narrowing veraces; no rebajar reglas ni ocultar problemas con Any/exclusiones. Ejecutar Pyright hasta obtener cero errores y advertencias, más las pruebas de comportamiento afectadas; mantener contratos, DDL y 0001–0003 intactos.
+- [x] 5.3 Ejecutar el comando final de Pyright, unitarias sin servicios e integración/suite completa con PostgreSQL real aislado; comprobar documentación/configuración y validar OpenSpec estrictamente. Obtener revisión independiente sdd_reviewer, resolver hallazgos y repetir verificaciones afectadas; registrar resultados actuales separados de la evidencia histórica antes de marcar completa esta ampliación.
+
+### Evidencia actual de Pyright y regresión (2026-10-15)
+
+- Diagnóstico inicial real de Pyright 1.1.414 con el alcance acordado: **195 errores y 1 advertencia en 41 archivos**. El resultado previo de pruebas no sustituía este análisis.
+- `uv.lock` fija Pyright 1.1.414 y su dependencia nueva nodeenv 1.11.0, sin actualizar las demás dependencias. Configuración compartida, README, AGENTS.md e instrucciones de builder/reviewer completadas; modelos y ajustes de agentes intactos.
+- Comando final desde `backend/`: `env -u TEST_DATABASE_URL UV_CACHE_DIR=/tmp/uv-cache uv run --offline --extra dev pyright --project .. --warnings`: **0 errores, 0 advertencias, 0 informaciones**, salida 0. Analiza producción strict y pruebas standard; incluye env.py y 0004. El comando del README es el mismo sin opciones propias de este entorno.
+- Corregidos contratos, genéricos y opcionales, con validación explícita de fronteras Python y respuestas de proveedores. Conservados todos los métodos y escenarios de prueba, incluidos datos inválidos y concurrencia; sin suprimir reglas ni añadir Any para esconder diagnósticos.
+- Unitarias sin `TEST_DATABASE_URL`: `env -u TEST_DATABASE_URL UV_CACHE_DIR=/tmp/uv-cache uv run --offline --extra dev python -m unittest discover -s tests/unit -t . -v`: **52 pruebas OK en 2.811 s**. TestClient/AnyIO requirió sockets habilitados en el sandbox.
+- Suite completa: `TEST_DATABASE_URL=… UV_CACHE_DIR=/tmp/uv-cache uv run --offline --extra dev python -m unittest discover -s tests -t . -v -f`: **95 pruebas OK en 20.610 s**, sin omisiones; 52 unitarias y 43 de integración. PostgreSQL 17, base dedicada `hexagonal_test`, esquemas aislados; siete comprobaciones de metadata sin nuevas operaciones de migración. Migraciones históricas y DDL conservados.
+- Integración sin configurar `TEST_DATABASE_URL` continúa fallando explícitamente antes de los casos con `TEST_DATABASE_URL is required for PostgreSQL integration tests`, salida 5.
+- `sdd_reviewer` ejecutó independientemente el comando final de Pyright y confirmó **0 errores y 0 advertencias**; revisión cerrada sin hallazgos pendientes tras revisar configuración, validaciones runtime, casos negativos y evidencia de pruebas.
+- `openspec validate add-locker-location-and-shipping-comparison --strict` y `git diff --check` correctos. Implementación completada; sincronización y archivado permanecen fuera de esta petición.

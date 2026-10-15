@@ -45,9 +45,9 @@ class ProviderDouble:
     def code(self) -> str:
         return self._code
 
-    async def quote(self, value: ShippingQuoteRequest) -> QuoteOffers | NoCoverage:
+    async def quote(self, request: ShippingQuoteRequest) -> QuoteOffers | NoCoverage:
         self.calls += 1
-        return await self.callback(value) if self.callback is not None else offers()
+        return await self.callback(request) if self.callback is not None else offers()
 
 
 class ShippingContractTests(TestCase):

@@ -1,6 +1,6 @@
 from uuid import UUID
 from domain.lockers import (Address, Availability, Compartment, CompartmentBatch, Coordinates,
-    Dimensions, Locker, LockerNotFoundError, LockerPatch, location_alias, validate_batches)
+    Dimensions, Locker, LockerNotFoundError, LockerPatch, location_alias, validate_batches, require_instance)
 from domain.ports import LockerRepository
 
 
@@ -43,8 +43,8 @@ class LockerService:
     async def update_compartment(self, identifier: UUID, cell_id: UUID, dimensions: Dimensions | None = None, enabled: bool | None = None) -> Compartment:
         if dimensions is None and enabled is None:
             raise ValueError('Se requiere dimensions o enabled')
-        if dimensions is not None and not isinstance(dimensions, Dimensions):
-            raise ValueError('Dimensiones inválidas')
+        if dimensions is not None:
+            require_instance(dimensions, Dimensions, 'Dimensiones inválidas')
         if enabled is not None and type(enabled) is not bool:
             raise ValueError('enabled debe ser booleano')
         return await self.repository.update_compartment(identifier, cell_id, dimensions, enabled)

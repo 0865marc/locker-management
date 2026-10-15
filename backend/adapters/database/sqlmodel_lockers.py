@@ -34,8 +34,8 @@ _locker_table = Table(
     Column('city', Text),
     Column('street', Text),
     Column('street_number', Text),
-    Column('latitude', Double),
-    Column('longitude', Double),
+    Column[float]('latitude', Double()),
+    Column[float]('longitude', Double()),
     CheckConstraint(ADDRESS_CHECK, name='ck_lockers_address'),
     CheckConstraint(COORDINATES_CHECK, name='ck_lockers_coordinates'),
 )

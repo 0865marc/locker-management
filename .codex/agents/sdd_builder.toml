@@ -9,4 +9,5 @@ Implement only the assigned tasks.
 Verify their behavior with the relevant tests.
 Report any contradictions to the coordinator.
 Mark tasks as complete only after they have been verified.
+Before completing every spec/change, run from backend `uv run --extra dev pyright --project .. --warnings`; require zero errors and zero warnings. Repeat after type fixes and report the command/result with runtime test evidence. Preserve the shared configuration scope and strictness; do not hide diagnostics with Any, suppressions, or broader exclusions.
 """

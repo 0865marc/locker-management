@@ -2,17 +2,24 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from domain.lockers import Dimensions
+from domain.lockers import Dimensions, require_instance
+from typing import TypeGuard
 
 
-def validate_code(value: str, name: str) -> None:
+def validate_code(value: object, name: str) -> None:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ValueError(f'{name} must be nonblank trimmed text')
 
 
-def _positive_integer(value: int, name: str) -> None:
+def _positive_integer(value: object, name: str) -> None:
     if type(value) is not int or value < 1:
         raise ValueError(f'{name} must be a positive integer')
+
+
+def _validate_postal(value: object) -> None:
+    if (not isinstance(value, str) or len(value) != 5
+            or any(character not in '0123456789' for character in value)):
+        raise ValueError('Postal codes must contain five ASCII digits')
 
 
 @dataclass(frozen=True)
@@ -27,15 +34,12 @@ class ShippingQuoteRequest:
     def __post_init__(self) -> None:
         if self.origin_country_code != 'ES' or self.destination_country_code != 'ES':
             raise ValueError('Only country ES is supported')
-        for postal in (self.origin_postal_code, self.destination_postal_code):
-            if (not isinstance(postal, str) or len(postal) != 5
-                    or any(character not in '0123456789' for character in postal)):
-                raise ValueError('Postal codes must contain five ASCII digits')
+        _validate_postal(self.origin_postal_code)
+        _validate_postal(self.destination_postal_code)
         if type(self.weight_grams) is not int or not 1 <= self.weight_grams <= 30000:
             raise ValueError('weight_grams must be an integer between 1 and 30000')
-        if not isinstance(self.dimensions, Dimensions):
-            raise ValueError('dimensions must be Dimensions')
-        if any(type(axis) is not int or not 1 <= axis <= 2000 for axis in self.dimensions.axes):
+        dimensions = require_instance(self.dimensions, Dimensions, 'dimensions must be Dimensions')
+        if any(type(axis) is not int or not 1 <= axis <= 2000 for axis in dimensions.axes):
             raise ValueError('Shipping dimensions must be integers between 1 and 2000 mm')
 
 
@@ -58,13 +62,16 @@ class ShippingOffer:
             raise ValueError('Transit interval must be ordered')
 
 
-def _validate_offers(offers: tuple[ShippingOffer, ...]) -> None:
-    if not isinstance(offers, tuple):
+def _is_object_tuple(value: object) -> TypeGuard[tuple[object, ...]]:
+    return isinstance(value, tuple)
+
+
+def _validate_offers(offers: object) -> None:
+    if not _is_object_tuple(offers):
         raise ValueError('offers must be an immutable tuple')
     codes: set[str] = set()
-    for offer in offers:
-        if not isinstance(offer, ShippingOffer):
-            raise ValueError('Every offer must be ShippingOffer')
+    for candidate in offers:
+        offer = require_instance(candidate, ShippingOffer, 'Every offer must be ShippingOffer')
         offer.__post_init__()
         if offer.service_code in codes:
             raise ValueError('service_code must be unique within a provider')
@@ -107,8 +114,7 @@ class ProviderResult:
     def __post_init__(self) -> None:
         validate_code(self.provider_code, 'provider_code')
         _validate_offers(self.offers)
-        if not isinstance(self.status, ProviderStatus):
-            raise ValueError('Invalid provider status')
+        require_instance(self.status, ProviderStatus, 'Invalid provider status')
         if self.status is ProviderStatus.QUOTED:
             if not self.offers or self.error_code is not None:
                 raise ValueError('QUOTED requires offers and no error')

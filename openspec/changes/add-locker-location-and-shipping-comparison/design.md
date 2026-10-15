@@ -2,7 +2,7 @@
 
 ## Context
 
-Ver proposal.md para motivación. Dimensions ya existe en domain/lockers.py; LockerService y repositorios contienen firmas por completar. Se mantiene dominio puro, casos de uso en application y puertos en domain/ports.py. El usuario ratificó el alcance el 2026-10-15 y precisó anotaciones estándar de Python sin herramientas nuevas. Esta revisión documental no ha iniciado implementación ni ejecutado pruebas o diagnósticos de Pylance.
+Ver proposal.md para motivación. La funcionalidad y correcciones previas están implementadas con evidencia histórica en tasks.md, pero revisar anotaciones y pasar pruebas no demostró ausencia de errores estáticos. El usuario solicita ahora Pyright y su ejecución obligatoria al completar cada spec, sustituyendo la anterior restricción de herramientas. Esta actualización de planificación no ejecuta el nuevo checker.
 
 ## Goals / Non-Goals
 
@@ -12,11 +12,15 @@ Ver proposal.md para motivación. Dimensions ya existe en domain/lockers.py; Loc
 
 ## Decisions
 
-### 1. Tipado del código existente y nuevo
+### 1. Pyright reproducible y corrección completa
 
-Completar parámetros, retornos, colecciones, genéricos, opcionales y callbacks de funciones existentes afectadas y nuevas: Locker/Dimensions, servicios, HTTP, repositorios, recepción/custodia y composición. Usar anotaciones estándar de Python, tipos propios, Protocol y Awaitable[T], con narrowing explícito de valores opcionales y contratos coherentes entre puertos/adaptadores. Corregir incompatibilidades reales sin ocultarlas con Any o supresiones generales; casts puntuales requieren fundamento. Mantener 0001–0003 intactas.
+Añadir Pyright al extra dev de backend/pyproject.toml y regenerar backend/uv.lock. Usar una única configuración pyrightconfig.json en la raíz para CLI y Pylance al abrir esa raíz. Configurar include=["backend"], typeCheckingMode="standard" y strict para backend/domain, backend/application, backend/adapters y backend/main.py; las pruebas siguen incluidas en standard. Objetivo pythonVersion="3.11", venvPath="backend", venv=".venv" y executionEnvironments con root="backend" para resolver los imports del proyecto. VSCode debe seleccionar backend/.venv; no prometer idénticos diagnósticos si la extensión y CLI usan versiones distintas.
 
-Verificar mediante revisión de anotaciones/contratos y pruebas de comportamiento existentes. Revisar los diagnósticos de Pylance en VSCode cuando esté disponible, sin afirmar que se han ejecutado desde este entorno. No instalar ni configurar un checker nuevo, ni cambiar pyproject/uv.lock por tipado.
+Excluir explícitamente entornos .venv y cachés, y solo estas migraciones históricas intocables: 0001_create_delivery_and_return.py, 0002_parcel_custody.py y 0003_lockers_and_custody.py bajo backend/adapters/database/migrations/versions. env.py y 0004_locker_geography.py se analizan. No excluir módulos, tests ni reglas por sus diagnósticos.
+
+Corregir todos los errores/advertencias del backend incluido, no solo los archivos del informe anterior: parámetros, retornos, colecciones, genéricos, opcionales, callbacks y contratos entre puertos/adaptadores. Mantener comportamiento y Python 3.11. Usar tipos reales, Protocol, Awaitable[T] y narrowing que represente comprobaciones verdaderas; no falsear TypeGuard ni recurrir a Any, ignore generales o rebajas de reglas. Casts puntuales de frontera necesitan fundamento revisable.
+
+Desde backend ejecutar `uv run --extra dev pyright --project .. --warnings`: requiere cero errores y cero advertencias, sin base de datos. Documentar instalación/comando/editor en README. AGENTS.md obligará a ejecutarlo al terminar de implementar cada spec/cambio y a repetirlo tras correcciones de tipos. Las instrucciones de sdd_builder y sdd_reviewer exigirán evidencia del comando y revisión de alcance/configuración, sin modificar sus modelos ni ajustes. Esto complementa pruebas unitarias/PostgreSQL; una auditoría AST o revisión manual no sustituye el resultado del checker.
 
 ### 2. Ubicación nullable y compatible
 
@@ -62,17 +66,18 @@ Aritmética entera, sin red/azar/perfiles operativos. Límites: kg <= 1600 y pre
 
 | Bloque | Archivos previstos |
 | --- | --- |
-| Tipado | funciones existentes afectadas y nuevas de backend/domain, application, adapters y main.py; sin cambios de dependencias/configuración |
+| Tipado | backend/pyproject.toml, backend/uv.lock, pyrightconfig.json; todo backend analizado, incluidas pruebas; AGENTS.md, .codex/agents/sdd_builder.toml, .codex/agents/sdd_reviewer.toml y README |
 | Locker | backend/domain/lockers.py, domain/ports.py, application/locker_use_cases.py, adapters/http/locker_schemas.py, locker_routes.py, adapters/database/sqlmodel_lockers.py y metadata/env si procede |
 | Migración | nuevo backend/adapters/database/migrations/versions/0004_locker_geography.py |
 | Comparador | nuevos backend/domain/shipping_quotes.py, application/shipping_quote_use_cases.py, adapters/providers/__init__.py y simulated_shipping.py |
 | Pruebas | nuevo backend/tests/unit/test_shipping_quotes.py; adaptar unit/test_lockers.py, test_main.py y tests afectados por tipos; integration/test_locker_http.py, test_locker_repositories.py, test_migrations.py y test_postgresql.py |
 
-README documenta geografía y ejemplo directo del comparador. No hay endpoint shipping, QuoteLockerShipping, domain/dimensions.py ni cambios funcionales de runtime/Compose. Unitarias sin servicios cubren cuarto proveedor/múltiples ofertas, configuración inválida, no cobertura/errores, límites y cancelación mediante barreras/eventos. PostgreSQL conserva aislamiento, fallo explícito sin skips, concurrencia/rollback de custodia y metadata; añade geografía y migración. Revisión sdd_reviewer antes de completar implementación.
+README documenta geografía y ejemplo directo del comparador. No hay endpoint shipping, QuoteLockerShipping, domain/dimensions.py ni cambios funcionales de runtime/Compose. Unitarias sin servicios cubren cuarto proveedor/múltiples ofertas, configuración inválida, no cobertura/errores, límites y cancelación mediante barreras/eventos. PostgreSQL conserva aislamiento, fallo explícito sin skips, concurrencia/rollback de custodia y metadata; añade geografía y migración. Revisión sdd_reviewer y Pyright sin errores/advertencias antes de completar implementación.
 
 Comandos desde backend:
 
 ```sh
+uv run --extra dev pyright --project .. --warnings
 uv run --extra dev python -m unittest discover -s tests/unit -t . -v
 TEST_DATABASE_URL='<postgresql+asyncpg de pruebas>' uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
 TEST_DATABASE_URL='<postgresql+asyncpg de pruebas>' uv run --extra dev python -m unittest discover -s tests -t . -v -f

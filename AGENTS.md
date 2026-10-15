@@ -106,6 +106,13 @@ its CLI before assuming OpenSpec needs to be installed again.
 - Validate the selected change with
   `openspec validate <change-name> --strict`. Document validation is separate
   from proving that the implementation satisfies its requirements.
+- Before completing implementation of every spec/change, run from `backend/`
+  `uv run --extra dev pyright --project .. --warnings` and require **zero errors
+  and zero warnings**. Repeat the check after type corrections and report the
+  actual command/result alongside relevant runtime tests. Do not replace this
+  evidence with manual annotation review, AST inspection, or editor screenshots.
+  Keep the shared root configuration's scope and strictness; fix genuine causes
+  rather than suppressing rules, broadening exclusions, or hiding types with Any.
 - Run tests appropriate to the change. The documented local suite is
   `uv run --extra dev python -m unittest discover -s tests -v`.
   Follow `README.md` for PostgreSQL integration prerequisites and

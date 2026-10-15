@@ -6,6 +6,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from uuid import UUID, uuid4
+from typing import TypeVar
+
+
+ValueT = TypeVar('ValueT')
+
+
+def require_instance(value: object, expected: type[ValueT], message: str) -> ValueT:
+    """Validate an untrusted Python boundary and return its narrowed value."""
+    if not isinstance(value, expected):
+        raise ValueError(message)
+    return value
 
 
 class LockerNotFoundError(LookupError):
@@ -58,14 +69,16 @@ class CompartmentBatch:
     def __post_init__(self) -> None:
         if type(self.quantity) is not int or self.quantity < 1:
             raise ValueError('quantity debe ser un entero positivo')
-        if not isinstance(self.dimensions, Dimensions) or type(self.enabled) is not bool:
+        require_instance(self.dimensions, Dimensions, 'Lote inválido')
+        if type(self.enabled) is not bool:
             raise ValueError('Lote inválido')
 
 
 def validate_batches(batches: Sequence[CompartmentBatch]) -> None:
-    if not batches or any(not isinstance(batch, CompartmentBatch) for batch in batches):
+    if not batches:
         raise ValueError('compartments debe contener lotes')
-    if sum(batch.quantity for batch in batches) > 1000:
+    validated = [require_instance(batch, CompartmentBatch, 'compartments debe contener lotes') for batch in batches]
+    if sum(batch.quantity for batch in validated) > 1000:
         raise ValueError('Máximo 1000 celdas nuevas por petición')
 
 
@@ -79,9 +92,10 @@ class Compartment:
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.id, UUID) or not isinstance(self.locker_id, UUID):
-            raise ValueError('Identificador inválido')
-        if not isinstance(self.dimensions, Dimensions) or any(type(v) is not bool for v in (self.enabled, self.retired, self.occupied)):
+        require_instance(self.id, UUID, 'Identificador inválido')
+        require_instance(self.locker_id, UUID, 'Identificador inválido')
+        require_instance(self.dimensions, Dimensions, 'Celda inválida')
+        if any(type(v) is not bool for v in (self.enabled, self.retired, self.occupied)):
             raise ValueError('Celda inválida')
         if self.retired and self.enabled:
             raise ValueError('Una celda retirada no puede estar habilitada')
@@ -92,7 +106,7 @@ def select_compartment(cells: Iterable[Compartment], dimensions: Dimensions) -> 
     return min(candidates, key=lambda cell: (cell.dimensions.volume, cell.id)) if candidates else None
 
 
-def location_alias(value: str) -> str:
+def location_alias(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError('location_id debe ser texto no vacío')
     return value.strip()
@@ -110,7 +124,8 @@ class Address:
     def __post_init__(self) -> None:
         if self.country_code != 'ES':
             raise ValueError('country_code debe ser ES')
-        if not isinstance(self.postal_code, str) or re.fullmatch(r'[0-9]{5}', self.postal_code) is None:
+        postal_code = require_instance(self.postal_code, str, 'postal_code debe tener cinco dígitos ASCII')
+        if re.fullmatch(r'[0-9]{5}', postal_code) is None:
             raise ValueError('postal_code debe tener cinco dígitos ASCII')
         for name in ('province', 'city', 'street', 'street_number'):
             value = getattr(self, name)
@@ -145,10 +160,14 @@ class LockerPatch:
             raise ValueError('active debe ser booleano')
         if self.active is None and not self.address_supplied and not self.coordinates_supplied:
             raise ValueError('Indique active, address o coordinates')
-        if self.address is not None and (not self.address_supplied or not isinstance(self.address, Address)):
-            raise ValueError('address inválido')
-        if self.coordinates is not None and (not self.coordinates_supplied or not isinstance(self.coordinates, Coordinates)):
-            raise ValueError('coordinates inválidas')
+        if self.address is not None:
+            require_instance(self.address, Address, 'address inválido')
+            if not self.address_supplied:
+                raise ValueError('address inválido')
+        if self.coordinates is not None:
+            require_instance(self.coordinates, Coordinates, 'coordinates inválidas')
+            if not self.coordinates_supplied:
+                raise ValueError('coordinates inválidas')
 
 
 @dataclass(frozen=True)
@@ -164,11 +183,12 @@ class Locker:
     def __post_init__(self) -> None:
         if self.location_id is not None:
             object.__setattr__(self, 'location_id', location_alias(self.location_id))
-        if self.address is not None and not isinstance(self.address, Address):
-            raise ValueError('address inválido')
-        if self.coordinates is not None and not isinstance(self.coordinates, Coordinates):
-            raise ValueError('coordinates inválidas')
-        if type(self.active) is not bool or not isinstance(self.id, UUID):
+        if self.address is not None:
+            require_instance(self.address, Address, 'address inválido')
+        if self.coordinates is not None:
+            require_instance(self.coordinates, Coordinates, 'coordinates inválidas')
+        require_instance(self.id, UUID, 'Locker inválido')
+        if type(self.active) is not bool:
             raise ValueError('Locker inválido')
         if any(cell.locker_id != self.id for cell in self.compartments):
             raise ValueError('Celda ajena al locker')

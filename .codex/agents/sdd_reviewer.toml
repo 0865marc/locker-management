@@ -7,5 +7,6 @@ developer_instructions = """
 Review acceptance scenarios, error handling, and regressions.
 Check the separation between domain, application, and adapters.
 Return findings with evidence, file references, and missing tests.
+Verify current evidence for `uv run --extra dev pyright --project .. --warnings` from backend: zero errors and zero warnings are required before completing every spec/change, and type fixes require another check. Review that shared configuration scope/strictness and runtime validation remain intact; manual/AST or editor review is not a substitute.
 Do not modify files during the review.
 """

@@ -1,0 +1,18 @@
+{
+  "include": ["backend"],
+  "exclude": [
+    "**/.venv",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "backend/adapters/database/migrations/versions/0001_create_delivery_and_return.py",
+    "backend/adapters/database/migrations/versions/0002_parcel_custody.py",
+    "backend/adapters/database/migrations/versions/0003_lockers_and_custody.py"
+  ],
+  "typeCheckingMode": "standard",
+  "strict": ["backend/domain", "backend/application", "backend/adapters", "backend/main.py"],
+  "pythonVersion": "3.11",
+  "venvPath": "backend",
+  "venv": ".venv",
+  "executionEnvironments": [{"root": "backend"}]
+}

@@ -2,6 +2,8 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+from httpx import Response
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -11,7 +13,7 @@ from domain.models import CustodyConflictError, Delivery, Return
 
 
 class HttpAdapterTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.delivery = AsyncMock(spec=DeliveryService)
         self.returns = AsyncMock(spec=ReturnService)
         app = FastAPI()
@@ -36,7 +38,7 @@ class HttpAdapterTests(unittest.TestCase):
              self.return_entity.hand_over(self.at)),
         )
 
-    def assert_entity(self, response, entity):
+    def assert_entity(self, response: Response, entity: Delivery | Return) -> None:
         body = response.json()
         self.assertEqual(set(body), set(vars(entity)))
         for key, value in vars(entity).items():
@@ -48,7 +50,7 @@ class HttpAdapterTests(unittest.TestCase):
             else:
                 self.assertEqual(body[key], value)
 
-    def test_create_and_list_serialize_complete_entities_with_nulls(self):
+    def test_create_and_list_serialize_complete_entities_with_nulls(self) -> None:
         for path, payload, entity, service in self.cases:
             with self.subTest(path=path):
                 service.create.return_value = entity
@@ -69,7 +71,7 @@ class HttpAdapterTests(unittest.TestCase):
                 service.list_all.return_value = []
                 self.assertEqual(self.client.get(path).json(), [])
 
-    def test_optional_data_deadline_and_documented_payloads(self):
+    def test_optional_data_deadline_and_documented_payloads(self) -> None:
         payload = {"tracking_number": "PKG-42", "carrier_code": "carrier-a",
                    "recipient_name": "Ana García", "recipient_phone": "600123456",
                    "pickup_deadline_at": "2026-10-20T18:00:00+02:00"}
@@ -87,7 +89,7 @@ class HttpAdapterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["sender_name"], "Luis Pérez")
 
-    def test_invalid_creation_types_missing_fields_and_deadlines_never_invoke_service(self):
+    def test_invalid_creation_types_missing_fields_and_deadlines_never_invoke_service(self) -> None:
         for path, payload, _, service in self.cases:
             bodies = [None, [], False, 0, "text", {}]
             for key in payload:
@@ -104,7 +106,7 @@ class HttpAdapterTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 422)
                     service.create.assert_not_awaited()
 
-    def test_unknown_legacy_and_system_fields_never_invoke_creation(self):
+    def test_unknown_legacy_and_system_fields_never_invoke_creation(self) -> None:
         common = ("id", "status", "received_at", "storage_location", "order_reference", "unknown")
         for path, payload, _, service in self.cases:
             fields = common + (("address", "delivery_instructions", "collected_at", "returned_to_carrier_at")
@@ -115,7 +117,7 @@ class HttpAdapterTests(unittest.TestCase):
                     self.assertEqual(self.client.post(path, json=payload | {field: None}).status_code, 422)
                     service.create.assert_not_awaited()
 
-    def test_domain_validation_errors_become_http_422(self):
+    def test_domain_validation_errors_become_http_422(self) -> None:
         for path, payload, _, service in self.cases:
             for key in payload:
                 with self.subTest(path=path, key=key):
@@ -124,7 +126,7 @@ class HttpAdapterTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 422)
                     self.assertEqual(response.json(), {"detail": "El texto no puede estar vacío"})
 
-    def test_actions_delegate_uuid_and_return_complete_entity(self):
+    def test_actions_delegate_uuid_and_return_complete_entity(self) -> None:
         for path, operation, entity in self.actions:
             operation.return_value = entity
             for options in ({}, {"json": {}}):
@@ -135,7 +137,7 @@ class HttpAdapterTests(unittest.TestCase):
                     self.assert_entity(response, entity)
                     operation.assert_awaited_once_with(entity.id)
 
-    def test_invalid_action_bodies_and_identifiers_do_not_invoke_services(self):
+    def test_invalid_action_bodies_and_identifiers_do_not_invoke_services(self) -> None:
         for path, operation, _ in self.actions:
             for raw in ('null', '[]', 'false', '0', '"text"', '{"status":"COLLECTED"}', '{"id":null}', '{'):
                 with self.subTest(path=path, raw=raw):
@@ -147,7 +149,7 @@ class HttpAdapterTests(unittest.TestCase):
             self.assertEqual(self.client.post("/".join(malformed)).status_code, 422)
             operation.assert_not_awaited()
 
-    def test_not_found_and_conflicts_have_distinct_statuses(self):
+    def test_not_found_and_conflicts_have_distinct_statuses(self) -> None:
         for path, operation, _ in self.actions:
             for error, code in ((ParcelNotFoundError("No existe"), 404),
                                 (CustodyConflictError("Ya ha salido o perdió la carrera"), 409),
@@ -158,7 +160,7 @@ class HttpAdapterTests(unittest.TestCase):
                     self.assertEqual(response.status_code, code)
                     self.assertEqual(response.json(), {"detail": str(error)})
 
-    def test_infrastructure_failures_are_not_business_errors_or_successes(self):
+    def test_infrastructure_failures_are_not_business_errors_or_successes(self) -> None:
         for path, payload, _, service in self.cases:
             service.create.side_effect = RuntimeError("Fallo de conexión")
             with self.assertRaisesRegex(RuntimeError, "Fallo de conexión"):

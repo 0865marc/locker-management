@@ -42,12 +42,36 @@ The PostgreSQL suite SHALL retain isolated schemas, explicit configuration failu
 
 ### Requirement: Keep standard Python annotations complete and coherent
 
-Affected existing and new functions SHALL have standard Python annotations for parameters, returns, collections, generics and optional values. Ports and adapters SHALL agree on types, with correct narrowing. Real incompatibilities SHALL be corrected rather than hidden with generalized Any or suppressions. Historical migrations 0001–0003 SHALL remain unchanged. Annotation review SHALL require no new checker, configuration or dependency.
+Affected existing and new functions SHALL have standard Python annotations for parameters, returns, collections, generics and optional values. Ports and adapters SHALL agree on types, with correct narrowing. Real incompatibilities SHALL be corrected rather than hidden with generalized Any or suppressions. Historical migrations 0001–0003 SHALL remain unchanged. Verification SHALL include the configured Pyright check alongside annotation review and behavioral tests.
 
 #### Scenario: Review affected function contracts
 - **WHEN** affected functions, their callers and port implementations are reviewed
-- **THEN** annotations describe actual inputs/results, optional values are handled explicitly and existing behavioral tests remain applicable without installing additional typing tools
+- **THEN** annotations describe actual inputs/results, optional values are handled explicitly and existing behavioral tests remain applicable and the configured type checker verifies compatibility
 
 #### Scenario: Editor diagnostics when available
 - **WHEN** Pylance diagnostics are available in VSCode during verification
 - **THEN** relevant genuine type inconsistencies are corrected; if the editor is unavailable, the report records that limitation without claiming its diagnostics ran
+
+### Requirement: Run a reproducible backend type check
+
+The locked development dependencies SHALL provide Pyright with shared root configuration for CLI and Pylance. Analysis SHALL include backend production and tests, targeting Python 3.11 with backend/.venv. Domain, application, adapters and main SHALL use strict mode; tests SHALL use standard mode. Only environments/caches and historical migrations 0001–0003 SHALL be excluded. New migration 0004 and the migration environment SHALL remain checked.
+
+#### Scenario: Check without services
+- **WHEN** `uv run --extra dev pyright --project .. --warnings` runs from backend with the development dependencies installed and no database configuration
+- **THEN** it analyzes the configured backend and returns success only with zero errors and zero warnings, without connecting to a database
+
+#### Scenario: Correct the entire analyzed scope
+- **WHEN** diagnostics occur in production, tests or migration code included in analysis
+- **THEN** their real causes are corrected without hiding them through broad exclusions, disabled rules, generalized Any or untruthful narrowing
+
+### Requirement: Require type evidence before completing a spec
+
+Completing implementation of each spec/change SHALL require the configured Pyright command to pass with zero errors and warnings, alongside relevant runtime tests. Builder and independent reviewer SHALL report the command and result; corrections affecting types SHALL trigger another check. Previous manual/AST inspection or editor screenshots SHALL not substitute for current CLI evidence.
+
+#### Scenario: Type failures block completion
+- **WHEN** functional tests pass but the final type command reports errors or warnings
+- **THEN** implementation remains incomplete until the causes are corrected, the command passes and affected runtime tests are repeated
+
+#### Scenario: Preserve earlier evidence honestly
+- **WHEN** an earlier implementation was verified before the checker was introduced
+- **THEN** its prior test/review evidence remains historical and no clean checker result is claimed until the configured command actually runs successfully

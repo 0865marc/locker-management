@@ -6,7 +6,7 @@ Los lockers necesitan una dirección explícita y las funciones existentes neces
 
 ## What Changes
 
-- Completar anotaciones estándar de Python y corregir incompatibilidades reales de tipos en funciones existentes afectadas y nuevas, sin añadir herramientas ni dependencias.
+- Completar anotaciones estándar y corregir incompatibilidades en todo el backend analizado. Añadir Pyright como dependencia de desarrollo, configuración compartida con Pylance y obligación de ejecutar el chequeo al terminar cada spec, con cero errores y advertencias.
 - Persistir Address/Coordinates opcionales en Locker, manteniendo clientes e históricos con location_id y admitiendo altas con dirección sin alias. Añadir migración geográfica segura y ampliar alta, lectura y PATCH.
 - Incorporar QuoteShipping como utilidad interna asíncrona: recibe origen/destino, códigos postales, peso y Dimensions; consulta proveedores inyectados y devuelve sus ofertas normalizadas, falta de cobertura o error. Tres adaptadores simulados demuestran el contrato abierto a más proveedores y modalidades.
 
@@ -22,10 +22,10 @@ Se aplazan el dominio Parcel, mover Dimensions, integración locker→cotizació
 
 - `locker-management`: dirección/coordenadas, alias nullable y administración compatible.
 - `database-migrations`: revisión 0004 geográfica aditiva, con downgrade protegido.
-- `test-execution`: revisión de contratos/anotaciones y comprobación del comparador sin servicios, conservando integración PostgreSQL.
+- `test-execution`: verificación reproducible de tipos obligatoria al completar cada spec, junto con unitarias sin servicios e integración PostgreSQL.
 
 ## Impact
 
-Cambian modelos/servicios/HTTP/persistencia de lockers, sus pruebas y migraciones; se añaden contratos puros de transporte, el comparador y tres adaptadores. Se actualiza README para los contratos/comandos, sin cambios de dependencias por tipado. Dimensions permanece en domain/lockers.py. No se añade wiring de proveedores en main, infraestructura, dependencia de transporte ni API de cotizaciones.
+Cambian modelos/servicios/HTTP/persistencia de lockers, sus pruebas y migraciones; se añaden contratos puros de transporte, el comparador y tres adaptadores. Se actualizan backend/pyproject.toml y uv.lock, pyrightconfig.json en raíz, README, AGENTS.md y las instrucciones de builder/reviewer para exigir evidencia del chequeo; no cambian modelos ni ajustes de esos agentes. Dimensions permanece en domain/lockers.py. No se añade wiring de proveedores en main, infraestructura, dependencia de transporte ni API de cotizaciones.
 
-El 2026-10-15 el usuario ratificó este alcance, precisó que el tipado debía ser estándar de Python y solicitó un nombre acorde con el recorte: add-locker-location-and-shipping-comparison. Esta revisión documental no ha iniciado la implementación.
+La funcionalidad y las correcciones anteriores tienen evidencia histórica en tasks.md. La nueva petición explícita del usuario autoriza Pyright, la regla final y corregir todos sus diagnósticos, sustituyendo la restricción anterior de no añadir checker. Este ajuste no cambia el alcance funcional ni introduce CI externa.

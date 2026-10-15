@@ -13,6 +13,9 @@ from adapters.database.connection import get_database_url
 from adapters.database.sqlmodel_repositories import DeliveryRow, ReturnRow
 from adapters.database.sqlmodel_lockers import LockerRow, CompartmentRow, AssignmentRow
 
+REGISTERED_TABLES = (DeliveryRow.__table__, ReturnRow.__table__, LockerRow.__table__,
+                     CompartmentRow.__table__, AssignmentRow.__table__)
+
 
 config = context.config
 if config.config_file_name is not None:

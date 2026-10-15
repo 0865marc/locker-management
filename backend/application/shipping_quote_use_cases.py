@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from math import isfinite
 
 from domain.ports import ShippingProvider
+from domain.lockers import require_instance
 from domain.shipping_quotes import (
     NoCoverage,
     ProviderErrorCode,
@@ -13,6 +14,11 @@ from domain.shipping_quotes import (
     ShippingQuoteRequest,
     validate_code,
 )
+
+
+async def _provider_response(provider: ShippingProvider, request: ShippingQuoteRequest) -> object:
+    """Treat adapter output as untrusted until normalized runtime validation."""
+    return await provider.quote(request)
 
 
 class QuoteShipping:
@@ -44,8 +50,7 @@ class QuoteShipping:
         self._timeout_seconds = timeout_seconds
 
     async def compare(self, request: ShippingQuoteRequest) -> tuple[ProviderResult, ...]:
-        if not isinstance(request, ShippingQuoteRequest):
-            raise ValueError('request must be ShippingQuoteRequest')
+        request = require_instance(request, ShippingQuoteRequest, 'request must be ShippingQuoteRequest')
         request.__post_init__()
         # A separate semaphore per invocation bounds this comparison, not other callers.
         slots = asyncio.Semaphore(self._max_concurrency)
@@ -70,7 +75,7 @@ class QuoteShipping:
             deadline = asyncio.timeout(self._timeout_seconds)
             try:
                 async with deadline:
-                    response = await provider.quote(request)
+                    response = await _provider_response(provider, request)
                 if isinstance(response, QuoteOffers):
                     # Recheck the adapter boundary, including incorrectly constructed values.
                     response.__post_init__()

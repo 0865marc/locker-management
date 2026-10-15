@@ -5,7 +5,11 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 import unittest
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
+from domain.models import Delivery, Return
+from domain.lockers import Dimensions
 
 from alembic import command
 from alembic.config import Config
@@ -141,3 +145,29 @@ class PostgresTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def close_application(self, client):
         await self.applications.pop(client).aclose()
+
+
+async def save_parcel(
+    repository: SqlModelDeliveryRepository | SqlModelReturnRepository,
+    parcel: Delivery | Return,
+) -> None:
+    """Keep table-driven cases correlated at the repository boundary."""
+    if isinstance(parcel, Delivery):
+        assert isinstance(repository, SqlModelDeliveryRepository)
+        await repository.save(parcel)
+    else:
+        assert isinstance(repository, SqlModelReturnRepository)
+        await repository.save(parcel)
+
+
+async def receive_parcel(
+    repository: SqlModelDeliveryRepository | SqlModelReturnRepository,
+    parcel: Delivery | Return,
+    locker_id: UUID,
+    dimensions: Dimensions,
+) -> Delivery | Return:
+    if isinstance(parcel, Delivery):
+        assert isinstance(repository, SqlModelDeliveryRepository)
+        return await repository.receive_in_locker(parcel, locker_id, dimensions)
+    assert isinstance(repository, SqlModelReturnRepository)
+    return await repository.receive_in_locker(parcel, locker_id, dimensions)

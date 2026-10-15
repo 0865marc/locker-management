@@ -543,6 +543,29 @@ Detén las escrituras o conserva la versión capaz de liberarlas hasta resolverl
 Para recuperar datos, usa la copia de seguridad según el procedimiento operativo;
 no fuerces un downgrade destructivo ni borres volúmenes para superar las guardas.
 
+## Tipos: Pyright y Pylance
+
+El extra `dev` incluye Pyright, fijado en `uv.lock`. Desde `backend/`:
+
+```bash
+uv sync --extra dev
+uv run --extra dev pyright --project .. --warnings
+```
+
+Este comando es obligatorio al terminar cada spec/cambio y debe devolver **cero
+errores y cero advertencias**. Se repite después de corregir tipos, junto con las
+pruebas de comportamiento afectadas. No necesita PostgreSQL ni variables de base
+de datos; una revisión manual, auditoría AST o captura del editor no lo sustituye.
+
+`pyrightconfig.json` en la raíz incluye todo `backend`: producción en modo strict
+(dominio, aplicación, adaptadores y `main.py`) y pruebas en standard, con objetivo
+Python 3.11 e imports desde `backend`. Solo excluye entornos/cachés y migraciones
+históricas 0001–0003; `env.py` y 0004 se analizan. No se desactivan reglas para
+ocultar diagnósticos. En VSCode abre la raíz del repositorio y selecciona
+`backend/.venv` como intérprete para que Pylance use el entorno/configuración
+compartidos. La extensión y CLI pueden emitir diagnósticos distintos si usan
+versiones diferentes; la evidencia reproducible de cierre es el comando anterior.
+
 ## Pruebas
 
 Las suites usan `unittest`: `tests/unit` contiene pruebas sin servicios y

@@ -10,16 +10,17 @@ RECEIVED = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
 EXIT = RECEIVED + timedelta(hours=1)
 
 
-def delivery(**overrides):
-    return Delivery(**dict(tracking_number=" PKG-42 ", carrier_code=" carrier-a ", recipient_name=" Ana García ", received_at=RECEIVED) | overrides)
+def delivery(**overrides: object) -> Delivery:
+    # replace is a dynamic dataclass fixture boundary, including deliberately invalid inputs.
+    return replace(Delivery(" PKG-42 ", " carrier-a ", " Ana García ", RECEIVED), **overrides)
 
 
-def return_parcel(**overrides):
-    return Return(**dict(tracking_number=" PKG-42 ", carrier_code=" carrier-a ", received_at=RECEIVED) | overrides)
+def return_parcel(**overrides: object) -> Return:
+    return replace(Return(" PKG-42 ", " carrier-a ", RECEIVED), **overrides)
 
 
 class DomainTests(unittest.TestCase):
-    def test_initial_parcels_are_normalized_independent_and_immutable(self):
+    def test_initial_parcels_are_normalized_independent_and_immutable(self) -> None:
         first, second = delivery(), return_parcel()
         for item in (first, second):
             self.assertIsInstance(item.id, UUID)
@@ -28,7 +29,7 @@ class DomainTests(unittest.TestCase):
             self.assertEqual(item.received_at, RECEIVED)
             self.assertIs(item.received_at.tzinfo, timezone.utc)
             with self.assertRaises(FrozenInstanceError):
-                item.tracking_number = "changed"
+                setattr(item, "tracking_number", "changed")
         self.assertNotEqual(first.id, second.id)
         self.assertEqual(first.recipient_name, "Ana García")
         self.assertEqual(first.status, DeliveryStatus.AWAITING_PICKUP)
@@ -43,11 +44,12 @@ class DomainTests(unittest.TestCase):
         self.assertFalse(hasattr(second, "reason"))
         self.assertFalse(hasattr(second, "delivery_id"))
 
-    def test_optional_text_and_all_instants_normalize(self):
+    def test_optional_text_and_all_instants_normalize(self) -> None:
         offset = timezone(timedelta(hours=2))
         item = delivery(recipient_phone=" +34 600 123 ", received_at=RECEIVED.astimezone(offset), pickup_deadline_at=(RECEIVED - timedelta(days=1)).astimezone(offset))
         self.assertEqual(item.recipient_phone, "+34 600 123")
         self.assertIs(item.received_at.tzinfo, timezone.utc)
+        assert item.pickup_deadline_at is not None
         self.assertIs(item.pickup_deadline_at.tzinfo, timezone.utc)
         self.assertEqual(item.pickup_deadline_at, RECEIVED - timedelta(days=1))
         self.assertIsNone(delivery(recipient_phone=" \n ").recipient_phone)
@@ -55,10 +57,12 @@ class DomainTests(unittest.TestCase):
         self.assertIsNone(return_parcel(sender_name=" \t ").sender_name)
         collected = item.collect(EXIT.astimezone(offset))
         handed = return_parcel(received_at=RECEIVED.astimezone(offset)).hand_over(EXIT.astimezone(offset))
+        assert collected.collected_at is not None
         self.assertIs(collected.collected_at.tzinfo, timezone.utc)
+        assert handed.handed_over_at is not None
         self.assertIs(handed.handed_over_at.tzinfo, timezone.utc)
 
-    def test_required_text_rejects_blanks_and_incorrect_types(self):
+    def test_required_text_rejects_blanks_and_incorrect_types(self) -> None:
         for factory, names in ((delivery, ("tracking_number", "carrier_code", "recipient_name")), (return_parcel, ("tracking_number", "carrier_code"))):
             for name in names:
                 for value in ("", " \n ", None, 4, []):
@@ -69,7 +73,7 @@ class DomainTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 factory(**{name: 123})
 
-    def test_naive_instants_are_invalid_including_reconstruction(self):
+    def test_naive_instants_are_invalid_including_reconstruction(self) -> None:
         naive = RECEIVED.replace(tzinfo=None)
         for factory in (delivery, return_parcel):
             with self.assertRaises(ValueError):
@@ -81,7 +85,7 @@ class DomainTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             return_parcel(status=ReturnStatus.HANDED_OVER, handed_over_at=naive)
 
-    def test_delivery_exits_preserve_original_and_are_exclusive(self):
+    def test_delivery_exits_preserve_original_and_are_exclusive(self) -> None:
         original = delivery(pickup_deadline_at=RECEIVED - timedelta(days=1))
         for method, status, field in (("collect", DeliveryStatus.COLLECTED, "collected_at"), ("return_to_carrier", DeliveryStatus.RETURNED_TO_CARRIER, "returned_to_carrier_at")):
             with self.subTest(method=method):
@@ -98,7 +102,7 @@ class DomainTests(unittest.TestCase):
                         getattr(updated, repeated)(EXIT + timedelta(hours=1))
                 self.assertEqual(getattr(updated, field), EXIT)
 
-    def test_return_handover_preserves_original_and_rejects_repetition(self):
+    def test_return_handover_preserves_original_and_rejects_repetition(self) -> None:
         original = return_parcel()
         updated = original.hand_over(EXIT)
         self.assertEqual(updated.id, original.id)
@@ -110,14 +114,14 @@ class DomainTests(unittest.TestCase):
             updated.hand_over(EXIT + timedelta(hours=1))
         self.assertEqual(updated.handed_over_at, EXIT)
 
-    def test_exits_reject_backwards_time_and_accept_reception_time(self):
+    def test_exits_reject_backwards_time_and_accept_reception_time(self) -> None:
         for item, method in ((delivery(), "collect"), (delivery(), "return_to_carrier"), (return_parcel(), "hand_over")):
             with self.subTest(method=method):
                 with self.assertRaises(CustodyConflictError):
                     getattr(item, method)(RECEIVED - timedelta(microseconds=1))
                 getattr(item, method)(RECEIVED)
 
-    def test_reconstruction_rejects_incompatible_status_dates_and_chronology(self):
+    def test_reconstruction_rejects_incompatible_status_dates_and_chronology(self) -> None:
         for status in DeliveryStatus:
             for collected in (None, EXIT):
                 for returned in (None, EXIT):

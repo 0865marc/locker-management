@@ -2,21 +2,27 @@
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
+from typing import Literal, overload
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from tests.integration.support import PostgresTestCase
+from tests.integration.support import PostgresTestCase, save_parcel, receive_parcel
 from sqlmodel import select
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository, AssignmentRow, CompartmentRow
 from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
-from domain.lockers import Dimensions, CompartmentBatch, CapacityConflictError, LockerNotFoundError
+from domain.lockers import Locker, Dimensions, CompartmentBatch, CapacityConflictError, LockerNotFoundError
 from domain.models import Delivery, Return
 
 D = Dimensions(10, 20, 30)
 NOW = datetime(2026, 10, 15, tzinfo=timezone.utc)
 
 class LockerRepositoryTests(PostgresTestCase):
+    async def current_locker(self, identifier: UUID) -> Locker:
+        locker = await self.lockers.get_by_id(identifier)
+        assert locker is not None
+        return locker
+
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.lockers = SqlModelLockerRepository(self.sessions)
@@ -26,7 +32,16 @@ class LockerRepositoryTests(PostgresTestCase):
     async def create(self, quantity=1, active=True, location='Site'):
         return await self.lockers.create(location, [CompartmentBatch(quantity, D)], active)
 
-    def parcel(self, flow='delivery'):
+    @overload
+    def parcel(self, flow: Literal['delivery'] = 'delivery') -> Delivery: ...
+
+    @overload
+    def parcel(self, flow: Literal['return']) -> Return: ...
+
+    @overload
+    def parcel(self, flow: str) -> Delivery | Return: ...
+
+    def parcel(self, flow: str = 'delivery') -> Delivery | Return:
         return Delivery('T', 'C', 'Ana', NOW) if flow == 'delivery' else Return('T', 'C', NOW)
 
     async def test_batches_configuration_growth_identity_and_retirement(self):
@@ -45,9 +60,11 @@ class LockerRepositoryTests(PostgresTestCase):
         self.assertEqual(resized.id, cell.id)
         self.assertFalse(resized.enabled)
         await self.lockers.retire_compartment(locker.id, cell.id)
-        self.assertEqual((await self.lockers.get_by_id(locker.id)).compartment_count, 1001)
+        self.assertEqual((await self.current_locker(locker.id)).compartment_count, 1001)
         async with self.sessions() as session:
-            self.assertTrue((await session.get(CompartmentRow, cell.id)).retired)
+            retired = await session.get(CompartmentRow, cell.id)
+            assert retired is not None
+            self.assertTrue(retired.retired)
         with self.assertRaises(LockerNotFoundError):
             await self.lockers.update_compartment(locker.id, cell.id, enabled=True)
         other = await self.create()
@@ -92,6 +109,7 @@ class LockerRepositoryTests(PostgresTestCase):
         self.assertEqual(outcomes[incompatible.id].reason, 'NO_COMPATIBLE_CELL')
         self.assertEqual(outcomes[inactive.id].reason, 'LOCKER_INACTIVE')
         configuration = await self.lockers.get_by_id(mixed.id)
+        assert configuration is not None
         self.assertEqual(configuration.compartment_count, 3)
         self.assertEqual(sum(cell.occupied for cell in configuration.compartments), 1)
         self.assertEqual(sum(not cell.enabled for cell in configuration.compartments), 1)
@@ -112,10 +130,13 @@ class LockerRepositoryTests(PostgresTestCase):
             locker = await self.create()
             repo = self.deliveries if flow == 'delivery' else self.returns
             original = self.parcel(flow)
-            received = await repo.receive_in_locker(original, locker.id, Dimensions(30,10,20))
+            received = await receive_parcel(repo, original, locker.id, Dimensions(30,10,20))
+            received_cell_id = received.compartment_id
+            assert received_cell_id is not None
+            cell_id: UUID = received_cell_id
             self.assertEqual(received.parcel_dimensions, Dimensions(30,10,20))
             self.assertIsNone(original.locker_id)
-            for operation in (lambda: self.lockers.update_compartment(locker.id, received.compartment_id, enabled=False), lambda: self.lockers.update_compartment(locker.id, received.compartment_id, dimensions=Dimensions(1,1,1)), lambda: self.lockers.retire_compartment(locker.id, received.compartment_id)):
+            for operation in (lambda: self.lockers.update_compartment(locker.id, cell_id, enabled=False), lambda: self.lockers.update_compartment(locker.id, cell_id, dimensions=Dimensions(1,1,1)), lambda: self.lockers.retire_compartment(locker.id, cell_id)):
                 with self.assertRaises(CapacityConflictError):
                     await operation()
             await self.lockers.set_active(locker.id, False)
@@ -124,13 +145,13 @@ class LockerRepositoryTests(PostgresTestCase):
             await self.lockers.set_active(locker.id, True)
             second = await self.returns.receive_in_locker(self.parcel('return'), locker.id, D)
             self.assertFalse(await repo.save_exit(terminal))
-            self.assertTrue((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+            self.assertTrue((await self.current_locker(locker.id)).compartments[0].occupied)
             self.assertTrue(await self.returns.save_exit(second.hand_over(NOW + timedelta(seconds=2))))
-            await self.lockers.update_compartment(locker.id, received.compartment_id, Dimensions(1,1,1))
-            await self.lockers.retire_compartment(locker.id, received.compartment_id)
+            await self.lockers.update_compartment(locker.id, cell_id, Dimensions(1,1,1))
+            await self.lockers.retire_compartment(locker.id, cell_id)
             self.assertEqual(await repo.get_by_id(received.id), terminal)
             with self.assertRaises(ValueError):
-                await repo.save(received)
+                await save_parcel(repo, received)
 
     async def test_before_commit_failure_rolls_back_both_halves(self):
         locker = await self.create()
@@ -141,12 +162,12 @@ class LockerRepositoryTests(PostgresTestCase):
             event.listen(Session, 'before_commit', fail)
             try:
                 with self.assertRaisesRegex(RuntimeError, 'before commit'):
-                    await repo.receive_in_locker(original, locker.id, D)
+                    await receive_parcel(repo, original, locker.id, D)
             finally:
                 event.remove(Session, 'before_commit', fail)
             self.assertIsNone(await repo.get_by_id(original.id))
-            self.assertFalse((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
-            received = await repo.receive_in_locker(original, locker.id, D)
+            self.assertFalse((await self.current_locker(locker.id)).compartments[0].occupied)
+            received = await receive_parcel(repo, original, locker.id, D)
             terminal = getattr(received, transition)(NOW + timedelta(seconds=1))
             event.listen(Session, 'before_commit', fail)
             try:
@@ -155,7 +176,7 @@ class LockerRepositoryTests(PostgresTestCase):
             finally:
                 event.remove(Session, 'before_commit', fail)
             self.assertEqual(await repo.get_by_id(original.id), received)
-            self.assertTrue((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+            self.assertTrue((await self.current_locker(locker.id)).compartments[0].occupied)
             self.assertTrue(await repo.save_exit(terminal))
 
     async def test_assignment_constraints_foreign_keys_and_unique_history(self):
@@ -164,24 +185,33 @@ class LockerRepositoryTests(PostgresTestCase):
         await self.deliveries.save(parcel)
         other = self.parcel('return')
         await self.returns.save(other)
-        values = dict(compartment_id=locker.compartments[0].id, delivery_id=parcel.id,
-                      width_mm=1, height_mm=2, depth_mm=3, assigned_at=NOW)
+        def assignment(*, compartment_id: UUID = locker.compartments[0].id,
+                       delivery_id: UUID | None = parcel.id, return_id: UUID | None = None,
+                       width_mm: int = 1, released_at: datetime | None = None) -> AssignmentRow:
+            return AssignmentRow(id=uuid4(), compartment_id=compartment_id,
+                                 delivery_id=delivery_id, return_id=return_id,
+                                 width_mm=width_mm, height_mm=2, depth_mm=3,
+                                 assigned_at=NOW, released_at=released_at)
+
         async with self.sessions.begin() as session:
-            session.add(AssignmentRow(id=uuid4(), **values))
-        invalid = [values, values | {'delivery_id':None}, values | {'return_id':other.id}, values | {'delivery_id':uuid4()}, values | {'compartment_id':uuid4()}, values | {'width_mm':0}, values | {'released_at':NOW-timedelta(seconds=1)}, values | {'delivery_id':None,'return_id':other.id}]
+            session.add(assignment())
+        invalid = [assignment(), assignment(delivery_id=None), assignment(return_id=other.id),
+                   assignment(delivery_id=uuid4()), assignment(compartment_id=uuid4()),
+                   assignment(width_mm=0), assignment(released_at=NOW-timedelta(seconds=1)),
+                   assignment(delivery_id=None, return_id=other.id)]
         for item in invalid:
             with self.subTest(item=item), self.assertRaises(IntegrityError):
                 async with self.sessions.begin() as session:
-                    session.add(AssignmentRow(id=uuid4(), **item))
+                    session.add(item)
         async with self.sessions.begin() as session:
             rows = (await session.exec(select(AssignmentRow))).all()
             self.assertEqual(len(rows),1)
             rows[0].released_at = NOW
         with self.assertRaises(IntegrityError):
             async with self.sessions.begin() as session:
-                session.add(AssignmentRow(id=uuid4(), **(values | {'compartment_id':locker.compartments[1].id})))
+                session.add(assignment(compartment_id=locker.compartments[1].id))
         async with self.sessions.begin() as session:
-            session.add(AssignmentRow(id=uuid4(), **(values | {'delivery_id':None,'return_id':other.id})))
+            session.add(assignment(delivery_id=None, return_id=other.id))
 
     async def test_configuration_failures_are_atomic_and_snapshots_do_not_write(self):
         def fail(session):

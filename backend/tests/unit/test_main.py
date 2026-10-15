@@ -9,7 +9,7 @@ from application.use_cases import DeliveryService, ReturnService
 
 
 class CompositionTests(unittest.TestCase):
-    def test_services_are_composed_once_and_engine_is_disposed(self):
+    def test_services_are_composed_once_and_engine_is_disposed(self) -> None:
         from main import create_app
 
         engine = AsyncMock()
@@ -30,7 +30,7 @@ class CompositionTests(unittest.TestCase):
             engine.dispose.assert_not_awaited()
         engine.dispose.assert_awaited_once_with()
 
-    def test_lifespan_does_not_create_or_migrate_tables(self):
+    def test_lifespan_does_not_create_or_migrate_tables(self) -> None:
         from main import create_app
 
         engine = AsyncMock()

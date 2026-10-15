@@ -1,7 +1,8 @@
 """Real PostgreSQL checks in a unique disposable schema, never in public tables."""
 import asyncio
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
+from typing import TypeVar
 
 from fastapi import FastAPI
 import httpx
@@ -12,7 +13,9 @@ from adapters.http.routes import create_router
 from application.use_cases import DeliveryService, ReturnService
 from domain.models import Delivery, Return
 
-from tests.integration.support import PostgresTestCase
+from tests.integration.support import PostgresTestCase, save_parcel
+T = TypeVar("T")
+
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 
 
@@ -24,7 +27,7 @@ class PostgreSQLCustodyTests(PostgresTestCase):
         ]
         for original, repository_class, first, second in examples:
             repositories = [repository_class(self.database()[1]) for _ in range(2)]
-            await repositories[0].save(original)
+            await save_parcel(repositories[0], original)
             # Both independent reads finish before either conditional UPDATE starts.
             snapshots = await asyncio.gather(*(repo.get_by_id(original.id) for repo in repositories))
             contenders = [getattr(snapshots[0], first)(NOW + timedelta(seconds=1)),
@@ -41,26 +44,32 @@ class PostgreSQLCustodyTests(PostgresTestCase):
             repository_class = SqlModelDeliveryRepository if kind == "delivery" else SqlModelReturnRepository
             original = (Delivery(tracking_number="D-http", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW)
                         if kind == "delivery" else Return(tracking_number="R-http", carrier_code="carrier-a", received_at=NOW))
-            await repository_class(self.sessions).save(original)
+            await save_parcel(repository_class(self.sessions), original)
             both_read = asyncio.Event()
             read_count = 0
 
-            class SynchronizedRepository(repository_class):
-                async def get_by_id(inner, identifier):
-                    nonlocal read_count
-                    item = await super().get_by_id(identifier)
-                    read_count += 1
-                    if read_count == 2:
-                        both_read.set()
-                    await asyncio.wait_for(both_read.wait(), timeout=10)
-                    return item
+            async def synchronized(item: T) -> T:
+                nonlocal read_count
+                read_count += 1
+                if read_count == 2:
+                    both_read.set()
+                await asyncio.wait_for(both_read.wait(), timeout=10)
+                return item
+
+            class SynchronizedDeliveryRepository(SqlModelDeliveryRepository):
+                async def get_by_id(self, identifier: UUID) -> Delivery | None:
+                    return await synchronized(await super().get_by_id(identifier))
+
+            class SynchronizedReturnRepository(SqlModelReturnRepository):
+                async def get_by_id(self, identifier: UUID) -> Return | None:
+                    return await synchronized(await super().get_by_id(identifier))
 
             clients = []
             try:
                 for seconds in (1, 2):
                     _, sessions = self.database()
-                    delivery_repo = SynchronizedRepository(sessions) if kind == "delivery" else SqlModelDeliveryRepository(sessions)
-                    return_repo = SynchronizedRepository(sessions) if kind == "return" else SqlModelReturnRepository(sessions)
+                    delivery_repo = SynchronizedDeliveryRepository(sessions) if kind == "delivery" else SqlModelDeliveryRepository(sessions)
+                    return_repo = SynchronizedReturnRepository(sessions) if kind == "return" else SqlModelReturnRepository(sessions)
                     clock = lambda seconds=seconds: NOW + timedelta(seconds=seconds)
                     app = FastAPI()
                     app.include_router(create_router(DeliveryService(delivery_repo, clock=clock), ReturnService(return_repo, clock=clock)))
@@ -186,6 +195,7 @@ class PostgreSQLCustodyTests(PostgresTestCase):
         original = Delivery(tracking_number="HISTORY", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW)
         deliveries = SqlModelDeliveryRepository(self.sessions)
         assigned = await deliveries.receive_in_locker(original, locker.id, Dimensions(10, 20, 30))
+        assert assigned.compartment_id is not None
         for released in (False, True):
             if released:
                 self.assertTrue(await deliveries.save_exit(assigned.collect(NOW + timedelta(seconds=1))))

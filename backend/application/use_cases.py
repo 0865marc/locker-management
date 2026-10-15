@@ -2,7 +2,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import UUID
 
-from domain.lockers import Dimensions
+from domain.lockers import Dimensions, require_instance
 from domain.models import CustodyConflictError, Delivery, Return
 from domain.ports import DeliveryRepository, ReturnRepository
 
@@ -101,5 +101,6 @@ class ReturnService:
 def _validate_reception(locker_id: UUID | None, dimensions: Dimensions | None) -> None:
     if (locker_id is None) != (dimensions is None):
         raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
-    if locker_id is not None and (not isinstance(locker_id, UUID) or not isinstance(dimensions, Dimensions)):
-        raise ValueError("Asignación inválida")
+    if locker_id is not None:
+        require_instance(locker_id, UUID, "Asignación inválida")
+        require_instance(dimensions, Dimensions, "Asignación inválida")
