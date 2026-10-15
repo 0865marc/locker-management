@@ -10,9 +10,11 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
-from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
 from domain.lockers import CompartmentBatch, Dimensions, Locker
-from domain.models import Delivery, Return
+from domain.deliveries import Delivery
+from domain.returns import Return
 from tests.integration.support import PostgresTestCase
 
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)

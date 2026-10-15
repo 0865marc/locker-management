@@ -7,8 +7,10 @@ import unittest
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
-from domain.models import Delivery, Return
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from domain.deliveries import Delivery
+from domain.returns import Return
 from domain.lockers import Dimensions
 
 from alembic import command

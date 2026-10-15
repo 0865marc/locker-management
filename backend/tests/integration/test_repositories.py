@@ -9,8 +9,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from tests.integration.support import PostgresTestCase, save_parcel
 
-from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
-from domain.models import Delivery, Return
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 

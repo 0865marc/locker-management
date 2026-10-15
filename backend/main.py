@@ -4,15 +4,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from adapters.database.connection import create_database, get_database_url
-from adapters.database.sqlmodel_repositories import (
-    SqlModelDeliveryRepository,
-    SqlModelReturnRepository,
-)
-from adapters.http.routes import create_router
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.http.delivery_routes import create_delivery_router
+from adapters.http.return_routes import create_return_router
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
 from adapters.http.locker_routes import create_locker_router
 from application.locker_use_cases import LockerService
-from application.use_cases import DeliveryService, ReturnService
+from application.delivery_use_cases import DeliveryService
+from application.return_use_cases import ReturnService
 
 
 def create_app(database_url: str | None = None) -> FastAPI:
@@ -35,7 +35,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
     app.include_router(create_locker_router(locker_service))
     app.state.delivery_service = delivery_service
     app.state.return_service = return_service
-    app.include_router(create_router(delivery_service, return_service))
+    app.include_router(create_delivery_router(delivery_service))
+    app.include_router(create_return_router(return_service))
     return app
 
 

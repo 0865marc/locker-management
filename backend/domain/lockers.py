@@ -214,3 +214,19 @@ class Availability:
     checked_at: datetime
     reason: AvailabilityReason
     lockers: tuple[LockerAvailability, ...]
+
+
+def validate_assignment(locker_id: object, compartment_id: object, parcel_dimensions: object) -> None:
+    values = (locker_id, compartment_id, parcel_dimensions)
+    if any(value is not None for value in values):
+        if not (isinstance(locker_id, UUID) and isinstance(compartment_id, UUID)
+                and isinstance(parcel_dimensions, Dimensions)):
+            raise ValueError("La asignación debe estar completa")
+
+
+def validate_reception(locker_id: UUID | None, dimensions: Dimensions | None) -> None:
+    if (locker_id is None) != (dimensions is None):
+        raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
+    if locker_id is not None:
+        require_instance(locker_id, UUID, "Asignación inválida")
+        require_instance(dimensions, Dimensions, "Asignación inválida")

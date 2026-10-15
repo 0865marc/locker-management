@@ -3,7 +3,9 @@ from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from domain.models import CustodyConflictError, Delivery, DeliveryStatus, Return, ReturnStatus
+from domain.validation import CustodyConflictError
+from domain.deliveries import Delivery, DeliveryStatus
+from domain.returns import Return, ReturnStatus
 
 
 RECEIVED = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)

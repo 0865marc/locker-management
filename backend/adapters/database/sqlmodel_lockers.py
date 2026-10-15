@@ -1,9 +1,10 @@
-from typing import ClassVar, cast
+from typing import ClassVar, cast, overload
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Table, Uuid, CheckConstraint, Column, DateTime, Double, Index, Text, UniqueConstraint, and_, text
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import Boolean, ForeignKey, Integer, Table, Uuid, CheckConstraint, Column, DateTime, Double, Index, Text, UniqueConstraint, and_, text, update
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession as SqlAlchemyAsyncSession
+from sqlalchemy.sql.elements import SQLColumnExpression
 from sqlmodel.sql.expression import Select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import SQLModel, Field, col, select
@@ -312,3 +313,54 @@ def apply_coordinates(row: LockerRow, coordinates: Coordinates | None) -> None:
 def apply_geography(row: LockerRow, address: Address | None, coordinates: Coordinates | None) -> None:
     apply_address(row, address)
     apply_coordinates(row, coordinates)
+
+
+@overload
+def utc_timestamp(value: datetime) -> datetime: ...
+
+
+@overload
+def utc_timestamp(value: None) -> None: ...
+
+
+def utc_timestamp(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("Timestamp must include a timezone")
+    return value.astimezone(timezone.utc)
+
+
+async def record_assignment(session: AsyncSession, compartment_id: UUID, parcel_dimensions: Dimensions,
+                            assigned_at: datetime, *, delivery_id: UUID | None = None,
+                            return_id: UUID | None = None) -> None:
+    session.add(AssignmentRow(id=uuid4(), compartment_id=compartment_id,
+        delivery_id=delivery_id, return_id=return_id,
+        width_mm=parcel_dimensions.width_mm, height_mm=parcel_dimensions.height_mm,
+        depth_mm=parcel_dimensions.depth_mm, assigned_at=utc_timestamp(assigned_at)))
+    await session.flush()
+
+
+async def lock_assignment(session: AsyncSession, parcel_fk: SQLColumnExpression[UUID | None], identifier: UUID) -> AssignmentRow | None:
+    # Lookup is nonlocking and immutable. Acquire locker lock before any parcel/assignment update.
+    result = await session.exec(select(AssignmentRow, col(CompartmentRow.locker_id)).join(CompartmentRow, col(CompartmentRow.id) == col(AssignmentRow.compartment_id)).where(parcel_fk == identifier))
+    found = result.one_or_none()
+    if found is None:
+        return None
+    assignment, locker_id = found
+    await lock_locker(session, locker_id)
+    # READ COMMITTED: refresh after a possible wait for the locker lock.
+    await session.refresh(assignment)
+    return assignment
+
+
+async def release_assignment(session: AsyncSession, assignment: AssignmentRow | None, at: datetime | None) -> None:
+    if assignment is None:
+        return
+    if assignment.released_at is not None:
+        raise RuntimeError('Pending assigned parcel has no active assignment')
+    if at is None:
+        raise ValueError('A custody exit requires a timestamp')
+    result = await SqlAlchemyAsyncSession.execute(session, update(AssignmentRow).where(col(AssignmentRow.id) == assignment.id, col(AssignmentRow.released_at) == None).values(released_at=utc_timestamp(at)).returning(col(AssignmentRow.id)))
+    if result.scalar_one_or_none() is None:
+        raise RuntimeError('Pending assigned parcel has no active assignment')

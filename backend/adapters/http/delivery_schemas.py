@@ -1,22 +1,10 @@
 from datetime import datetime
 from uuid import UUID
-from typing import Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, StrictStr, field_validator, model_validator
+from pydantic import AwareDatetime, field_validator, ConfigDict, StrictStr
+from adapters.http.locker_schemas import ReceptionInput, AssignmentResponse
+from domain.deliveries import DeliveryStatus
 
-from adapters.http.locker_schemas import DimensionsInput
-
-from domain.models import DeliveryStatus, ReturnStatus
-
-
-class ReceptionInput(BaseModel):
-    locker_id: UUID | None = None
-    parcel_dimensions: DimensionsInput | None = None
-    @model_validator(mode="after")
-    def paired(self) -> Self:
-        if (self.locker_id is None) != (self.parcel_dimensions is None):
-            raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
-        return self
 
 class CreateDelivery(ReceptionInput):
     model_config = ConfigDict(extra="forbid")
@@ -40,11 +28,6 @@ class CreateDelivery(ReceptionInput):
         return value
 
 
-class AssignmentResponse(BaseModel):
-    locker_id: UUID | None
-    compartment_id: UUID | None
-    parcel_dimensions: DimensionsInput | None
-
 class DeliveryResponse(AssignmentResponse):
     id: UUID
     tracking_number: str
@@ -56,21 +39,3 @@ class DeliveryResponse(AssignmentResponse):
     status: DeliveryStatus
     collected_at: datetime | None
     returned_to_carrier_at: datetime | None
-
-
-class CreateReturn(ReceptionInput):
-    model_config = ConfigDict(extra="forbid")
-
-    tracking_number: StrictStr
-    carrier_code: StrictStr
-    sender_name: StrictStr | None = None
-
-
-class ReturnResponse(AssignmentResponse):
-    id: UUID
-    tracking_number: str
-    carrier_code: str
-    sender_name: str | None
-    received_at: datetime
-    status: ReturnStatus
-    handed_over_at: datetime | None

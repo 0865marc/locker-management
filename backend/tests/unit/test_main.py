@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from application.use_cases import DeliveryService, ReturnService
+from application.delivery_use_cases import DeliveryService
+from application.return_use_cases import ReturnService
 
 
 class CompositionTests(unittest.TestCase):

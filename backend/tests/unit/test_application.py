@@ -4,9 +4,13 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
-from application.use_cases import DeliveryService, ParcelNotFoundError, ReturnService
+from application.delivery_use_cases import DeliveryService
+from application.errors import ParcelNotFoundError
+from application.return_use_cases import ReturnService
 from domain.lockers import Dimensions
-from domain.models import CustodyConflictError, Delivery, DeliveryStatus, Return, ReturnStatus
+from domain.validation import CustodyConflictError
+from domain.deliveries import Delivery, DeliveryStatus
+from domain.returns import Return, ReturnStatus
 from domain.ports import DeliveryRepository, ReturnRepository
 
 

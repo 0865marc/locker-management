@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from tests.integration.support import PostgresTestCase, save_parcel, receive_parcel
 from sqlmodel import select
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository, AssignmentRow, CompartmentRow
-from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
 from domain.lockers import Locker, Dimensions, CompartmentBatch, CapacityConflictError, LockerNotFoundError
-from domain.models import Delivery, Return
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 D = Dimensions(10, 20, 30)
 NOW = datetime(2026, 10, 15, tzinfo=timezone.utc)

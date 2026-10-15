@@ -3,7 +3,8 @@ from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 from domain.lockers import Dimensions, Compartment, CompartmentBatch, Locker, select_compartment, validate_batches
-from domain.models import Delivery, Return
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 class LockerDomainTests(unittest.TestCase):
     def test_integer_ranges_rotation_and_axis_fit(self) -> None:

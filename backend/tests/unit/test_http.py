@@ -7,9 +7,14 @@ from httpx import Response
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from adapters.http.routes import create_router
-from application.use_cases import DeliveryService, ParcelNotFoundError, ReturnService
-from domain.models import CustodyConflictError, Delivery, Return
+from adapters.http.delivery_routes import create_delivery_router
+from adapters.http.return_routes import create_return_router
+from application.delivery_use_cases import DeliveryService
+from application.errors import ParcelNotFoundError
+from application.return_use_cases import ReturnService
+from domain.validation import CustodyConflictError
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 
 class HttpAdapterTests(unittest.TestCase):
@@ -17,7 +22,8 @@ class HttpAdapterTests(unittest.TestCase):
         self.delivery = AsyncMock(spec=DeliveryService)
         self.returns = AsyncMock(spec=ReturnService)
         app = FastAPI()
-        app.include_router(create_router(self.delivery, self.returns))
+        app.include_router(create_delivery_router(self.delivery))
+        app.include_router(create_return_router(self.returns))
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
         self.at = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)

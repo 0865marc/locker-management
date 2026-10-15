@@ -143,3 +143,19 @@ class AvailabilityResponse(BaseModel):
     checked_at: datetime
     reason: AvailabilityReason
     lockers: list[LockerAvailabilityResponse]
+
+
+class ReceptionInput(BaseModel):
+    locker_id: UUID | None = None
+    parcel_dimensions: DimensionsInput | None = None
+    @model_validator(mode="after")
+    def paired(self) -> Self:
+        if (self.locker_id is None) != (self.parcel_dimensions is None):
+            raise ValueError("locker_id y parcel_dimensions deben indicarse juntos")
+        return self
+
+
+class AssignmentResponse(BaseModel):
+    locker_id: UUID | None
+    compartment_id: UUID | None
+    parcel_dimensions: DimensionsInput | None

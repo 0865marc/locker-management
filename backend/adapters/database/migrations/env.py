@@ -10,7 +10,8 @@ from sqlmodel import SQLModel
 from adapters.database.connection import get_database_url
 
 # Importar los modelos registra las tablas que compara Alembic.
-from adapters.database.sqlmodel_repositories import DeliveryRow, ReturnRow
+from adapters.database.sqlmodel_deliveries import DeliveryRow
+from adapters.database.sqlmodel_returns import ReturnRow
 from adapters.database.sqlmodel_lockers import LockerRow, CompartmentRow, AssignmentRow
 
 REGISTERED_TABLES = (DeliveryRow.__table__, ReturnRow.__table__, LockerRow.__table__,

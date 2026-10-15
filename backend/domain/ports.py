@@ -2,7 +2,8 @@ from typing import Protocol
 from uuid import UUID
 
 from domain.lockers import Dimensions, CompartmentBatch, Locker, Compartment, Availability, Address, Coordinates, LockerPatch
-from domain.models import Delivery, Return
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 
 class DeliveryRepository(Protocol):
