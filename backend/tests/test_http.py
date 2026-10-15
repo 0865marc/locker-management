@@ -56,7 +56,7 @@ class HttpAdapterTests(unittest.TestCase):
                 response = self.client.post(path, json=payload)
                 self.assertEqual(response.status_code, 201)
                 self.assert_entity(response, entity)
-                expected = dict(payload)
+                expected = dict(payload, locker_id=None, parcel_dimensions=None)
                 if path == "/deliveries":
                     expected.update(recipient_phone=None, pickup_deadline_at=None)
                 else:
@@ -81,7 +81,7 @@ class HttpAdapterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assert_entity(response, entity)
         self.assertEqual(response.json()["pickup_deadline_at"], "2026-10-20T16:00:00Z")
-        self.delivery.create.assert_awaited_once_with(**(payload | {"pickup_deadline_at": deadline}))
+        self.delivery.create.assert_awaited_once_with(**(payload | {"pickup_deadline_at": deadline, "locker_id": None, "parcel_dimensions": None}))
         self.returns.create.return_value = Return("RET-42", "carrier-a", self.at, sender_name="Luis Pérez")
         response = self.client.post("/returns", json={"tracking_number": "RET-42", "carrier_code": "carrier-a", "sender_name": "Luis Pérez"})
         self.assertEqual(response.status_code, 201)

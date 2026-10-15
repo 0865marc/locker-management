@@ -20,10 +20,14 @@ class CompositionTests(unittest.TestCase):
         sessions = object()
         with patch("main.create_database", return_value=(engine, sessions)), \
              patch("main.SqlModelDeliveryRepository") as delivery_repo, \
-             patch("main.SqlModelReturnRepository") as return_repo:
+             patch("main.SqlModelReturnRepository") as return_repo, \
+             patch("main.SqlModelLockerRepository") as locker_repo:
             app = create_app("sqlite+aiosqlite://")
         delivery_repo.assert_called_once_with(sessions)
         return_repo.assert_called_once_with(sessions)
+        locker_repo.assert_called_once_with(sessions)
+        from application.locker_use_cases import LockerService
+        self.assertIsInstance(app.state.locker_service, LockerService)
         self.assertIsInstance(app.state.delivery_service, DeliveryService)
         self.assertIsInstance(app.state.return_service, ReturnService)
         with TestClient(app):

@@ -10,6 +10,8 @@ from adapters.http.schemas import (
     ReturnResponse,
 )
 from application.use_cases import DeliveryService, ParcelNotFoundError, ReturnService
+from domain.lockers import CapacityConflictError, LockerNotFoundError
+from adapters.http.locker_routes import capacity_http
 from domain.models import CustodyConflictError, Delivery, Return
 
 
@@ -33,7 +35,13 @@ def create_router(delivery: DeliveryService, returns: ReturnService) -> APIRoute
     @router.post("/deliveries", response_model=DeliveryResponse, status_code=201, tags=["Delivery"])
     async def create_delivery(body: CreateDelivery) -> Delivery:
         try:
-            return await delivery.create(**body.model_dump())
+            values = body.model_dump()
+            values["parcel_dimensions"] = body.parcel_dimensions.domain() if body.parcel_dimensions else None
+            return await delivery.create(**values)
+        except LockerNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except CapacityConflictError as error:
+            raise capacity_http(error) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -64,7 +72,13 @@ def create_router(delivery: DeliveryService, returns: ReturnService) -> APIRoute
     @router.post("/returns", response_model=ReturnResponse, status_code=201, tags=["Return"])
     async def create_return(body: CreateReturn) -> Return:
         try:
-            return await returns.create(**body.model_dump())
+            values = body.model_dump()
+            values["parcel_dimensions"] = body.parcel_dimensions.domain() if body.parcel_dimensions else None
+            return await returns.create(**values)
+        except LockerNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except CapacityConflictError as error:
+            raise capacity_http(error) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
