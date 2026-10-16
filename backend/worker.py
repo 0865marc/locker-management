@@ -1,14 +1,18 @@
 """One sequential worker; consumed work has no automatic recovery."""
+
 import asyncio
-from contextlib import AsyncExitStack
-from datetime import datetime, timezone
 import os
 import signal
+from contextlib import AsyncExitStack
+from datetime import datetime, timezone
 
 from adapters.database.connection import create_database, get_database_url
 from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
 from adapters.providers.simulated_shipping import (
-    SimulationProfile, SimulatedEconomyProvider, SimulatedStandardProvider, SimulatedExpressProvider,
+    SimulatedEconomyProvider,
+    SimulatedExpressProvider,
+    SimulatedStandardProvider,
+    SimulationProfile,
 )
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
 from application.quotations import QuotationProcessor
@@ -17,10 +21,13 @@ from application.shipping_quotes import ShippingQuoteService
 
 def simulation_profile() -> SimulationProfile:
     return SimulationProfile(
-        delay_min_seconds=float(os.getenv('SHIPPING_DELAY_MIN_SECONDS', '0.05')),
-        delay_max_seconds=float(os.getenv('SHIPPING_DELAY_MAX_SECONDS', '0.5')),
-        no_response_probability=float(os.getenv('SHIPPING_NO_RESPONSE_PROBABILITY', '0.05')),
-        error_probability=float(os.getenv('SHIPPING_ERROR_PROBABILITY', '0.10')))
+        delay_min_seconds=float(os.getenv("SHIPPING_DELAY_MIN_SECONDS", "0.05")),
+        delay_max_seconds=float(os.getenv("SHIPPING_DELAY_MAX_SECONDS", "0.5")),
+        no_response_probability=float(
+            os.getenv("SHIPPING_NO_RESPONSE_PROBABILITY", "0.05")
+        ),
+        error_probability=float(os.getenv("SHIPPING_ERROR_PROBABILITY", "0.10")),
+    )
 
 
 async def run_worker() -> None:
@@ -31,10 +38,18 @@ async def run_worker() -> None:
         broker = RabbitMQ(get_rabbitmq_url())
         resources.push_async_callback(broker.close)
         await broker.open()
-        comparator = ShippingQuoteService((SimulatedEconomyProvider(profile),
-            SimulatedStandardProvider(profile), SimulatedExpressProvider(profile)))
-        processor = QuotationProcessor(SqlModelQuotationRepository(sessions), comparator,
-                                       lambda: datetime.now(timezone.utc))
+        comparator = ShippingQuoteService(
+            (
+                SimulatedEconomyProvider(profile),
+                SimulatedStandardProvider(profile),
+                SimulatedExpressProvider(profile),
+            )
+        )
+        processor = QuotationProcessor(
+            SqlModelQuotationRepository(sessions),
+            comparator,
+            lambda: datetime.now(timezone.utc),
+        )
         await broker.consume(processor)
 
 
@@ -52,5 +67,5 @@ async def main() -> None:
             loop.remove_signal_handler(signum)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

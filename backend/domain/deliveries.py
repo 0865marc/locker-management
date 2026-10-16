@@ -25,7 +25,11 @@ def _optional_text(value: object, name: str) -> str | None:
 
 
 def _utc(value: object, name: str) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
         raise ValueError(f"{name} debe incluir zona horaria")
     return value.astimezone(timezone.utc)
 
@@ -67,13 +71,23 @@ class Delivery:
     parcel_dimensions: Dimensions | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "tracking_number", _text(self.tracking_number, "tracking_number"))
-        object.__setattr__(self, "carrier_code", _text(self.carrier_code, "carrier_code"))
+        object.__setattr__(
+            self, "tracking_number", _text(self.tracking_number, "tracking_number")
+        )
+        object.__setattr__(
+            self, "carrier_code", _text(self.carrier_code, "carrier_code")
+        )
         object.__setattr__(self, "received_at", _utc(self.received_at, "received_at"))
         object.__setattr__(self, "id", _uuid(self.id))
         validate_assignment(self.locker_id, self.compartment_id, self.parcel_dimensions)
-        object.__setattr__(self, "recipient_name", _text(self.recipient_name, "recipient_name"))
-        object.__setattr__(self, "recipient_phone", _optional_text(self.recipient_phone, "recipient_phone"))
+        object.__setattr__(
+            self, "recipient_name", _text(self.recipient_name, "recipient_name")
+        )
+        object.__setattr__(
+            self,
+            "recipient_phone",
+            _optional_text(self.recipient_phone, "recipient_phone"),
+        )
         object.__setattr__(self, "status", DeliveryStatus(self.status))
         for name in ("pickup_deadline_at", "collected_at", "returned_to_carrier_at"):
             value = getattr(self, name)
@@ -84,15 +98,24 @@ class Delivery:
             DeliveryStatus.COLLECTED: (True, False),
             DeliveryStatus.RETURNED_TO_CARRIER: (False, True),
         }[self.status]
-        if (self.collected_at is not None, self.returned_to_carrier_at is not None) != expected:
-            raise ValueError("El estado de Delivery y sus fechas de salida son incompatibles")
+        if (
+            self.collected_at is not None,
+            self.returned_to_carrier_at is not None,
+        ) != expected:
+            raise ValueError(
+                "El estado de Delivery y sus fechas de salida son incompatibles"
+            )
         for at in (self.collected_at, self.returned_to_carrier_at):
             if at is not None and at < self.received_at:
                 raise ValueError("La salida no puede ser anterior a la recepción")
 
     def collect(self, at: datetime) -> "Delivery":
         self._require_pending()
-        return replace(self, status=DeliveryStatus.COLLECTED, collected_at=_exit_at(at, self.received_at))
+        return replace(
+            self,
+            status=DeliveryStatus.COLLECTED,
+            collected_at=_exit_at(at, self.received_at),
+        )
 
     def return_to_carrier(self, at: datetime) -> "Delivery":
         self._require_pending()

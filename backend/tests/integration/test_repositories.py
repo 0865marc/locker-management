@@ -1,38 +1,64 @@
 """PostgreSQL round trips, database invariants and rollback of custody writes."""
+
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-import unittest
 from uuid import uuid4
 
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from tests.integration.support import PostgresTestCase, save_parcel
 
 from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
 from adapters.database.sqlmodel_returns import SqlModelReturnRepository
 from domain.deliveries import Delivery
 from domain.returns import Return
+from tests.integration.support import PostgresTestCase, save_parcel
 
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 
 
 def delivery(**kwargs):
-    return Delivery(tracking_number="TRACK-1", carrier_code="carrier-a", recipient_name="Ana", received_at=NOW, **kwargs)
+    return Delivery(
+        tracking_number="TRACK-1",
+        carrier_code="carrier-a",
+        recipient_name="Ana",
+        received_at=NOW,
+        **kwargs,
+    )
 
 
 def returned(**kwargs):
-    return Return(tracking_number="TRACK-1", carrier_code="carrier-a", received_at=NOW, **kwargs)
+    return Return(
+        tracking_number="TRACK-1", carrier_code="carrier-a", received_at=NOW, **kwargs
+    )
 
 
-REPOSITORIES = ((delivery, SqlModelDeliveryRepository, "collect"), (returned, SqlModelReturnRepository, "hand_over"))
+REPOSITORIES = (
+    (delivery, SqlModelDeliveryRepository, "collect"),
+    (returned, SqlModelReturnRepository, "hand_over"),
+)
 
 
 class RepositoryTests(PostgresTestCase):
     async def test_complete_round_trip_from_new_instances(self):
         examples = [
-            (SqlModelDeliveryRepository, [delivery(), delivery(recipient_phone="+34600123456", pickup_deadline_at=NOW.astimezone(timezone(timedelta(hours=2)))).return_to_carrier(NOW + timedelta(seconds=1))]),
-            (SqlModelReturnRepository, [returned(), returned(sender_name="María").hand_over(NOW + timedelta(seconds=2))]),
+            (
+                SqlModelDeliveryRepository,
+                [
+                    delivery(),
+                    delivery(
+                        recipient_phone="+34600123456",
+                        pickup_deadline_at=NOW.astimezone(timezone(timedelta(hours=2))),
+                    ).return_to_carrier(NOW + timedelta(seconds=1)),
+                ],
+            ),
+            (
+                SqlModelReturnRepository,
+                [
+                    returned(),
+                    returned(sender_name="María").hand_over(NOW + timedelta(seconds=2)),
+                ],
+            ),
         ]
         for repository_class, records in examples:
             repository = repository_class(self.sessions)
@@ -53,7 +79,9 @@ class RepositoryTests(PostgresTestCase):
             original = factory()
             await save_parcel(repository, original)
             with self.assertRaises(IntegrityError):
-                await save_parcel(repository, replace(original, tracking_number="Different"))
+                await save_parcel(
+                    repository, replace(original, tracking_number="Different")
+                )
             following = factory()
             await save_parcel(repository, following)
             self.assertCountEqual(await repository.list_all(), [original, following])
@@ -66,9 +94,13 @@ class RepositoryTests(PostgresTestCase):
             first = getattr(original, transition)(NOW + timedelta(seconds=1))
             second = getattr(original, transition)(NOW + timedelta(seconds=2))
             # Persistence never copies stale reception or contact data from the contender.
-            self.assertTrue(await repository.save_exit(replace(first, tracking_number="Ignored")))
+            self.assertTrue(
+                await repository.save_exit(replace(first, tracking_number="Ignored"))
+            )
             self.assertFalse(await repository.save_exit(second))
-            self.assertEqual(await repository_class(self.sessions).get_by_id(original.id), first)
+            self.assertEqual(
+                await repository_class(self.sessions).get_by_id(original.id), first
+            )
             self.assertFalse(await repository.save_exit(replace(second, id=uuid4())))
 
     async def test_incompatible_delivery_exit_preserves_winning_timestamp(self):
@@ -77,7 +109,9 @@ class RepositoryTests(PostgresTestCase):
         await save_parcel(repository, original)
         winner = original.return_to_carrier(NOW + timedelta(seconds=1))
         self.assertTrue(await repository.save_exit(winner))
-        self.assertFalse(await repository.save_exit(original.collect(NOW + timedelta(seconds=2))))
+        self.assertFalse(
+            await repository.save_exit(original.collect(NOW + timedelta(seconds=2)))
+        )
         self.assertEqual(await repository.get_by_id(original.id), winner)
 
     async def test_failed_commit_rolls_back_transition_and_later_exit_succeeds(self):
@@ -117,5 +151,13 @@ class RepositoryTests(PostgresTestCase):
             with self.subTest(statement=statement), self.assertRaises(IntegrityError):
                 async with self.sessions.begin() as session:
                     await session.execute(text(statement))
-        self.assertEqual((await SqlModelDeliveryRepository(self.sessions).list_all())[0].status.value, "AWAITING_PICKUP")
-        self.assertEqual((await SqlModelReturnRepository(self.sessions).list_all())[0].status.value, "AWAITING_CARRIER")
+        self.assertEqual(
+            (await SqlModelDeliveryRepository(self.sessions).list_all())[
+                0
+            ].status.value,
+            "AWAITING_PICKUP",
+        )
+        self.assertEqual(
+            (await SqlModelReturnRepository(self.sessions).list_all())[0].status.value,
+            "AWAITING_CARRIER",
+        )

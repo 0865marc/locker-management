@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from application.deliveries import DeliveryService
 from application.returns import ReturnService
-from domain.ports import DeliveryRepository, ReturnRepository, LockerRepository
+from domain.ports import DeliveryRepository, LockerRepository, ReturnRepository
 
 
 class CompositionTests(unittest.TestCase):
@@ -17,15 +17,20 @@ class CompositionTests(unittest.TestCase):
 
         engine = AsyncMock()
         sessions = object()
-        with patch("main.create_database", return_value=(engine, sessions)), \
-             patch("main.SqlModelDeliveryRepository") as delivery_repo, \
-             patch("main.SqlModelReturnRepository") as return_repo, \
-             patch("main.SqlModelLockerRepository") as locker_repo:
-            app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
+        with (
+            patch("main.create_database", return_value=(engine, sessions)),
+            patch("main.SqlModelDeliveryRepository") as delivery_repo,
+            patch("main.SqlModelReturnRepository") as return_repo,
+            patch("main.SqlModelLockerRepository") as locker_repo,
+        ):
+            app = create_app(
+                "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
+            )
         delivery_repo.assert_called_once_with(sessions)
         return_repo.assert_called_once_with(sessions)
         locker_repo.assert_called_once_with(sessions)
         from application.lockers import LockerService
+
         self.assertIsInstance(app.state.locker_service, LockerService)
         self.assertIsInstance(app.state.delivery_service, DeliveryService)
         self.assertIsInstance(app.state.return_service, ReturnService)
@@ -39,7 +44,9 @@ class CompositionTests(unittest.TestCase):
         engine = AsyncMock()
         sessions = object()
         with patch("main.create_database", return_value=(engine, sessions)) as factory:
-            app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
+            app = create_app(
+                "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
+            )
         with TestClient(app) as client:
             self.assertEqual(client.get("/openapi.json").status_code, 200)
         factory.assert_called_once_with("postgresql+asyncpg://unused/unused")
@@ -54,21 +61,34 @@ class CompositionTests(unittest.TestCase):
         delivery_repository = AsyncMock(spec=DeliveryRepository)
         return_repository = AsyncMock(spec=ReturnRepository)
         locker_repository = AsyncMock(spec=LockerRepository)
-        with patch("main.create_database", return_value=(engine, object())), \
-             patch("main.SqlModelDeliveryRepository", return_value=delivery_repository), \
-             patch("main.SqlModelReturnRepository", return_value=return_repository), \
-             patch("main.SqlModelLockerRepository", return_value=locker_repository):
-            app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
+        with (
+            patch("main.create_database", return_value=(engine, object())),
+            patch("main.SqlModelDeliveryRepository", return_value=delivery_repository),
+            patch("main.SqlModelReturnRepository", return_value=return_repository),
+            patch("main.SqlModelLockerRepository", return_value=locker_repository),
+        ):
+            app = create_app(
+                "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
+            )
         before = datetime.now(timezone.utc)
         with TestClient(app) as client:
             for path, payload in (
-                ("/deliveries", {"tracking_number": "D", "carrier_code": "C", "recipient_name": "Ana"}),
+                (
+                    "/deliveries",
+                    {
+                        "tracking_number": "D",
+                        "carrier_code": "C",
+                        "recipient_name": "Ana",
+                    },
+                ),
                 ("/returns", {"tracking_number": "R", "carrier_code": "C"}),
             ):
                 with self.subTest(path=path):
                     response = client.post(path, json=payload)
                     self.assertEqual(response.status_code, 201)
-                    received = datetime.fromisoformat(response.json()["received_at"].replace("Z", "+00:00"))
+                    received = datetime.fromisoformat(
+                        response.json()["received_at"].replace("Z", "+00:00")
+                    )
                     self.assertIs(received.tzinfo, timezone.utc)
                     self.assertLessEqual(before, received)
                     self.assertLessEqual(received, datetime.now(timezone.utc))
@@ -78,12 +98,15 @@ class CompositionTests(unittest.TestCase):
 
     def test_broker_lifecycle_and_cleanup_even_when_startup_fails(self) -> None:
         from main import create_app
-        for failure in (None, ConnectionError('unavailable')):
+
+        for failure in (None, ConnectionError("unavailable")):
             engine, broker = AsyncMock(), AsyncMock()
             broker.open.side_effect = failure
-            with patch('main.create_database', return_value=(engine, object())), \
-                 patch('main.RabbitMQ', return_value=broker):
-                app = create_app('postgresql+asyncpg://unused/unused')
+            with (
+                patch("main.create_database", return_value=(engine, object())),
+                patch("main.RabbitMQ", return_value=broker),
+            ):
+                app = create_app("postgresql+asyncpg://unused/unused")
             if failure is None:
                 with TestClient(app):
                     broker.open.assert_awaited_once()

@@ -3,9 +3,8 @@ from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from domain.deliveries import Delivery, DeliveryStatus, DeliveryConflictError
-from domain.returns import Return, ReturnStatus, ReturnConflictError
-
+from domain.deliveries import Delivery, DeliveryConflictError, DeliveryStatus
+from domain.returns import Return, ReturnConflictError, ReturnStatus
 
 RECEIVED = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
 EXIT = RECEIVED + timedelta(hours=1)
@@ -13,7 +12,9 @@ EXIT = RECEIVED + timedelta(hours=1)
 
 def delivery(**overrides: object) -> Delivery:
     # replace is a dynamic dataclass fixture boundary, including deliberately invalid inputs.
-    return replace(Delivery(" PKG-42 ", " carrier-a ", " Ana García ", RECEIVED), **overrides)
+    return replace(
+        Delivery(" PKG-42 ", " carrier-a ", " Ana García ", RECEIVED), **overrides
+    )
 
 
 def return_parcel(**overrides: object) -> Return:
@@ -47,30 +48,44 @@ class DomainTests(unittest.TestCase):
 
     def test_optional_text_and_all_instants_normalize(self) -> None:
         offset = timezone(timedelta(hours=2))
-        item = delivery(recipient_phone=" +34 600 123 ", received_at=RECEIVED.astimezone(offset), pickup_deadline_at=(RECEIVED - timedelta(days=1)).astimezone(offset))
+        item = delivery(
+            recipient_phone=" +34 600 123 ",
+            received_at=RECEIVED.astimezone(offset),
+            pickup_deadline_at=(RECEIVED - timedelta(days=1)).astimezone(offset),
+        )
         self.assertEqual(item.recipient_phone, "+34 600 123")
         self.assertIs(item.received_at.tzinfo, timezone.utc)
         assert item.pickup_deadline_at is not None
         self.assertIs(item.pickup_deadline_at.tzinfo, timezone.utc)
         self.assertEqual(item.pickup_deadline_at, RECEIVED - timedelta(days=1))
         self.assertIsNone(delivery(recipient_phone=" \n ").recipient_phone)
-        self.assertEqual(return_parcel(sender_name=" Luis  Pérez ").sender_name, "Luis  Pérez")
+        self.assertEqual(
+            return_parcel(sender_name=" Luis  Pérez ").sender_name, "Luis  Pérez"
+        )
         self.assertIsNone(return_parcel(sender_name=" \t ").sender_name)
         collected = item.collect(EXIT.astimezone(offset))
-        handed = return_parcel(received_at=RECEIVED.astimezone(offset)).hand_over(EXIT.astimezone(offset))
+        handed = return_parcel(received_at=RECEIVED.astimezone(offset)).hand_over(
+            EXIT.astimezone(offset)
+        )
         assert collected.collected_at is not None
         self.assertIs(collected.collected_at.tzinfo, timezone.utc)
         assert handed.handed_over_at is not None
         self.assertIs(handed.handed_over_at.tzinfo, timezone.utc)
 
     def test_required_text_rejects_blanks_and_incorrect_types(self) -> None:
-        for factory, names in ((delivery, ("tracking_number", "carrier_code", "recipient_name")), (return_parcel, ("tracking_number", "carrier_code"))):
+        for factory, names in (
+            (delivery, ("tracking_number", "carrier_code", "recipient_name")),
+            (return_parcel, ("tracking_number", "carrier_code")),
+        ):
             for name in names:
                 for value in ("", " \n ", None, 4, []):
                     with self.subTest(factory=factory.__name__, name=name, value=value):
                         with self.assertRaises(ValueError):
                             factory(**{name: value})
-        for factory, name in ((delivery, "recipient_phone"), (return_parcel, "sender_name")):
+        for factory, name in (
+            (delivery, "recipient_phone"),
+            (return_parcel, "sender_name"),
+        ):
             with self.assertRaises(ValueError):
                 factory(**{name: 123})
 
@@ -88,7 +103,14 @@ class DomainTests(unittest.TestCase):
 
     def test_delivery_exits_preserve_original_and_are_exclusive(self) -> None:
         original = delivery(pickup_deadline_at=RECEIVED - timedelta(days=1))
-        for method, status, field in (("collect", DeliveryStatus.COLLECTED, "collected_at"), ("return_to_carrier", DeliveryStatus.RETURNED_TO_CARRIER, "returned_to_carrier_at")):
+        for method, status, field in (
+            ("collect", DeliveryStatus.COLLECTED, "collected_at"),
+            (
+                "return_to_carrier",
+                DeliveryStatus.RETURNED_TO_CARRIER,
+                "returned_to_carrier_at",
+            ),
+        ):
             with self.subTest(method=method):
                 updated = getattr(original, method)(EXIT)
                 self.assertEqual(updated.id, original.id)
@@ -116,13 +138,19 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(updated.handed_over_at, EXIT)
 
     def test_exits_reject_backwards_time_and_accept_reception_time(self) -> None:
-        for item, method, conflict_error in ((delivery(), "collect", DeliveryConflictError), (delivery(), "return_to_carrier", DeliveryConflictError), (return_parcel(), "hand_over", ReturnConflictError)):
+        for item, method, conflict_error in (
+            (delivery(), "collect", DeliveryConflictError),
+            (delivery(), "return_to_carrier", DeliveryConflictError),
+            (return_parcel(), "hand_over", ReturnConflictError),
+        ):
             with self.subTest(method=method):
                 with self.assertRaises(conflict_error):
                     getattr(item, method)(RECEIVED - timedelta(microseconds=1))
                 getattr(item, method)(RECEIVED)
 
-    def test_reconstruction_rejects_incompatible_status_dates_and_chronology(self) -> None:
+    def test_reconstruction_rejects_incompatible_status_dates_and_chronology(
+        self,
+    ) -> None:
         for status in DeliveryStatus:
             for collected in (None, EXIT):
                 for returned in (None, EXIT):
@@ -131,17 +159,43 @@ class DomainTests(unittest.TestCase):
                         DeliveryStatus.COLLECTED: (True, False),
                         DeliveryStatus.RETURNED_TO_CARRIER: (False, True),
                     }[status]
-                    with self.subTest(status=status, collected=collected, returned=returned):
+                    with self.subTest(
+                        status=status, collected=collected, returned=returned
+                    ):
                         if valid:
-                            delivery(status=status, collected_at=collected, returned_to_carrier_at=returned)
+                            delivery(
+                                status=status,
+                                collected_at=collected,
+                                returned_to_carrier_at=returned,
+                            )
                         else:
                             with self.assertRaises(ValueError):
-                                delivery(status=status, collected_at=collected, returned_to_carrier_at=returned)
-        for status, at in ((ReturnStatus.AWAITING_CARRIER, EXIT), (ReturnStatus.HANDED_OVER, None)):
+                                delivery(
+                                    status=status,
+                                    collected_at=collected,
+                                    returned_to_carrier_at=returned,
+                                )
+        for status, at in (
+            (ReturnStatus.AWAITING_CARRIER, EXIT),
+            (ReturnStatus.HANDED_OVER, None),
+        ):
             with self.assertRaises(ValueError):
                 return_parcel(status=status, handed_over_at=at)
         earlier = RECEIVED - timedelta(seconds=1)
-        for factory, values in ((delivery, dict(status=DeliveryStatus.COLLECTED, collected_at=earlier)), (delivery, dict(status=DeliveryStatus.RETURNED_TO_CARRIER, returned_to_carrier_at=earlier)), (return_parcel, dict(status=ReturnStatus.HANDED_OVER, handed_over_at=earlier))):
+        for factory, values in (
+            (delivery, dict(status=DeliveryStatus.COLLECTED, collected_at=earlier)),
+            (
+                delivery,
+                dict(
+                    status=DeliveryStatus.RETURNED_TO_CARRIER,
+                    returned_to_carrier_at=earlier,
+                ),
+            ),
+            (
+                return_parcel,
+                dict(status=ReturnStatus.HANDED_OVER, handed_over_at=earlier),
+            ),
+        ):
             with self.assertRaises(ValueError):
                 factory(**values)
         for item in (delivery(), return_parcel()):

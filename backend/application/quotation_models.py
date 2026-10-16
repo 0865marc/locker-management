@@ -1,4 +1,5 @@
 """Persistent quotation state, independent of storage and transport."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -9,15 +10,15 @@ from domain.shipping_quotes import ShippingQuoteRequest
 
 
 class QuotationStatus(str, Enum):
-    PENDING = 'PENDING'
-    PROCESSING = 'PROCESSING'
-    COMPLETED = 'COMPLETED'
-    FAILED = 'FAILED'
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 class ProcessErrorCode(str, Enum):
-    PUBLISH_ERROR = 'PUBLISH_ERROR'
-    PROCESSING_ERROR = 'PROCESSING_ERROR'
+    PUBLISH_ERROR = "PUBLISH_ERROR"
+    PROCESSING_ERROR = "PROCESSING_ERROR"
 
 
 @dataclass(frozen=True)
@@ -41,5 +42,5 @@ class PublicationError(Exception):
 
 class SubmissionError(Exception):
     def __init__(self, quotation_id: UUID) -> None:
-        super().__init__('Quotation publication failed')
+        super().__init__("Quotation publication failed")
         self.quotation_id = quotation_id

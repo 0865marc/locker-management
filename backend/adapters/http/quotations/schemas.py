@@ -3,21 +3,22 @@ from typing import Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
-from application.quotation_models import QuotationStatus, ProcessErrorCode
-from application.shipping_quotes import ProviderStatus, ProviderErrorCode
+
+from application.quotation_models import ProcessErrorCode, QuotationStatus
+from application.shipping_quotes import ProviderErrorCode, ProviderStatus
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 
 
 class ShippingDimensions(BaseModel):
-    model_config = ConfigDict(extra='forbid', from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
     width_mm: StrictInt = Field(ge=1, le=2000)
     height_mm: StrictInt = Field(ge=1, le=2000)
     depth_mm: StrictInt = Field(ge=1, le=2000)
 
 
 class QuotationInput(BaseModel):
-    model_config = ConfigDict(extra='forbid', from_attributes=True)
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
     origin_country_code: StrictStr
     origin_postal_code: StrictStr
     destination_country_code: StrictStr
@@ -26,11 +27,20 @@ class QuotationInput(BaseModel):
     dimensions: ShippingDimensions
 
     def domain(self) -> ShippingQuoteRequest:
-        return ShippingQuoteRequest(self.origin_country_code, self.origin_postal_code,
-            self.destination_country_code, self.destination_postal_code, self.weight_grams,
-            Dimensions(self.dimensions.width_mm, self.dimensions.height_mm, self.dimensions.depth_mm))
+        return ShippingQuoteRequest(
+            self.origin_country_code,
+            self.origin_postal_code,
+            self.destination_country_code,
+            self.destination_postal_code,
+            self.weight_grams,
+            Dimensions(
+                self.dimensions.width_mm,
+                self.dimensions.height_mm,
+                self.dimensions.depth_mm,
+            ),
+        )
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def valid(self) -> Self:
         self.domain()
         return self

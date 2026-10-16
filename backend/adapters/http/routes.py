@@ -1,18 +1,21 @@
 from fastapi import APIRouter
 
-from application.quotations import QuotationService
-from adapters.http.quotations.routes import create_quotation_router
-
-from application.deliveries import DeliveryService
-from application.returns import ReturnService
-from application.lockers import LockerService
 from adapters.http.deliveries.routes import create_delivery_router
-from adapters.http.returns.routes import create_return_router
 from adapters.http.lockers.routes import create_locker_router
+from adapters.http.quotations.routes import create_quotation_router
+from adapters.http.returns.routes import create_return_router
+from application.deliveries import DeliveryService
+from application.lockers import LockerService
+from application.quotations import QuotationService
+from application.returns import ReturnService
 
 
-def create_router(delivery_service: DeliveryService, return_service: ReturnService,
-                  locker_service: LockerService, quotation_service: QuotationService | None = None) -> APIRouter:
+def create_router(
+    delivery_service: DeliveryService,
+    return_service: ReturnService,
+    locker_service: LockerService,
+    quotation_service: QuotationService | None = None,
+) -> APIRouter:
     router = APIRouter()
     router.include_router(create_locker_router(locker_service))
     router.include_router(create_delivery_router(delivery_service))

@@ -1,11 +1,15 @@
+import logging
 from collections.abc import Callable
 from datetime import datetime
-import logging
 from uuid import UUID, uuid4
 
 from application.quotation_models import (
-    Quotation, QuotationStatus, ProcessErrorCode, PublicationError,
-    QuotationStorageError, SubmissionError,
+    ProcessErrorCode,
+    PublicationError,
+    Quotation,
+    QuotationStatus,
+    QuotationStorageError,
+    SubmissionError,
 )
 from application.quotation_ports import QuotationPublisher, QuotationRepository
 from application.shipping_quotes import ShippingQuoteService
@@ -15,8 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class QuotationService:
-    def __init__(self, repository: QuotationRepository, publisher: QuotationPublisher,
-                 clock: Callable[[], datetime]) -> None:
+    def __init__(
+        self,
+        repository: QuotationRepository,
+        publisher: QuotationPublisher,
+        clock: Callable[[], datetime],
+    ) -> None:
         self.repository = repository
         self.publisher = publisher
         self.clock = clock
@@ -29,10 +37,14 @@ class QuotationService:
             await self.publisher.publish(quotation.id)
         except PublicationError as error:
             try:
-                await self.repository.fail(quotation.id, QuotationStatus.PENDING,
-                                           ProcessErrorCode.PUBLISH_ERROR, self.clock())
+                await self.repository.fail(
+                    quotation.id,
+                    QuotationStatus.PENDING,
+                    ProcessErrorCode.PUBLISH_ERROR,
+                    self.clock(),
+                )
             except QuotationStorageError:
-                logger.warning('Could not record quotation publication failure')
+                logger.warning("Could not record quotation publication failure")
             raise SubmissionError(quotation.id) from error
         return quotation
 
@@ -41,8 +53,12 @@ class QuotationService:
 
 
 class QuotationProcessor:
-    def __init__(self, repository: QuotationRepository, comparator: ShippingQuoteService,
-                 clock: Callable[[], datetime]) -> None:
+    def __init__(
+        self,
+        repository: QuotationRepository,
+        comparator: ShippingQuoteService,
+        clock: Callable[[], datetime],
+    ) -> None:
         self.repository = repository
         self.comparator = comparator
         self.clock = clock
@@ -55,9 +71,13 @@ class QuotationProcessor:
             results = await self.comparator.compare(quotation.request)
             await self.repository.complete(quotation_id, results, self.clock())
         except Exception:
-            logger.warning('Quotation processing failed')
+            logger.warning("Quotation processing failed")
             try:
-                await self.repository.fail(quotation_id, QuotationStatus.PROCESSING,
-                                           ProcessErrorCode.PROCESSING_ERROR, self.clock())
+                await self.repository.fail(
+                    quotation_id,
+                    QuotationStatus.PROCESSING,
+                    ProcessErrorCode.PROCESSING_ERROR,
+                    self.clock(),
+                )
             except QuotationStorageError:
-                logger.warning('Could not record quotation processing failure')
+                logger.warning("Could not record quotation processing failure")
