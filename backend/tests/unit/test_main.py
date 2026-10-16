@@ -21,7 +21,7 @@ class CompositionTests(unittest.TestCase):
              patch("main.SqlModelDeliveryRepository") as delivery_repo, \
              patch("main.SqlModelReturnRepository") as return_repo, \
              patch("main.SqlModelLockerRepository") as locker_repo:
-            app = create_app("postgresql+asyncpg://unused/unused")
+            app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
         delivery_repo.assert_called_once_with(sessions)
         return_repo.assert_called_once_with(sessions)
         locker_repo.assert_called_once_with(sessions)
@@ -39,7 +39,7 @@ class CompositionTests(unittest.TestCase):
         engine = AsyncMock()
         sessions = object()
         with patch("main.create_database", return_value=(engine, sessions)) as factory:
-            app = create_app("postgresql+asyncpg://unused/unused")
+            app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
         with TestClient(app) as client:
             self.assertEqual(client.get("/openapi.json").status_code, 200)
         factory.assert_called_once_with("postgresql+asyncpg://unused/unused")
@@ -58,7 +58,7 @@ class CompositionTests(unittest.TestCase):
              patch("main.SqlModelDeliveryRepository", return_value=delivery_repository), \
              patch("main.SqlModelReturnRepository", return_value=return_repository), \
              patch("main.SqlModelLockerRepository", return_value=locker_repository):
-            app = create_app("postgresql+asyncpg://unused/unused")
+            app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
         before = datetime.now(timezone.utc)
         with TestClient(app) as client:
             for path, payload in (
@@ -75,3 +75,22 @@ class CompositionTests(unittest.TestCase):
         delivery_repository.save.assert_awaited_once()
         return_repository.save.assert_awaited_once()
         engine.dispose.assert_awaited_once_with()
+
+    def test_broker_lifecycle_and_cleanup_even_when_startup_fails(self) -> None:
+        from main import create_app
+        for failure in (None, ConnectionError('unavailable')):
+            engine, broker = AsyncMock(), AsyncMock()
+            broker.open.side_effect = failure
+            with patch('main.create_database', return_value=(engine, object())), \
+                 patch('main.RabbitMQ', return_value=broker):
+                app = create_app('postgresql+asyncpg://unused/unused')
+            if failure is None:
+                with TestClient(app):
+                    broker.open.assert_awaited_once()
+                    broker.close.assert_not_awaited()
+            else:
+                with self.assertRaises(ConnectionError):
+                    with TestClient(app):
+                        pass
+            broker.close.assert_awaited_once()
+            engine.dispose.assert_awaited_once()

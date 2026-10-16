@@ -14,8 +14,11 @@ from adapters.database.sqlmodel_deliveries import DeliveryRow
 from adapters.database.sqlmodel_returns import ReturnRow
 from adapters.database.sqlmodel_lockers import LockerRow, CompartmentRow, AssignmentRow
 
+from adapters.database.sqlmodel_quotations import QuotationRow, ProviderResultRow, OfferRow
+
 REGISTERED_TABLES = (DeliveryRow.__table__, ReturnRow.__table__, LockerRow.__table__,
-                     CompartmentRow.__table__, AssignmentRow.__table__)
+                     CompartmentRow.__table__, AssignmentRow.__table__,
+                     QuotationRow.__table__, ProviderResultRow.__table__, OfferRow.__table__)
 
 
 config = context.config

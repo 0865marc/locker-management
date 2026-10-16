@@ -24,7 +24,7 @@ class MigrationTests(PostgresTestCase):
         await self.migrate("upgrade", "head")
         await self.migrate("check")
         current = await self.snapshot()
-        self.assertEqual(current[1]["alembic_version"], [("0004",)])
+        self.assertEqual(current[1]["alembic_version"], [("0005",)])
         await self.migrate("downgrade", "0001")
         self.assertEqual((await self.snapshot())[1]["alembic_version"], [("0001",)])
         await self.migrate("upgrade", "head")
@@ -167,8 +167,7 @@ class MigrationTests(PostgresTestCase):
                 await connection.execute(text('INSERT INTO locker_compartments(id,locker_id,width_mm,height_mm,depth_mm,enabled,retired) VALUES(:id,:locker,10,20,30,:enabled,:retired)'), {'id': cell_ids[index], 'locker': locker_ids[index], 'enabled': index == 0, 'retired': index == 1})
                 await connection.execute(text('INSERT INTO locker_assignments(id,compartment_id,delivery_id,width_mm,height_mm,depth_mm,assigned_at,released_at) VALUES(:id,:cell,:parcel,1,2,3,:assigned,:released)'), {'id': uuid4(), 'cell': cell_ids[index], 'parcel': self.delivery_ids[index], 'assigned': NOW, 'released': NOW + timedelta(seconds=1) if index else None})
         original = await self.snapshot()
-        await self.migrate('upgrade', 'head')
-        await self.migrate('check')
+        await self.migrate('upgrade', '0004')
         current = await self.snapshot()
         self.assertEqual(current[1]['alembic_version'], [('0004',)])
         for table in ('deliveries', 'returns', 'locker_compartments', 'locker_assignments'):
@@ -181,7 +180,7 @@ class MigrationTests(PostgresTestCase):
         self.assertEqual(set(current[0]), {'alembic_version','deliveries','returns','lockers','locker_compartments','locker_assignments'})
         await self.migrate('downgrade', '0003')
         self.assertEqual(await self.snapshot(), original)
-        await self.migrate('upgrade', 'head')
+        await self.migrate('upgrade', '0004')
         self.assertEqual(await self.snapshot(), current)
 
     async def test_geography_and_null_alias_block_downgrade_before_ddl(self) -> None:
@@ -245,3 +244,28 @@ class MigrationTests(PostgresTestCase):
         async with self.engine.begin() as connection:
             await connection.execute(text(f'UPDATE lockers SET {address},latitude=-90,longitude=180 WHERE id=:id'), {'id': identifier})
         await self.migrate('check')
+
+    async def test_populated_0004_quotation_upgrade_and_empty_storage_round_trip(self):
+        await self.migrate('upgrade', '0004')
+        await self.populate_current_parcels()
+        async with self.engine.begin() as connection:
+            for index in range(2):
+                locker_id, cell_id = uuid4(), uuid4()
+                await connection.execute(text("INSERT INTO lockers(id,location_id,active,country_code,postal_code,province,city,street,street_number,latitude,longitude) VALUES(:id,NULL,:active,'ES','01001','Province','City','Street','1',40,-3)"), {'id': locker_id, 'active': index == 0})
+                await connection.execute(text('INSERT INTO locker_compartments(id,locker_id,width_mm,height_mm,depth_mm,enabled,retired) VALUES(:id,:locker,10,20,30,:enabled,:retired)'), {'id': cell_id, 'locker': locker_id, 'enabled': index == 0, 'retired': index == 1})
+                await connection.execute(text('INSERT INTO locker_assignments(id,compartment_id,delivery_id,width_mm,height_mm,depth_mm,assigned_at,released_at) VALUES(:id,:cell,:parcel,1,2,3,:assigned,:released)'), {'id': uuid4(), 'cell': cell_id, 'parcel': self.delivery_ids[index], 'assigned': NOW, 'released': NOW + timedelta(seconds=1) if index else None})
+        original = await self.snapshot()
+        await self.migrate('upgrade', '0005')
+        await self.migrate('check')
+        current = await self.snapshot()
+        self.assertEqual(current[1]['alembic_version'], [('0005',)])
+        for table in original[0]:
+            if table != 'alembic_version':
+                self.assertEqual(current[0][table], original[0][table])
+                self.assertEqual(current[1][table], original[1][table])
+        for table in ('shipping_quotations', 'shipping_provider_results', 'shipping_offers'):
+            self.assertEqual(current[1][table], [])
+        await self.migrate('downgrade', '0004')
+        self.assertEqual(await self.snapshot(), original)
+        await self.migrate('upgrade', '0005')
+        self.assertEqual(await self.snapshot(), current)

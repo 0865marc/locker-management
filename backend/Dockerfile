@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /code
 
-COPY pyproject.toml main.py ./
+COPY pyproject.toml main.py worker.py ./
 COPY domain ./domain
 COPY application ./application
 COPY adapters ./adapters

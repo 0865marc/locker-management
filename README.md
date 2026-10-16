@@ -276,7 +276,8 @@ postal. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
 tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
 sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
 el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
-No hay endpoint, wiring en `main.py`, almacenamiento, reserva ni contratación.
+La API de cotizaciones y su almacenamiento se componen en `main.py`; el worker
+ejecuta el comparador. No hay reserva ni contratación.
 
 ## Organización
 
@@ -284,6 +285,7 @@ No hay endpoint, wiring en `main.py`, almacenamiento, reserva ni contratación.
 hexagonal_architecture/
 ├── backend/
 │   ├── main.py
+│   ├── worker.py
 │   ├── domain/
 │   │   ├── deliveries.py
 │   │   ├── returns.py
@@ -294,7 +296,10 @@ hexagonal_architecture/
 │   │   ├── deliveries.py
 │   │   ├── returns.py
 │   │   ├── lockers.py
-│   │   └── shipping_quotes.py
+│   │   ├── shipping_quotes.py
+│   │   ├── quotation_models.py
+│   │   ├── quotation_ports.py
+│   │   └── quotations.py
 │   ├── adapters/
 │   │   ├── http/
 │   │   │   ├── deliveries/
@@ -306,8 +311,13 @@ hexagonal_architecture/
 │   │   │   ├── lockers/
 │   │   │   │   ├── routes.py
 │   │   │   │   └── schemas.py
+│   │   │   ├── quotations/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
 │   │   │   ├── routes.py
 │   │   │   └── request_validation.py
+│   │   ├── queue/
+│   │   │   └── rabbitmq.py
 │   │   ├── providers/
 │   │   │   └── simulated_shipping.py
 │   │   └── database/
@@ -315,6 +325,7 @@ hexagonal_architecture/
 │   │       ├── sqlmodel_deliveries.py
 │   │       ├── sqlmodel_returns.py
 │   │       ├── sqlmodel_lockers.py
+│   │       ├── sqlmodel_quotations.py
 │   │       └── migrations/
 │   │           ├── env.py
 │   │           ├── script.py.mako
@@ -322,7 +333,8 @@ hexagonal_architecture/
 │   │               ├── 0001_create_delivery_and_return.py
 │   │               ├── 0002_parcel_custody.py
 │   │               ├── 0003_lockers_and_custody.py
-│   │               └── 0004_locker_geography.py
+│   │               ├── 0004_locker_geography.py
+│   │               └── 0005_shipping_quotations.py
 │   ├── tests/
 │   │   ├── unit/
 │   │   │   ├── test_domain.py
@@ -373,7 +385,7 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | `backend/adapters/http/deliveries/routes.py` y `schemas.py` | Router de Delivery y sus contratos HTTP. |
 | `backend/adapters/http/returns/routes.py` y `schemas.py` | Router de Return y sus contratos HTTP. |
 | `backend/adapters/http/lockers/routes.py` y `schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
-| `backend/adapters/http/routes.py` | Agrega los tres routers mediante `create_router`, recibiendo servicios ya construidos. |
+| `backend/adapters/http/routes.py` | Agrega los cuatro routers mediante `create_router`, recibiendo servicios ya construidos. |
 | `backend/adapters/http/request_validation.py` | Validación compartida de cuerpos vacíos en las acciones de salida. |
 | `backend/adapters/database/sqlmodel_deliveries.py` y `sqlmodel_returns.py` | Tablas, filas, conversiones y repositorios SQLModel de cada flujo; conservan sus consultas y transacciones. |
 | `backend/adapters/database/sqlmodel_lockers.py` | Persistencia de configuración y asignaciones, elección de celda, bloqueo/liberación y normalización UTC de persistencia. |
@@ -394,14 +406,14 @@ de uso trabajar con repositorios sin depender de su implementación concreta.
 
 ### Componer los servicios
 
-`create_app()` crea una vez por aplicación `DeliveryService`, `ReturnService` y `LockerService`,
+`create_app()` crea una vez por aplicación `DeliveryService`, `ReturnService`, `LockerService` y `QuotationService`,
 y conserva sus referencias en `app.state.delivery_service`,
-`app.state.return_service` y `app.state.locker_service`. Suministra `utc_now`,
+`app.state.return_service`, `app.state.locker_service` y `app.state.quotation_service`. Suministra `utc_now`,
 que devuelve la hora UTC real, como segundo argumento obligatorio de
 `DeliveryService` y `ReturnService`. Los consumidores directos también deben
 proporcionar un `Callable[[], datetime]`; las pruebas usan relojes controlados.
-El agregador `create_router(delivery_service, return_service, locker_service)`
-recibe las tres instancias e incluye sus routers en orden Locker/Delivery/Return,
+El agregador `create_router(delivery_service, return_service, locker_service, quotation_service)`
+recibe las instancias e incluye sus routers en orden Locker/Delivery/Return/Quotation,
 sin construir dependencias. Las rutas
 reutilizan los servicios recibidos, sin instanciarlos por petición ni buscarlos
 en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
@@ -463,7 +475,7 @@ aunque una migración pueda afectar a varios archivos de infraestructura.
 
 Hay **un único historial para toda la base de datos**, con `deliveries`, `returns`,
 `lockers`, `locker_compartments` y `locker_assignments`. La revisión inicial `0001` conserva las columnas legacy `address` y
-`reason`; `0002` incorpora el modelo de custodia y `0003` añade lockers y el head actual es `0004`, que incorpora geografía nullable. `upgrade 0001`
+`reason`; `0002` incorpora el modelo de custodia y `0003` añade lockers y la revisión `0004` incorpora geografía nullable y `0005` añade cotizaciones. `upgrade 0001`
 prepara el esquema histórico y `upgrade head` prepara el contrato de la API actual. `SQLModel.metadata` es la fuente del
 esquema para comparar modelos y base de datos; `backend/adapters/database/migrations/env.py`
 importa los modelos del adaptador para registrar sus tablas. El dominio no participa
@@ -589,7 +601,7 @@ de datos; una revisión manual, auditoría AST o captura del editor no lo sustit
 `pyrightconfig.json` en la raíz incluye todo `backend`: producción en modo strict
 (dominio, aplicación, adaptadores y `main.py`) y pruebas en standard, con objetivo
 Python 3.11 e imports desde `backend`. Solo excluye entornos/cachés y migraciones
-históricas 0001–0003; `env.py` y 0004 se analizan. No se desactivan reglas para
+históricas 0001–0003; `env.py`, 0004 y 0005 se analizan. No se desactivan reglas para
 ocultar diagnósticos. En VSCode abre la raíz del repositorio y selecciona
 `backend/.venv` como intérprete para que Pylance use el entorno/configuración
 compartidos. La extensión y CLI pueden emitir diagnósticos distintos si usan
@@ -598,7 +610,7 @@ versiones diferentes; la evidencia reproducible de cierre es el comando anterior
 ## Pruebas
 
 Las suites usan `unittest`: `tests/unit` contiene pruebas sin servicios y
-`tests/integration` usa PostgreSQL como único backend de integración. Instala las
+`tests/integration` usa PostgreSQL y `tests/messaging` añade RabbitMQ. Instala las
 dependencias de desarrollo y ejecuta las unitarias desde `backend/`:
 
 ```bash
@@ -628,7 +640,8 @@ Desde `backend/`, ejecuta integración o la suite completa:
 TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
   uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
 
-# Unitarias e integración.
+# Suite completa, incluyendo mensajería (necesita ambas URLs).
+TEST_RABBITMQ_URL='amqp://test_user:test_password@localhost/hexagonal_test' \
 TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
   uv run --extra dev python -m unittest discover -s tests -t . -v -f
 ```
@@ -668,11 +681,119 @@ Las credenciales de Compose son locales y de demostración. No añadimos
 autenticación ni repositorios genéricos. Delivery y Return son paquetes independientes
 que comparten capacidad de lockers. Ubicaciones y múltiples lockers ya están incluidos.
 Quedan para otras ampliaciones notificaciones e integraciones con transportistas,
-reservas, TTL, transferencias, geobúsqueda, RabbitMQ y outbox. Los proveedores reales, la API de cotizaciones y
-su procesamiento mediante colas serán una fase posterior; consultar disponibilidad no
-contrata un envío ni reserva espacio. No se gestionan
+reservas, TTL, transferencias, geobúsqueda y outbox. La API de cotizaciones guarda
+solicitudes y resultados y usa RabbitMQ con un worker; los proveedores reales
+quedan para una fase posterior. Consultar disponibilidad no contrata un envío
+ni reserva espacio. No se gestionan
 direcciones de Delivery/Return, instrucciones de entrega, pedidos, productos, cantidades de productos
 ni resoluciones comerciales de devolución.
 
-Compose coordina PostgreSQL, migraciones y API siguiendo
+Compose coordina PostgreSQL, migraciones, RabbitMQ, API y worker siguiendo
 el [control de arranque de Docker Compose](https://docs.docker.com/compose/how-tos/startup-order/).
+
+## Cotizaciones asíncronas
+
+`POST /quotations` guarda una solicitud nueva y publica su UUID una sola vez en
+RabbitMQ. Devuelve `202`, `{ "id": "…", "status": "PENDING" }` y
+`Location: /quotations/{id}` únicamente tras confirmar la publicación. Ejemplo:
+
+```bash
+curl -i http://localhost:8000/quotations -H 'Content-Type: application/json' -d '{
+  "origin_country_code":"ES", "origin_postal_code":"01001",
+  "destination_country_code":"ES", "destination_postal_code":"28001",
+  "weight_grams":1200,
+  "dimensions":{"width_mm":200,"height_mm":150,"depth_mm":100}
+}'
+curl http://localhost:8000/quotations/UUID_DEVUELTO
+```
+
+Se rechazan campos extra, países distintos de ES, códigos postales que no sean
+texto ASCII de cinco dígitos, peso fuera de 1–30000 g y dimensiones fuera de
+1–2000 mm o valores no enteros (incluidos booleanos). Una escritura inicial
+fallida devuelve `503` sin publicar. Si falla la publicación, `503` incluye
+`detail.id` y `PUBLISH_ERROR`; se intenta guardar `FAILED/PUBLISH_ERROR` si la
+solicitud sigue PENDING. Nunca se inventan fallos de proveedores por este error.
+
+GET devuelve `id`, `request`, `status`, `created_at`, `finished_at`,
+`process_error_code` y `results`, con fechas UTC, ofertas en céntimos EUR y los
+estados originales `QUOTED`, `NOT_COVERED`, `FAILED`. PENDING/PROCESSING no tienen
+resultados ni fecha final; COMPLETED expone el lote entero, incluso cuando todos
+los proveedores fallan. FAILED conserva un error de proceso. Un UUID desconocido
+devuelve 404, uno mal formado 422, y persistencia no disponible 503.
+
+`application/quotation_models.py`, `quotation_ports.py` y `quotations.py` definen
+el estado persistido, los puertos y los casos de uso. Los adaptadores son
+`adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
+`adapters/queue/rabbitmq.py`; `main.py` compone API y `worker.py` el proceso de
+trabajo. API comparte servicios por instancia y cierra motor y broker incluso
+si falla el arranque. Solo el worker llama a `ShippingQuoteService.compare`.
+
+`docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
+**un único worker**. API/worker esperan migraciones correctas y broker saludable;
+las migraciones esperan PostgreSQL saludable. Los volúmenes `postgres_data` y
+`rabbitmq_data` se conservan con `docker compose down` sin `-v`. Para arrancar
+por separado, ejecutar `alembic upgrade head`, `uvicorn main:app` y
+`python worker.py` desde backend, con DATABASE_URL y RABBITMQ_URL configurados.
+El valor local por defecto de RabbitMQ es `amqp://guest:guest@localhost/`.
+Ni API ni worker crean tablas ni ejecutan migraciones al arrancar.
+
+La cola `shipping.quotations` es durable y los mensajes son persistentes, con
+publicación mandatory y confirms. El worker usa prefetch 1 y extracción
+secuencial sin buffer, con comprobación de cola cada 0.1 s cuando está vacía.
+Confirma cada entrega **antes** de leer PostgreSQL o llamar a proveedores; si
+falla el ack, no ejecuta. Procesa solo PENDING, marca PROCESSING y llama compare
+una vez. Guarda resultados/ofertas y COMPLETED en una sola transacción. Los
+errores/timeout de proveedor se conservan por separado sin retries; una excepción
+inesperada intenta FAILED/PROCESSING_ERROR solo si todavía está PROCESSING.
+
+No hay requeue explícito, republicación, retry de trabajos, reconexión robusta,
+reconciliador ni recuperación automática. Commit y publicación no son atómicos:
+una caída o confirmación incierta puede dejar trabajo incompleto. Después del
+ack temprano, una caída puede perder el trabajo y dejar PENDING/PROCESSING
+indefinidamente. No se garantiza ejecución exactamente una vez ni que un fallo
+de infraestructura permita registrar un error final. El apagado cancela y espera
+las llamadas activas y cierra los recursos; no reejecuta trabajo pendiente.
+
+El worker valida antes de trabajar estas variables (valores por defecto):
+
+| Variable | Default |
+| --- | --- |
+| `SHIPPING_DELAY_MIN_SECONDS` | `0.05` |
+| `SHIPPING_DELAY_MAX_SECONDS` | `0.5` |
+| `SHIPPING_NO_RESPONSE_PROBABILITY` | `0.05` |
+| `SHIPPING_ERROR_PROBABILITY` | `0.10` |
+
+Demoras finitas y ordenadas, probabilidades entre 0 y 1 y suma ≤ 1. Un sorteo
+elige categorías excluyentes; tras la demora uniforme, el proveedor responde,
+falla o espera cancelablemente hasta el timeout existente. Poner las cuatro
+variables a cero produce comportamiento determinista. La construcción directa
+sin perfil mantiene demora/probabilidades cero y las tarifas actuales; puede
+inyectarse `SimulationProfile` con RNG y espera controlados. No se guardan
+perfiles: se usa la configuración vigente al ejecutar.
+
+El head actual es **0005**: añade únicamente `shipping_quotations`,
+`shipping_provider_results` y `shipping_offers`, con FK y unicidad por
+solicitud/proveedor/servicio. 0001–0004 permanecen intactas. Upgrade 0004→0005
+preserva los datos anteriores; downgrade a 0004 bloquea las tablas y rechaza
+cualquier dato de cotización antes de DDL. Si están vacías, elimina solo las
+tres tablas nuevas aunque existan paquetes o lockers. Se mantiene el protocolo
+de revisión y preparación de migraciones descrito arriba.
+
+La suite PostgreSQL continúa sin requerir RabbitMQ. El smoke de mensajería exige
+ambas URLs explícitas; crea y elimina solo su schema/cola aislados. Configuración
+faltante o inaccesible produce un fallo claro sin exponer credenciales.
+
+```bash
+# Desde backend; unidades sin servicios:
+env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL uv run --extra dev python -m unittest discover -s tests/unit -t . -v
+# Con TEST_DATABASE_URL PostgreSQL+asyncpg de prueba:
+uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
+# Además TEST_RABBITMQ_URL AMQP de prueba:
+uv run --extra dev python -m unittest discover -s tests/messaging -t . -v -f
+uv run --extra dev pyright --project .. --warnings
+```
+
+Pyright incluye estrictamente `worker.py`, migración 0005 y el entorno Alembic,
+con las mismas reglas y exclusiones históricas. Las pruebas cubren ack antes de
+proveedores, publicación única, batch atómico, estados/errores, no requeue tras
+fallos de proveedor, simulación controlada y guardas de migración.

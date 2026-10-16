@@ -4,7 +4,7 @@ import os
 from contextlib import AsyncExitStack
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
@@ -132,7 +132,7 @@ class PostgresTestCase(unittest.IsolatedAsyncioTestCase):
         from main import create_app
         engine, sessions = self.database()
         with patch('main.create_database', return_value=(engine, sessions)):
-            app = create_app(str(self.url))
+            app = create_app(str(self.url), publisher=AsyncMock())
         lifetime = AsyncExitStack()
         self.resources.push_async_callback(lifetime.aclose)
         await lifetime.enter_async_context(app.router.lifespan_context(app))

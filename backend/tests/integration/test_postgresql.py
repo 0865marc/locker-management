@@ -178,7 +178,7 @@ class PostgreSQLCustodyTests(PostgresTestCase):
         before = await self.snapshot()
         await self.migrate("upgrade", "head")
         current = await self.snapshot()
-        self.assertEqual(current[1]["alembic_version"], [("0004",)])
+        self.assertEqual(current[1]["alembic_version"], [("0005",)])
         for table in ("deliveries", "returns"):
             self.assertEqual(current[0][table], before[0][table])
             self.assertEqual(current[1][table], before[1][table])
