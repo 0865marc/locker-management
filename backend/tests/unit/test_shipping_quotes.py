@@ -3,7 +3,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import FrozenInstanceError, replace
 from unittest import IsolatedAsyncioTestCase, TestCase
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from adapters.providers.simulated_shipping import (
     SimulatedEconomyProvider,
@@ -137,7 +137,10 @@ class ShippingContractTests(TestCase):
 
 
 class ShippingComparisonTests(IsolatedAsyncioTestCase):
-    async def test_three_simulators_documented_example_and_fourth_with_two_services(self) -> None:
+    @patch('adapters.providers.simulated_shipping._random', return_value=0.99)
+    @patch('adapters.providers.simulated_shipping._uniform', return_value=0.1)
+    @patch('adapters.providers.simulated_shipping._sleep', new_callable=AsyncMock)
+    async def test_three_simulators_documented_example_and_fourth_with_two_services(self, sleep: AsyncMock, uniform: object, outcome: object) -> None:
         async def multiple(value: ShippingQuoteRequest) -> QuoteOffers:
             self.assertEqual(value, request())
             return QuoteOffers((ShippingOffer('z-priority', 800, 'EUR', 1, 2),
@@ -159,7 +162,10 @@ class ShippingComparisonTests(IsolatedAsyncioTestCase):
         self.assertEqual(fourth.calls, 1)
         self.assertTrue(all(result.status is ProviderStatus.QUOTED for result in results))
 
-    async def test_simulator_extremes_rounding_zone_and_repeatability(self) -> None:
+    @patch('adapters.providers.simulated_shipping._random', return_value=0.99)
+    @patch('adapters.providers.simulated_shipping._uniform', return_value=0.1)
+    @patch('adapters.providers.simulated_shipping._sleep', new_callable=AsyncMock)
+    async def test_simulator_extremes_rounding_zone_and_repeatability(self, sleep: AsyncMock, uniform: object, outcome: object) -> None:
         comparator = ShippingQuoteService([SimulatedEconomyProvider(), SimulatedStandardProvider(),
                                     SimulatedExpressProvider()])
         extreme = replace(request(), destination_postal_code='28001', weight_grams=30000,

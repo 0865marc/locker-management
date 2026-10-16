@@ -253,6 +253,8 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+Un resultado posible cuando los tres proveedores responden con éxito:
+
 ```text
 sim-economy QUOTED economy 330 EUR 3 3
 sim-express QUOTED express 830 EUR 1 1
@@ -272,7 +274,9 @@ La entrada exige países `ES`, códigos postales de cinco dígitos ASCII, peso e
 entre 1 y 30000 gramos y dimensiones entre 1 y 2000 mm. Los precios son céntimos
 enteros EUR y los plazos intervalos de días naturales desde la futura expedición.
 Los simuladores usan tarifas deterministas por peso real/volumétrico y prefijo
-postal. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
+postal, con demoras y fallos estocásticos en cada llamada, también en uso directo.
+Sus constructores no aceptan argumentos. Las llamadas directas a `quote` necesitan
+un timeout o cancelación del llamador si el proveedor simula no responder. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
 tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
 sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
 el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
@@ -754,22 +758,23 @@ indefinidamente. No se garantiza ejecución exactamente una vez ni que un fallo
 de infraestructura permita registrar un error final. El apagado cancela y espera
 las llamadas activas y cierra los recursos; no reejecuta trabajo pendiente.
 
-El worker valida antes de trabajar estas variables (valores por defecto):
+Cada simulador declara su propio perfil privado e inmutable. El worker y los
+consumidores directos construyen `SimulatedEconomyProvider()`,
+`SimulatedStandardProvider()` y `SimulatedExpressProvider()` sin argumentos:
 
-| Variable | Default |
-| --- | --- |
-| `SHIPPING_DELAY_MIN_SECONDS` | `0.05` |
-| `SHIPPING_DELAY_MAX_SECONDS` | `0.5` |
-| `SHIPPING_NO_RESPONSE_PROBABILITY` | `0.05` |
-| `SHIPPING_ERROR_PROBABILITY` | `0.10` |
+| Proveedor | Demora uniforme (s) | Sin respuesta | Error |
+| --- | --- | --- | --- |
+| Economy | 0.2–0.8 | 0.10 | 0.15 |
+| Standard | 0.1–0.5 | 0.05 | 0.10 |
+| Express | 0.05–0.2 | 0.02 | 0.05 |
 
-Demoras finitas y ordenadas, probabilidades entre 0 y 1 y suma ≤ 1. Un sorteo
-elige categorías excluyentes; tras la demora uniforme, el proveedor responde,
-falla o espera cancelablemente hasta el timeout existente. Poner las cuatro
-variables a cero produce comportamiento determinista. La construcción directa
-sin perfil mantiene demora/probabilidades cero y las tarifas actuales; puede
-inyectarse `SimulationProfile` con RNG y espera controlados. No se guardan
-perfiles: se usa la configuración vigente al ejecutar.
+Un sorteo elige categorías excluyentes; tras la demora uniforme, el proveedor
+responde, falla o espera cancelablemente hasta el timeout del comparador. Las
+tarifas de respuestas exitosas permanecen iguales. Estos perfiles no se
+configuran por constructor, variables de entorno ni almacenamiento; se retira
+la configuración pública de perfil/RNG/espera. El worker solo configura sus
+conexiones. Las pruebas controlan funciones privadas de azar y espera al ejecutar,
+sin semillas ni dependencia del orden concurrente.
 
 El head actual es **0005**: añade únicamente `shipping_quotations`,
 `shipping_provider_results` y `shipping_offers`, con FK y unicidad por

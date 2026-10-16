@@ -44,9 +44,19 @@ Se añaden `adapters/http/quotations/{__init__.py,routes.py,schemas.py}`, `adapt
 
 ### 4. Simulación y runtime
 
-El worker configura demora uniforme entre min/max, probabilidad de no respuesta y probabilidad de error. Se exige finitud, ausencia de booleanos, 0 <= min <= max, probabilidades en [0,1] y suma <= 1. Un sorteo elige categorías excluyentes; después de la demora, responde con la tarifa actual, lanza error o espera de forma cancelable hasta el timeout existente.
+Cada clase de proveedor declara su propio perfil privado e inmutable y se construye sin argumentos. Una implementación compartida aplica la demora uniforme y un sorteo de categorías excluyentes; después de la demora, devuelve la tarifa actual, lanza error o espera cancelablemente hasta el timeout existente. Perfiles aprobados:
 
-Constructores sin perfil conservan demora/probabilidades cero. Defaults del worker: demora 0.05–0.5 s, no respuesta 0.05 y error 0.10. Variables `SHIPPING_DELAY_MIN_SECONDS`, `SHIPPING_DELAY_MAX_SECONDS`, `SHIPPING_NO_RESPONSE_PROBABILITY` y `SHIPPING_ERROR_PROBABILITY` permiten cambiarlos. La configuración vigente al ejecutar se aplica sin snapshot; azar y esperas son inyectables para pruebas.
+| Proveedor | Demora (s) | Sin respuesta | Error |
+| --- | --- | --- | --- |
+| Economy | 0.2–0.8 | 0.10 | 0.15 |
+| Standard | 0.1–0.5 | 0.05 | 0.10 |
+| Express | 0.05–0.2 | 0.02 | 0.05 |
+
+Se elimina la configuración pública por constructor, incluidos `profile`, `rng`, `sleep`, `SimulationProfile` y `SimulationRandom`. El worker instancia `SimulatedEconomyProvider()`, `SimulatedStandardProvider()` y `SimulatedExpressProvider()`; desaparecen `worker.simulation_profile()` y las variables `SHIPPING_DELAY_MIN_SECONDS`, `SHIPPING_DELAY_MAX_SECONDS`, `SHIPPING_NO_RESPONSE_PROBABILITY` y `SHIPPING_ERROR_PROBABILITY` de worker/Compose/README. No hay sustitutos ni configuración persistida.
+
+Los perfiles distinguen proveedores de demostración y sus demoras normales quedan por debajo del timeout de dos segundos. La ejecución directa también usa el perfil estocástico: solo las tarifas de respuestas exitosas son deterministas. README presenta el resultado ilustrativo como un caso exitoso posible. Las llamadas directas a `quote` conservan la responsabilidad de cancelación/timeout del llamador.
+
+Las pruebas parchean funciones privadas de azar y espera consultadas al ejecutar, sin parámetros de test en constructores, semillas ni secuencias dependientes del orden concurrente. Se verifican perfiles, umbrales, tarifas, error/timeout y limpieza por cancelación; las pruebas de comparación fuerzan éxito cuando comprueban precios. El proveedor de éxito del smoke de mensajería devuelve una oferta desde un doble de prueba, sin invocar un simulador estocástico.
 
 Compose añade RabbitMQ 4 y un worker. API/worker esperan migraciones y broker saludable al arrancar; `RABBITMQ_URL` configura ambas conexiones. Se conservan `postgres_data` y `rabbitmq_data`. Conexiones ordinarias, sin reconexión/republicación automática de trabajos; los fallos se comunican y no disparan bucles de retry. Ni API ni worker crean tablas al arrancar.
 
@@ -55,6 +65,8 @@ Compose añade RabbitMQ 4 y un worker. API/worker esperan migraciones y broker s
 `0005_shipping_quotations.py` crea las tres tablas e incorpora metadata sin modificar datos previos ni revisiones 0001–0004. El downgrade usa la guarda estándar con locks previos: rechaza datos de cotización y, con tablas nuevas vacías, elimina solo ese almacenamiento.
 
 La verificación cubre unidades sin servicios, persistencia/HTTP PostgreSQL, un smoke RabbitMQ del flujo normal y consumo sin requeue, y Pyright con cero errores/warnings. Se conserva la revisión independiente; no se añaden pruebas distribuidas de recuperación o contención.
+
+Para la revisión de perfiles se repiten unidades, smoke PostgreSQL/RabbitMQ, Pyright y revisión independiente; no se modifica esquema ni se requiere repetir verificaciones de migración sin cambios. La evidencia anterior se mantiene identificada como histórica en tasks.md.
 
 ## Risks / Trade-offs
 

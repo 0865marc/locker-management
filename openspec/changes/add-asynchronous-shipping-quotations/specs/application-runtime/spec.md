@@ -26,16 +26,16 @@ Compose SHALL require healthy PostgreSQL before migrations and successful migrat
 
 ### Requirement: Run one worker with simple runtime configuration
 
-One worker SHALL process messages sequentially using the existing database URL policy and RABBITMQ_URL. It SHALL validate simulation settings before work, avoid migrations at startup and close resources and cancel/await provider calls on shutdown. It SHALL not automatically retry or recover consumed quotations.
+One worker SHALL process messages sequentially using the existing database URL policy and RABBITMQ_URL. It SHALL construct the three self-contained simulators without arguments, avoid migrations at startup and close resources and cancel/await provider calls on shutdown. It SHALL not automatically retry or recover consumed quotations.
 
 #### Scenario: Start and stop the worker
 - **WHEN** the worker starts with valid settings and later stops
 - **THEN** it consumes sequentially without schema changes and cleans up its resources and active calls without replaying unfinished work
 
-### Requirement: Configure simulation without storing profiles
+### Requirement: Keep provider behavior out of worker configuration
 
-Worker simulation defaults SHALL be delay 0.05–0.5 seconds, no-response probability 0.05 and error probability 0.10, overridable through runtime configuration. Execution SHALL use the current worker settings without storing profiles on requests. Direct simulator construction without settings SHALL remain deterministic.
+The worker SHALL use each provider's fixed internal profile without configuring or persisting it. Worker and Compose SHALL not expose simulation delay/probability environment settings. Previously used SHIPPING_DELAY_MIN_SECONDS, SHIPPING_DELAY_MAX_SECONDS, SHIPPING_NO_RESPONSE_PROBABILITY and SHIPPING_ERROR_PROBABILITY SHALL have no effect on provider behavior.
 
-#### Scenario: Override the demo settings
-- **WHEN** delays and both probabilities are explicitly set to zero
-- **THEN** the worker uses deterministic provider behavior while preserving current tariffs and comparison rules
+#### Scenario: Worker uses the same autonomous providers as direct callers
+- **WHEN** the worker constructs its provider collection, with or without old simulation variables present in its environment
+- **THEN** it supplies no constructor arguments and each provider retains its own fixed profile and unchanged tariff rules

@@ -9,12 +9,11 @@ import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 
 from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
-from adapters.providers.simulated_shipping import SimulatedEconomyProvider
 from adapters.queue.rabbitmq import RabbitMQ, handle_delivery
 from application.quotation_models import QuotationStatus
 from application.quotations import QuotationService, QuotationProcessor
 from application.shipping_quotes import ShippingQuoteService, ProviderStatus, ProviderErrorCode
-from domain.shipping_quotes import ShippingQuoteRequest, QuoteOffers, NoCoverage
+from domain.shipping_quotes import ShippingQuoteRequest, QuoteOffers, NoCoverage, ShippingOffer
 from domain.lockers import Dimensions
 from tests.integration.support import PostgresTestCase
 
@@ -66,7 +65,7 @@ class ControlledProvider:
             await asyncio.Event().wait()
         if self.outcome == 'uncovered':
             return NoCoverage()
-        return await SimulatedEconomyProvider().quote(request)
+        return QuoteOffers((ShippingOffer('economy', 430, 'EUR', 4, 4),))
 
 
 class MessagingSmokeTests(PostgresTestCase):
