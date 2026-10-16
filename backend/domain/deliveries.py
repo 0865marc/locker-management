@@ -3,22 +3,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
-from domain.lockers import Dimensions
+from domain.lockers import Dimensions, validate_assignment
 
 
-class CustodyConflictError(ValueError):
+class DeliveryConflictError(ValueError):
     """The parcel cannot leave custody in the requested way or at that time."""
-
-
-class DeliveryStatus(str, Enum):
-    AWAITING_PICKUP = "AWAITING_PICKUP"
-    COLLECTED = "COLLECTED"
-    RETURNED_TO_CARRIER = "RETURNED_TO_CARRIER"
-
-
-class ReturnStatus(str, Enum):
-    AWAITING_CARRIER = "AWAITING_CARRIER"
-    HANDED_OVER = "HANDED_OVER"
 
 
 def _text(value: object, name: str) -> str:
@@ -47,23 +36,17 @@ def _uuid(value: object) -> UUID:
     return value
 
 
-def _normalize_common(parcel: "Delivery | Return") -> None:
-    for name in ("tracking_number", "carrier_code"):
-        object.__setattr__(parcel, name, _text(getattr(parcel, name), name))
-    object.__setattr__(parcel, "received_at", _utc(parcel.received_at, "received_at"))
-    object.__setattr__(parcel, "id", _uuid(parcel.id))
-    values = (parcel.locker_id, parcel.compartment_id, parcel.parcel_dimensions)
-    if any(v is not None for v in values):
-        if not (isinstance(parcel.locker_id, UUID) and isinstance(parcel.compartment_id, UUID)
-                and isinstance(parcel.parcel_dimensions, Dimensions)):
-            raise ValueError("La asignación debe estar completa")
-
-
 def _exit_at(at: datetime, received_at: datetime) -> datetime:
     at = _utc(at, "fecha de salida")
     if at < received_at:
-        raise CustodyConflictError("La salida no puede ser anterior a la recepción")
+        raise DeliveryConflictError("La salida no puede ser anterior a la recepción")
     return at
+
+
+class DeliveryStatus(str, Enum):
+    AWAITING_PICKUP = "AWAITING_PICKUP"
+    COLLECTED = "COLLECTED"
+    RETURNED_TO_CARRIER = "RETURNED_TO_CARRIER"
 
 
 @dataclass(frozen=True)
@@ -84,7 +67,11 @@ class Delivery:
     parcel_dimensions: Dimensions | None = None
 
     def __post_init__(self) -> None:
-        _normalize_common(self)
+        object.__setattr__(self, "tracking_number", _text(self.tracking_number, "tracking_number"))
+        object.__setattr__(self, "carrier_code", _text(self.carrier_code, "carrier_code"))
+        object.__setattr__(self, "received_at", _utc(self.received_at, "received_at"))
+        object.__setattr__(self, "id", _uuid(self.id))
+        validate_assignment(self.locker_id, self.compartment_id, self.parcel_dimensions)
         object.__setattr__(self, "recipient_name", _text(self.recipient_name, "recipient_name"))
         object.__setattr__(self, "recipient_phone", _optional_text(self.recipient_phone, "recipient_phone"))
         object.__setattr__(self, "status", DeliveryStatus(self.status))
@@ -117,35 +104,4 @@ class Delivery:
 
     def _require_pending(self) -> None:
         if self.status != DeliveryStatus.AWAITING_PICKUP:
-            raise CustodyConflictError("El paquete ya ha salido del punto de recogida")
-
-
-@dataclass(frozen=True)
-class Return:
-    tracking_number: str
-    carrier_code: str
-    received_at: datetime
-    sender_name: str | None = None
-    id: UUID = field(default_factory=uuid4)
-    status: ReturnStatus = ReturnStatus.AWAITING_CARRIER
-    handed_over_at: datetime | None = None
-
-    locker_id: UUID | None = None
-    compartment_id: UUID | None = None
-    parcel_dimensions: Dimensions | None = None
-
-    def __post_init__(self) -> None:
-        _normalize_common(self)
-        object.__setattr__(self, "sender_name", _optional_text(self.sender_name, "sender_name"))
-        object.__setattr__(self, "status", ReturnStatus(self.status))
-        if self.handed_over_at is not None:
-            object.__setattr__(self, "handed_over_at", _utc(self.handed_over_at, "handed_over_at"))
-        if (self.handed_over_at is not None) != (self.status == ReturnStatus.HANDED_OVER):
-            raise ValueError("El estado de Return y su fecha de salida son incompatibles")
-        if self.handed_over_at is not None and self.handed_over_at < self.received_at:
-            raise ValueError("La salida no puede ser anterior a la recepción")
-
-    def hand_over(self, at: datetime) -> "Return":
-        if self.status != ReturnStatus.AWAITING_CARRIER:
-            raise CustodyConflictError("El paquete ya se ha entregado al transportista")
-        return replace(self, status=ReturnStatus.HANDED_OVER, handed_over_at=_exit_at(at, self.received_at))
+            raise DeliveryConflictError("El paquete ya ha salido del punto de recogida")

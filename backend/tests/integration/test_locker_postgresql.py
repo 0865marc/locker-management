@@ -1,15 +1,20 @@
 """PostgreSQL capacity races with independent connections and observed database locks."""
 import asyncio
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
+
+import httpx
 
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
-from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
-from domain.lockers import CompartmentBatch, Dimensions
-from domain.models import Delivery, Return
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from domain.lockers import CompartmentBatch, Dimensions, Locker
+from domain.deliveries import Delivery
+from domain.returns import Return
 from tests.integration.support import PostgresTestCase
 
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
@@ -46,6 +51,18 @@ class StatementGate:
 
 
 class PostgreSQLLockerTests(PostgresTestCase):
+    def responses(self, results: Sequence[httpx.Response | BaseException]) -> list[httpx.Response]:
+        responses: list[httpx.Response] = []
+        for result in results:
+            assert isinstance(result, httpx.Response), result
+            responses.append(result)
+        return responses
+
+    async def current_locker(self, identifier: UUID) -> Locker:
+        locker = await self.lockers.get_by_id(identifier)
+        assert locker is not None
+        return locker
+
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.lockers = SqlModelLockerRepository(self.sessions)
@@ -112,6 +129,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
                 responses = await self.competing(first_engine,
                     lambda: self.receive(first, first_kind, locker.id, "WINNER"), second_engine,
                     lambda: self.receive(second, second_kind, locker.id, "LOSER"))
+                responses = self.responses(responses)
                 self.assertEqual([r.status_code for r in responses], [201, 409])
                 self.assertEqual(responses[1].json()["detail"]["code"], "FULL")
                 winner = responses[0].json()
@@ -121,7 +139,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
                                  (1, 0, 1) if first_kind == "deliveries" else (0, 1, 1))
                 listing = await second.get(f"/{first_kind}")
                 self.assertIn(winner, listing.json())
-                self.assertTrue((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+                self.assertTrue((await self.current_locker(locker.id)).compartments[0].occupied)
 
     async def test_waiter_gets_last_cell_when_first_claimant_rolls_back_both_writes(self):
         for first_kind, second_kind in (("deliveries", "returns"), ("returns", "deliveries")):
@@ -135,6 +153,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
                     lambda: self.receive(second, second_kind, locker.id, "SURVIVOR"),
                     pattern="INSERT INTO locker_assignments", fail=True)
                 self.assertIsInstance(results[0], RuntimeError)
+                assert isinstance(results[1], httpx.Response)
                 self.assertEqual(results[1].status_code, 201)
                 self.assertEqual(results[1].json()["compartment_id"], str(locker.compartments[0].id))
                 after = await self.counts()
@@ -162,6 +181,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
                 before = await self.counts()
                 responses = await self.competing(config_engine, configure, receive_engine,
                     lambda: self.receive(receiver, "deliveries", locker.id))
+                responses = self.responses(responses)
                 self.assertEqual(responses[0].status_code, 204 if operation == "retire" else 200)
                 self.assertEqual(responses[1].status_code, 409)
                 self.assertEqual(responses[1].json()["detail"]["code"], expected)
@@ -183,9 +203,10 @@ class PostgreSQLLockerTests(PostgresTestCase):
                         "dimensions": {"width_mm": 1, "height_mm": 1, "depth_mm": 1}})
                 responses = await self.competing(receive_engine,
                     lambda: self.receive(receiver, "returns", locker.id), config_engine, configure)
+                responses = self.responses(responses)
                 self.assertEqual(responses[0].status_code, 201)
                 self.assertEqual(responses[1].status_code, 200 if operation == "inactive" else 409)
-                current = await self.lockers.get_by_id(locker.id)
+                current = await self.current_locker(locker.id)
                 self.assertTrue(current.compartments[0].occupied)
                 self.assertTrue(current.compartments[0].enabled)
                 self.assertEqual(current.compartments[0].dimensions, Dimensions(**DIMENSIONS))
@@ -193,7 +214,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
                     self.assertFalse(current.active)
                     exited = await receiver.post(f'/returns/{responses[0].json()["id"]}/hand-over')
                     self.assertEqual(exited.status_code, 200)
-                    self.assertFalse((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+                    self.assertFalse((await self.current_locker(locker.id)).compartments[0].occupied)
 
     async def test_all_exits_compete_release_once_and_old_exit_cannot_free_new_occupant(self):
         for kind, action in (("deliveries", "collect"), ("deliveries", "return-to-carrier"), ("returns", "hand-over")):
@@ -205,13 +226,14 @@ class PostgreSQLLockerTests(PostgresTestCase):
                 path = f'/{kind}/{original["id"]}/{action}'
                 results = await self.competing(first_engine, lambda: first.post(path),
                                                second_engine, lambda: second.post(path))
+                results = self.responses(results)
                 self.assertEqual([r.status_code for r in results], [200, 409])
                 completed = results[0].json()
-                self.assertFalse((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+                self.assertFalse((await self.current_locker(locker.id)).compartments[0].occupied)
                 replacement = (await self.receive(second, "returns", locker.id, "B")).json()
                 self.assertEqual(replacement["compartment_id"], original["compartment_id"])
                 self.assertEqual((await second.post(path)).status_code, 409)
-                self.assertTrue((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+                self.assertTrue((await self.current_locker(locker.id)).compartments[0].occupied)
                 self.assertIn(completed, (await first.get(f"/{kind}")).json())
                 self.assertIn(replacement, (await first.get("/returns")).json())
                 async with self.engine.connect() as connection:
@@ -238,9 +260,9 @@ class PostgreSQLLockerTests(PostgresTestCase):
                 self.assertTrue(gate.used, "Failure must follow the actual release write")
                 self.assertIn(original, (await client.get(f"/{kind}")).json())
                 self.assertEqual(original["status"], pending)
-                self.assertTrue((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+                self.assertTrue((await self.current_locker(locker.id)).compartments[0].occupied)
                 self.assertEqual((await client.post(f'/{kind}/{original["id"]}/{action}')).status_code, 200)
-                self.assertFalse((await self.lockers.get_by_id(locker.id)).compartments[0].occupied)
+                self.assertFalse((await self.current_locker(locker.id)).compartments[0].occupied)
 
     async def test_same_uuid_parcels_and_historical_assignment_survive_resize_and_retirement(self):
         locker = await self.locker(2)
@@ -252,6 +274,8 @@ class PostgreSQLLockerTests(PostgresTestCase):
             carrier_code="carrier-a", recipient_name="Ana", received_at=NOW), locker.id, parcel_dimensions)
         returned = await returns.receive_in_locker(Return(id=identifier, tracking_number="SAME-R",
             carrier_code="carrier-a", received_at=NOW), locker.id, parcel_dimensions)
+        assert delivery.compartment_id is not None
+        assert returned.compartment_id is not None
         self.assertNotEqual(delivery.compartment_id, returned.compartment_id)
         self.assertEqual(await deliveries.get_by_id(identifier), delivery)
         self.assertEqual(await returns.get_by_id(identifier), returned)
@@ -259,7 +283,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
         completed_delivery = delivery.collect(NOW + timedelta(seconds=1))
         self.assertTrue(await deliveries.save_exit(completed_delivery))
         self.assertEqual(await returns.get_by_id(identifier), returned)
-        current = await self.lockers.get_by_id(locker.id)
+        current = await self.current_locker(locker.id)
         self.assertTrue(next(c for c in current.compartments if c.id == returned.compartment_id).occupied)
         await self.lockers.update_compartment(locker.id, delivery.compartment_id, Dimensions(1, 2, 3))
         await self.lockers.retire_compartment(locker.id, delivery.compartment_id)
@@ -269,7 +293,7 @@ class PostgreSQLLockerTests(PostgresTestCase):
         await self.lockers.update_compartment(locker.id, returned.compartment_id, Dimensions(4, 5, 6))
         await self.lockers.retire_compartment(locker.id, returned.compartment_id)
         self.assertEqual(await returns.get_by_id(identifier), completed_return)
-        self.assertEqual((await self.lockers.get_by_id(locker.id)).compartments, ())
+        self.assertEqual((await self.current_locker(locker.id)).compartments, ())
 
     async def test_database_constraints_enforce_shared_capacity_and_references(self):
         locker = await self.locker(2)

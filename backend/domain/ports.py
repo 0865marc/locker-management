@@ -1,8 +1,9 @@
 from typing import Protocol
 from uuid import UUID
 
-from domain.lockers import Dimensions, CompartmentBatch, Locker, Compartment, Availability
-from domain.models import Delivery, Return
+from domain.lockers import Dimensions, CompartmentBatch, Locker, Compartment, Availability, Address, Coordinates, LockerPatch
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 
 class DeliveryRepository(Protocol):
@@ -38,11 +39,26 @@ class ReturnRepository(Protocol):
 
 
 class LockerRepository(Protocol):
-    async def create(self, location_id: str, batches: list[CompartmentBatch], active: bool = True) -> Locker: ...
+    async def create(self, location_id: str | None, batches: list[CompartmentBatch], active: bool = True, address: Address | None = None, coordinates: Coordinates | None = None) -> Locker: ...
     async def list_all(self, location_id: str | None = None) -> list[Locker]: ...
     async def get_by_id(self, identifier: UUID) -> Locker | None: ...
     async def set_active(self, identifier: UUID, active: bool) -> Locker: ...
+    async def update(self, identifier: UUID, patch: LockerPatch) -> Locker: ...
     async def add_compartments(self, identifier: UUID, batches: list[CompartmentBatch]) -> Locker: ...
     async def update_compartment(self, identifier: UUID, cell_id: UUID, dimensions: Dimensions | None = None, enabled: bool | None = None) -> Compartment: ...
     async def retire_compartment(self, identifier: UUID, cell_id: UUID) -> None: ...
     async def availability(self, location_id: str, dimensions: Dimensions) -> Availability: ...
+
+
+from domain.shipping_quotes import ShippingQuoteRequest, QuoteOffers, NoCoverage
+
+
+class ProviderTechnicalError(Exception):
+    """An expected transport or provider infrastructure failure."""
+
+
+class ShippingProvider(Protocol):
+    @property
+    def code(self) -> str: ...
+
+    async def quote(self, request: ShippingQuoteRequest) -> QuoteOffers | NoCoverage: ...

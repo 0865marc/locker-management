@@ -171,6 +171,113 @@ Una salida conserva la asignación histórica y las dimensiones del paquete,
 incluso si la celda se redimensiona o retira después. Repetir una salida antigua
 tras reocupar su celda da `409` y conserva intacto al nuevo ocupante.
 
+### Dirección y coordenadas del locker
+
+`location_id` es un alias opcional; los clientes existentes pueden seguir creando
+lockers únicamente con ese alias. También se puede crear un locker con dirección
+completa y sin alias:
+
+```json
+{
+  "address": {
+    "country_code": "ES",
+    "postal_code": "01001",
+    "province": "Araba",
+    "city": "Vitoria-Gasteiz",
+    "street": "Calle Ejemplo",
+    "street_number": "12B"
+  },
+  "coordinates": {"latitude": 42.8467, "longitude": -2.6726},
+  "compartments": [{"quantity": 1, "dimensions": {"width_mm": 100, "height_mm": 200, "depth_mm": 300}}]
+}
+```
+
+El alta exige alias no nulo o dirección completa; coordenadas solas no bastan.
+La dirección admite solo país `ES`, código postal de cinco dígitos ASCII como
+`01001` y provincia, ciudad, calle y número textuales no vacíos. Se recortan estos
+textos; el número conserva valores como `12B` o `s/n`. No se consulta un catálogo
+postal ni se infieren datos. Las coordenadas son una pareja WGS84 opcional de
+números finitos: latitud entre −90 y 90 y longitud entre −180 y 180. No admiten
+booleanos, cadenas, NaN ni infinitos.
+
+Las configuraciones incluyen `location_id`, `address` y `coordinates`, también
+cuando son `null`; los históricos conservan alias y geografía nula.
+`PATCH /lockers/{id}` acepta un subconjunto no vacío de `active`, `address` y
+`coordinates`: omitir conserva, un objeto reemplaza el valor completo y `null`
+borra solo dirección o coordenadas. `active` no acepta `null`. Por ejemplo,
+`{"address":null}` conserva coordenadas y actividad. Los cambios son atómicos y
+pueden hacerse con celdas ocupadas, sin modificar identidad, alias o custodia.
+Tras borrar la dirección de un locker sin alias, este sigue accesible.
+
+Los lockers sin alias se gestionan por UUID y aparecen en `GET /lockers` sin
+filtro. El filtro `location_id` y `/lockers/availability` siguen seleccionando
+aliases exactos, recortados y sensibles a mayúsculas; no buscan por dirección,
+código postal, coordenadas o radio ni fabrican aliases.
+
+## Comparar proveedores desde Python
+
+El comparador es una utilidad interna independiente de HTTP, lockers y base de
+datos. Desde `backend/`, este ejemplo consulta los tres adaptadores simulados:
+
+```python
+import asyncio
+
+from adapters.providers.simulated_shipping import (
+    SimulatedEconomyProvider,
+    SimulatedStandardProvider,
+    SimulatedExpressProvider,
+)
+from application.shipping_quotes import ShippingQuoteService
+from domain.lockers import Dimensions
+from domain.shipping_quotes import ShippingQuoteRequest
+
+
+async def main() -> None:
+    comparator = ShippingQuoteService([
+        SimulatedEconomyProvider(),
+        SimulatedStandardProvider(),
+        SimulatedExpressProvider(),
+    ])
+    request = ShippingQuoteRequest(
+        origin_country_code="ES", origin_postal_code="01001",
+        destination_country_code="ES", destination_postal_code="01002",
+        weight_grams=1200, dimensions=Dimensions(200, 150, 100),
+    )
+    for result in await comparator.compare(request):
+        for offer in result.offers:
+            print(result.provider_code, result.status.value, offer.service_code,
+                  offer.price_cents, offer.currency,
+                  offer.transit_days_min, offer.transit_days_max)
+
+
+asyncio.run(main())
+```
+
+```text
+sim-economy QUOTED economy 330 EUR 3 3
+sim-express QUOTED express 830 EUR 1 1
+sim-standard QUOTED standard 520 EUR 2 2
+```
+
+La colección inyectada es obligatoria, no vacía y tiene códigos abiertos,
+recortados y únicos. `compare` devuelve una tupla de `ProviderResult` ordenada
+por proveedor, con ofertas ordenadas por servicio. El resultado y sus estados
+pertenecen a `application.shipping_quotes`; las solicitudes, ofertas y
+`NoCoverage` pertenecen a `domain.shipping_quotes`. Cada proveedor puede ofrecer
+varios servicios (`QuoteOffers`), rechazar cobertura (`NoCoverage`) o fallar de
+forma aislada. Los estados son `QUOTED`, `NOT_COVERED` y `FAILED`; los errores
+normalizados son `PROVIDER_ERROR` y `PROVIDER_TIMEOUT`, sin payloads externos.
+
+La entrada exige países `ES`, códigos postales de cinco dígitos ASCII, peso entero
+entre 1 y 30000 gramos y dimensiones entre 1 y 2000 mm. Los precios son céntimos
+enteros EUR y los plazos intervalos de días naturales desde la futura expedición.
+Los simuladores usan tarifas deterministas por peso real/volumétrico y prefijo
+postal. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
+tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
+sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
+el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
+No hay endpoint, wiring en `main.py`, almacenamiento, reserva ni contratación.
+
 ## Organización
 
 ```text
@@ -178,21 +285,35 @@ hexagonal_architecture/
 ├── backend/
 │   ├── main.py
 │   ├── domain/
-│   │   ├── models.py
+│   │   ├── deliveries.py
+│   │   ├── returns.py
 │   │   ├── lockers.py
+│   │   ├── shipping_quotes.py
 │   │   └── ports.py
 │   ├── application/
-│   │   ├── locker_use_cases.py
-│   │   └── use_cases.py
+│   │   ├── deliveries.py
+│   │   ├── returns.py
+│   │   ├── lockers.py
+│   │   └── shipping_quotes.py
 │   ├── adapters/
 │   │   ├── http/
+│   │   │   ├── deliveries/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
+│   │   │   ├── returns/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
+│   │   │   ├── lockers/
+│   │   │   │   ├── routes.py
+│   │   │   │   └── schemas.py
 │   │   │   ├── routes.py
-│   │   │   ├── schemas.py
-│   │   │   ├── locker_routes.py
-│   │   │   └── locker_schemas.py
+│   │   │   └── request_validation.py
+│   │   ├── providers/
+│   │   │   └── simulated_shipping.py
 │   │   └── database/
 │   │       ├── connection.py
-│   │       ├── sqlmodel_repositories.py
+│   │       ├── sqlmodel_deliveries.py
+│   │       ├── sqlmodel_returns.py
 │   │       ├── sqlmodel_lockers.py
 │   │       └── migrations/
 │   │           ├── env.py
@@ -200,13 +321,15 @@ hexagonal_architecture/
 │   │           └── versions/
 │   │               ├── 0001_create_delivery_and_return.py
 │   │               ├── 0002_parcel_custody.py
-│   │               └── 0003_lockers_and_custody.py
+│   │               ├── 0003_lockers_and_custody.py
+│   │               └── 0004_locker_geography.py
 │   ├── tests/
 │   │   ├── unit/
 │   │   │   ├── test_domain.py
 │   │   │   ├── test_application.py
 │   │   │   ├── test_http.py
 │   │   │   ├── test_lockers.py
+│   │   │   ├── test_shipping_quotes.py
 │   │   │   └── test_main.py
 │   │   └── integration/
 │   │       ├── support.py
@@ -226,7 +349,11 @@ hexagonal_architecture/
 ```
 
 Se omiten los archivos `__init__.py`. La organización prioriza las capas:
-Delivery y Return comparten los archivos de cada responsabilidad. La conexión,
+Delivery y Return tienen archivos propios para sus entidades, casos de uso y
+adaptadores. Las reglas compartidas de asignación y capacidad permanecen en Locker.
+Cada flujo conserva sus validadores y errores de dominio; sus servicios declaran
+el error de registro inexistente. HTTP agrupa rutas y esquemas en paquetes por
+área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
 los repositorios y las migraciones se agrupan en `backend/adapters/database/`; las rutas
 y los modelos HTTP, en `backend/adapters/http/`. Ambos adaptadores son externos al núcleo,
 pero se ejecutan en el mismo proceso: no son microservicios.
@@ -235,18 +362,24 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 
 | Archivo | Responsabilidad |
 | --- | --- |
-| `backend/domain/models.py` | Entidades `Delivery` y `Return` y sus validaciones. Solo Python. |
-| `backend/domain/lockers.py` | Dimensiones, celdas, lockers y reglas físicas, sin infraestructura. |
-| `backend/domain/ports.py` | Puertos de salida `DeliveryRepository`, `ReturnRepository` y `LockerRepository`: lo que la aplicación necesita de la persistencia. |
-| `backend/application/use_cases.py` | Implementa los casos de uso; sus métodos públicos `create`, `list_all` y las operaciones de salida actúan como puertos de entrada. Obtiene fechas de un reloj UTC inyectable. Usa los puertos de salida sin conocer HTTP ni la base de datos. |
-| `backend/application/locker_use_cases.py` | Casos de uso de configuración y disponibilidad de lockers. |
-| `backend/adapters/http/locker_routes.py` y `locker_schemas.py` | Contratos HTTP de lockers y traducción de errores. |
-| `backend/adapters/database/sqlmodel_lockers.py` | Persistencia compartida de configuración y asignaciones, con bloqueo por locker. |
-| `backend/adapters/http/routes.py` | Recibe `DeliveryService` y `ReturnService`, define las rutas y traduce errores del dominio a respuestas HTTP. |
-| `backend/adapters/http/schemas.py` | Modelos Pydantic para los cuerpos y respuestas HTTP. |
-| `backend/adapters/database/sqlmodel_repositories.py` | Modelos de persistencia y repositorios SQLModel asíncronos. Traducen entre filas y entidades del dominio. |
+| `backend/domain/deliveries.py` | Entidad `Delivery`, estado `DeliveryStatus`, validación y `DeliveryConflictError`. Solo Python. |
+| `backend/domain/returns.py` | Entidad `Return`, estado `ReturnStatus`, validación y `ReturnConflictError`. Solo Python. |
+| `backend/domain/lockers.py` | Dimensiones, celdas, lockers y reglas de asignación/recepción, sin infraestructura. |
+| `backend/domain/shipping_quotes.py` | Solicitud de transporte, ofertas y respuesta de falta de cobertura (`NoCoverage`), inmutables y validadas. |
+| `backend/domain/ports.py` | Puertos de repositorios y `ShippingProvider`: contratos de salida de la aplicación. |
+| `backend/application/deliveries.py` y `returns.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas con reloj explícito y puertos de persistencia. Declaran `DeliveryNotFoundError` y `ReturnNotFoundError`. |
+| `backend/application/lockers.py` | Casos de uso de configuración y disponibilidad de lockers. |
+| `backend/application/shipping_quotes.py` | `ShippingQuoteService` compara proveedores inyectados; `ProviderResult`, `ProviderStatus` y `ProviderErrorCode` expresan sus resultados. |
+| `backend/adapters/http/deliveries/routes.py` y `schemas.py` | Router de Delivery y sus contratos HTTP. |
+| `backend/adapters/http/returns/routes.py` y `schemas.py` | Router de Return y sus contratos HTTP. |
+| `backend/adapters/http/lockers/routes.py` y `schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
+| `backend/adapters/http/routes.py` | Agrega los tres routers mediante `create_router`, recibiendo servicios ya construidos. |
+| `backend/adapters/http/request_validation.py` | Validación compartida de cuerpos vacíos en las acciones de salida. |
+| `backend/adapters/database/sqlmodel_deliveries.py` y `sqlmodel_returns.py` | Tablas, filas, conversiones y repositorios SQLModel de cada flujo; conservan sus consultas y transacciones. |
+| `backend/adapters/database/sqlmodel_lockers.py` | Persistencia de configuración y asignaciones, elección de celda, bloqueo/liberación y normalización UTC de persistencia. |
 | `backend/adapters/database/connection.py` | Crea el motor y la fábrica de sesiones compartidos. |
-| `backend/main.py` | Punto de composición: conecta repositorios, servicios y router; crea la aplicación y gestiona su ciclo de vida. |
+| `backend/adapters/providers/simulated_shipping.py` | Tres adaptadores de transporte simulados, sin servicios externos. |
+| `backend/main.py` | Punto de composición: conecta repositorios y servicios, proporciona `utc_now` e incluye el router agregado; gestiona motor y ciclo de vida. |
 | `backend/adapters/database/migrations/env.py` | Conecta Alembic con la base de datos y con `SQLModel.metadata`. |
 | `backend/adapters/database/migrations/versions/` | Historial de cambios del esquema, independiente del arranque de la API. |
 
@@ -263,8 +396,13 @@ de uso trabajar con repositorios sin depender de su implementación concreta.
 
 `create_app()` crea una vez por aplicación `DeliveryService`, `ReturnService` y `LockerService`,
 y conserva sus referencias en `app.state.delivery_service`,
-`app.state.return_service` y `app.state.locker_service`. Inyecta las instancias de paquetes en
-`create_router(delivery, returns)` y el servicio de lockers en su router. Las rutas
+`app.state.return_service` y `app.state.locker_service`. Suministra `utc_now`,
+que devuelve la hora UTC real, como segundo argumento obligatorio de
+`DeliveryService` y `ReturnService`. Los consumidores directos también deben
+proporcionar un `Callable[[], datetime]`; las pruebas usan relojes controlados.
+El agregador `create_router(delivery_service, return_service, locker_service)`
+recibe las tres instancias e incluye sus routers en orden Locker/Delivery/Return,
+sin construir dependencias. Las rutas
 reutilizan los servicios recibidos, sin instanciarlos por petición ni buscarlos
 en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
 
@@ -297,7 +435,8 @@ servicios ligeros por petición también sería válido, pero aquí basta con
 reutilizarlos; cada operación del repositorio abre su propia sesión.
 
 SQLModel se apoya en SQLAlchemy. Sus modelos de persistencia permanecen en el
-adaptador; los puertos reciben y devuelven las entidades de `backend/domain/models.py`.
+adaptador; los puertos reciben y devuelven las entidades de
+`backend/domain/deliveries.py` y `backend/domain/returns.py`.
 Se ha eliminado el adaptador SQLAlchemy independiente, pero SQLAlchemy sigue
 proporcionando el motor, las sesiones asíncronas y los tipos de columnas.
 
@@ -324,7 +463,7 @@ aunque una migración pueda afectar a varios archivos de infraestructura.
 
 Hay **un único historial para toda la base de datos**, con `deliveries`, `returns`,
 `lockers`, `locker_compartments` y `locker_assignments`. La revisión inicial `0001` conserva las columnas legacy `address` y
-`reason`; `0002` incorpora el modelo de custodia y el head actual es `0003`, que añade lockers. `upgrade 0001`
+`reason`; `0002` incorpora el modelo de custodia y `0003` añade lockers y el head actual es `0004`, que incorpora geografía nullable. `upgrade 0001`
 prepara el esquema histórico y `upgrade head` prepara el contrato de la API actual. `SQLModel.metadata` es la fuente del
 esquema para comparar modelos y base de datos; `backend/adapters/database/migrations/env.py`
 importa los modelos del adaptador para registrar sus tablas. El dominio no participa
@@ -401,6 +540,16 @@ No hay backfill ni ubicaciones, dimensiones o asignaciones ficticias. Aplica
 `alembic upgrade head` antes de arrancar la nueva aplicación; después configura
 lockers por API.
 
+El upgrade **0003 → 0004** conserva paquetes, lockers, celdas y asignaciones;
+añade dirección y coordenadas nullable y permite alias nulo, sin backfill ni índice
+postal. Aplica `alembic upgrade head` antes de desplegar la API nueva. No hay tablas
+de cotización. El downgrade **0004 → 0003** bloquea lockers y rechaza, antes de DDL,
+cualquier campo geográfico no nulo o locker sin alias. El rechazo conserva filas,
+estructura y revisión. Con geografía nula y aliases presentes, elimina únicamente
+las columnas/checks nuevos y restaura `location_id NOT NULL`, conservando custodia.
+Para volver a una aplicación que exige alias, primero verifica que todos los lockers
+lo tengan; no inventes aliases ni borres direcciones para forzar el downgrade.
+
 El downgrade **0003 → 0002** bloquea las tablas nuevas y rechaza cualquier fila
 antes de DDL, incluidas celdas retiradas y asignaciones liberadas. Mantiene íntegros
 esquema, índices, restricciones, filas y revisión 0003. Si las tres tablas están
@@ -417,11 +566,34 @@ uv run alembic current
 ```
 
 `downgrade base` solo es apropiado para una base vacía preparada para esa prueba.
-Un rollback de aplicación puede conservar el esquema 0003. Una versión antigua
+Un rollback de aplicación puede conservar el esquema actual. Una versión antigua
 no sabe liberar asignaciones: **no debe procesar salidas de paquetes asignados**.
 Detén las escrituras o conserva la versión capaz de liberarlas hasta resolverlo.
 Para recuperar datos, usa la copia de seguridad según el procedimiento operativo;
 no fuerces un downgrade destructivo ni borres volúmenes para superar las guardas.
+
+## Tipos: Pyright y Pylance
+
+El extra `dev` incluye Pyright, fijado en `uv.lock`. Desde `backend/`:
+
+```bash
+uv sync --extra dev
+uv run --extra dev pyright --project .. --warnings
+```
+
+Este comando es obligatorio al terminar cada spec/cambio y debe devolver **cero
+errores y cero advertencias**. Se repite después de corregir tipos, junto con las
+pruebas de comportamiento afectadas. No necesita PostgreSQL ni variables de base
+de datos; una revisión manual, auditoría AST o captura del editor no lo sustituye.
+
+`pyrightconfig.json` en la raíz incluye todo `backend`: producción en modo strict
+(dominio, aplicación, adaptadores y `main.py`) y pruebas en standard, con objetivo
+Python 3.11 e imports desde `backend`. Solo excluye entornos/cachés y migraciones
+históricas 0001–0003; `env.py` y 0004 se analizan. No se desactivan reglas para
+ocultar diagnósticos. En VSCode abre la raíz del repositorio y selecciona
+`backend/.venv` como intérprete para que Pylance use el entorno/configuración
+compartidos. La extensión y CLI pueden emitir diagnósticos distintos si usan
+versiones diferentes; la evidencia reproducible de cierre es el comando anterior.
 
 ## Pruebas
 
@@ -488,7 +660,7 @@ de Compose usa igualmente esquemas aislados dentro de la base dedicada indicada.
 
 Los rechazos de migración comparan snapshots completos de columnas, índices,
 restricciones, filas y revisión. Las pruebas conservan las migraciones históricas
-`0001`, `0002` y `0003`; este cambio de organización de pruebas no añade revisiones.
+`0001`, `0002` y `0003` sin cambios; `0004` añade geografía y sus guardas.
 
 ## Alcance del ejemplo
 
@@ -496,10 +668,10 @@ Las credenciales de Compose son locales y de demostración. No añadimos
 autenticación ni repositorios genéricos. Delivery y Return son paquetes independientes
 que comparten capacidad de lockers. Ubicaciones y múltiples lockers ya están incluidos.
 Quedan para otras ampliaciones notificaciones e integraciones con transportistas,
-reservas, TTL, transferencias, geobúsqueda, RabbitMQ y outbox. Las cotizaciones y
-su procesamiento asíncrono serán una fase posterior; consultar disponibilidad no
+reservas, TTL, transferencias, geobúsqueda, RabbitMQ y outbox. Los proveedores reales, la API de cotizaciones y
+su procesamiento mediante colas serán una fase posterior; consultar disponibilidad no
 contrata un envío ni reserva espacio. No se gestionan
-direcciones, instrucciones de entrega, pedidos, productos, cantidades de productos
+direcciones de Delivery/Return, instrucciones de entrega, pedidos, productos, cantidades de productos
 ni resoluciones comerciales de devolución.
 
 Compose coordina PostgreSQL, migraciones y API siguiendo

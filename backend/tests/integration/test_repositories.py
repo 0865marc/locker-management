@@ -7,10 +7,12 @@ from uuid import uuid4
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from tests.integration.support import PostgresTestCase
+from tests.integration.support import PostgresTestCase, save_parcel
 
-from adapters.database.sqlmodel_repositories import SqlModelDeliveryRepository, SqlModelReturnRepository
-from domain.models import Delivery, Return
+from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from domain.deliveries import Delivery
+from domain.returns import Return
 
 NOW = datetime(2026, 10, 14, 12, 30, 25, 123456, tzinfo=timezone.utc)
 
@@ -37,7 +39,7 @@ class RepositoryTests(PostgresTestCase):
             self.assertEqual(await repository.list_all(), [])
             self.assertIsNone(await repository.get_by_id(uuid4()))
             for record in records:
-                await repository.save(record)
+                await save_parcel(repository, record)
             fresh = repository_class(self.sessions)
             self.assertCountEqual(await fresh.list_all(), records)
             for record in records:
@@ -49,18 +51,18 @@ class RepositoryTests(PostgresTestCase):
         for factory, repository_class, _ in REPOSITORIES:
             repository = repository_class(self.sessions)
             original = factory()
-            await repository.save(original)
+            await save_parcel(repository, original)
             with self.assertRaises(IntegrityError):
-                await repository.save(replace(original, tracking_number="Different"))
+                await save_parcel(repository, replace(original, tracking_number="Different"))
             following = factory()
-            await repository.save(following)
+            await save_parcel(repository, following)
             self.assertCountEqual(await repository.list_all(), [original, following])
 
     async def test_exit_only_changes_custody_and_cannot_overwrite_winner(self):
         for factory, repository_class, transition in REPOSITORIES:
             repository = repository_class(self.sessions)
             original = factory()
-            await repository.save(original)
+            await save_parcel(repository, original)
             first = getattr(original, transition)(NOW + timedelta(seconds=1))
             second = getattr(original, transition)(NOW + timedelta(seconds=2))
             # Persistence never copies stale reception or contact data from the contender.
@@ -72,7 +74,7 @@ class RepositoryTests(PostgresTestCase):
     async def test_incompatible_delivery_exit_preserves_winning_timestamp(self):
         repository = SqlModelDeliveryRepository(self.sessions)
         original = delivery()
-        await repository.save(original)
+        await save_parcel(repository, original)
         winner = original.return_to_carrier(NOW + timedelta(seconds=1))
         self.assertTrue(await repository.save_exit(winner))
         self.assertFalse(await repository.save_exit(original.collect(NOW + timedelta(seconds=2))))
@@ -85,7 +87,7 @@ class RepositoryTests(PostgresTestCase):
         for factory, repository_class, transition in REPOSITORIES:
             repository = repository_class(self.sessions)
             original = factory()
-            await repository.save(original)
+            await save_parcel(repository, original)
             terminal = getattr(original, transition)(NOW + timedelta(seconds=1))
             event.listen(Session, "before_commit", fail_commit)
             try:
@@ -100,7 +102,7 @@ class RepositoryTests(PostgresTestCase):
     async def test_database_rejects_invalid_states_dates_and_exit_combinations(self):
         for factory, repository_class, _ in REPOSITORIES:
             original = factory()
-            await repository_class(self.sessions).save(original)
+            await save_parcel(repository_class(self.sessions), original)
         invalid_updates = [
             "UPDATE deliveries SET status = 'UNKNOWN'",
             "UPDATE deliveries SET status = 'COLLECTED'",
@@ -114,6 +116,6 @@ class RepositoryTests(PostgresTestCase):
         for statement in invalid_updates:
             with self.subTest(statement=statement), self.assertRaises(IntegrityError):
                 async with self.sessions.begin() as session:
-                    await session.exec(text(statement))
+                    await session.execute(text(statement))
         self.assertEqual((await SqlModelDeliveryRepository(self.sessions).list_all())[0].status.value, "AWAITING_PICKUP")
         self.assertEqual((await SqlModelReturnRepository(self.sessions).list_all())[0].status.value, "AWAITING_CARRIER")

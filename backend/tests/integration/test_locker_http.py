@@ -105,3 +105,59 @@ class LockerHttpTests(PostgresTestCase):
             for record in (await self.client.get(path)).json():
                 self.assertEqual(record['compartment_id'], cell)
                 self.assertEqual(record['parcel_dimensions'], D)
+
+    async def test_geography_create_patch_validation_and_nullable_representation(self) -> None:
+        address = {'country_code': 'ES', 'postal_code': '01001', 'province': ' Araba ', 'city': ' Vitoria ', 'street': ' Calle ', 'street_number': ' 12B '}
+        payload = {'compartments': [{'quantity': 1, 'dimensions': D}], 'address': address, 'coordinates': {'latitude': -90, 'longitude': 180}}
+        result = await self.client.post('/lockers', json=payload)
+        self.assertEqual(result.status_code, 201, result.text)
+        locker = result.json()
+        self.assertIsNone(locker['location_id'])
+        self.assertEqual(locker['address'], address | {'province': 'Araba', 'city': 'Vitoria', 'street': 'Calle', 'street_number': '12B'})
+        path = f'/lockers/{locker["id"]}'
+        self.assertEqual((await self.client.get(path)).json(), locker)
+        self.assertIn(locker, (await self.client.get('/lockers')).json())
+        self.assertEqual((await self.client.get('/lockers', params={'location_id': '01001'})).json(), [])
+        self.assertEqual((await self.availability(location_id='01001')).json()['reason'], 'NO_LOCKER')
+        active_only = await self.client.patch(path, json={'active': False})
+        self.assertEqual(active_only.json(), locker | {'active': False})
+        replacement = address | {'street': 'Otra', 'street_number': 's/n'}
+        replaced = await self.client.patch(path, json={'address': replacement, 'coordinates': {'latitude': 90, 'longitude': -180}})
+        self.assertEqual(replaced.status_code, 200, replaced.text)
+        self.assertFalse(replaced.json()['active'])
+        self.assertEqual(replaced.json()['address']['street_number'], 's/n')
+        preserved = replaced.json()
+        bad_addresses = [address | {'country_code': 'FR'}, address | {'postal_code': 1001}, address | {'postal_code': '０１００１'}, address | {'postal_code': '0101'}, address | {'province': '\t'}, address | {'street_number': None}, address | {'extra': 'x'}, {key: value for key, value in address.items() if key != 'city'}]
+        bad_coordinates = [{'latitude': 1}, {'latitude': '1', 'longitude': 2}, {'latitude': True, 'longitude': 2}, {'latitude': 91, 'longitude': 2}, {'latitude': 10**400, 'longitude': 2}, {'latitude': 1, 'longitude': -181}, {'latitude': 1, 'longitude': 2, 'extra': 0}]
+        for invalid in [*({'address': value} for value in bad_addresses), *({'coordinates': value} for value in bad_coordinates), {}, {'active': None}, {'location_id': 'other'}]:
+            result = await self.client.patch(path, json={'active': True} | invalid if invalid else {})
+            self.assertEqual(result.status_code, 422, result.text)
+            self.assertEqual((await self.client.get(path)).json(), preserved)
+        # Non-standard JSON numeric tokens must fail validation, too.
+        for token in ('NaN', 'Infinity', '-Infinity'):
+            result = await self.client.patch(path, content='{"coordinates":{"latitude":' + token + ',"longitude":0}}', headers={'Content-Type': 'application/json'})
+            self.assertEqual(result.status_code, 422, result.text)
+        for malformed in ('{"coordinates":[NaN]}',
+                          '{"coordinates":{"latitude":[NaN],"longitude":0}}',
+                          '{"coordinates":{"latitude":0,"longitude":0,"extra":NaN}}',
+                          '{"address":{"country_code":NaN}}'):
+            for endpoint, method in (('/lockers', self.client.post), (path, self.client.patch)):
+                result = await method(endpoint, content=malformed, headers={'Content-Type': 'application/json'})
+                self.assertEqual(result.status_code, 422, result.text)
+            self.assertEqual((await self.client.get(path)).json(), preserved)
+        self.assertEqual((await self.client.patch(path, content='plain text', headers={'Content-Type': 'text/plain'})).status_code, 422)
+        cleared = (await self.client.patch(path, json={'address': None})).json()
+        self.assertIsNone(cleared['address'])
+        self.assertEqual(cleared['coordinates'], preserved['coordinates'])
+        cleared = (await self.client.patch(path, json={'coordinates': None})).json()
+        self.assertEqual((cleared['location_id'], cleared['address'], cleared['coordinates']), (None, None, None))
+        second, _ = await self.actor()
+        self.assertEqual((await second.get(path)).json(), cleared)
+        for locator in ({}, {'coordinates': {'latitude': 1, 'longitude': 2}}, {'location_id': None, 'address': None}):
+            result = await self.client.post('/lockers', json={'compartments': payload['compartments']} | locator)
+            self.assertEqual(result.status_code, 422, result.text)
+        self.assertEqual((await self.client.post('/lockers')).status_code, 422)
+        self.assertEqual((await self.client.patch(path)).status_code, 422)
+        self.assertEqual((await self.client.patch(path, content='{')).status_code, 422)
+        legacy = (await self.create()).json()
+        self.assertEqual((legacy['location_id'], legacy['address'], legacy['coordinates']), ('Site', None, None))
