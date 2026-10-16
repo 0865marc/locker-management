@@ -494,7 +494,7 @@ Instala las dependencias y ejecuta Alembic desde `backend/`:
 ```bash
 # Desde la raíz del repositorio.
 cd backend
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run alembic upgrade head
 ```
 
@@ -584,12 +584,80 @@ Detén las escrituras o conserva la versión capaz de liberarlas hasta resolverl
 Para recuperar datos, usa la copia de seguridad según el procedimiento operativo;
 no fuerces un downgrade destructivo ni borres volúmenes para superar las guardas.
 
+## CI del backend y comprobaciones locales
+
+El workflow `.github/workflows/backend-ci.yml` ejecuta cinco checks independientes
+para todas las PR dirigidas a `main` y cada push a `main`, sin filtros por rutas.
+Los jobs corren en paralelo, tienen tiempos máximos y cancelan una ejecución
+anterior de la misma PR cuando llega otro commit. Usa permisos de lectura y
+caché de uv; la instalación bloqueada comprueba siempre `backend/uv.lock`.
+
+| Check | Comprobación | Dependencias |
+| --- | --- | --- |
+| `Ruff` | Lint, imports y formato sin modificar archivos. | Python 3.11. |
+| `Pyright` | Análisis configurado, cero errores y advertencias. | Python 3.11, sin servicios. |
+| `Unit tests` | `tests/unit`, dominio, aplicación y adaptadores aislados. | Python 3.11, sin URLs de test ni servicios. |
+| `PostgreSQL integration` | `tests/integration`, persistencia, API y migraciones Alembic. | Python 3.11, PostgreSQL 17 temporal y `TEST_DATABASE_URL` explícita; sin RabbitMQ. |
+| `Docker smoke` | Construcción bloqueada, migraciones y `GET /lockers` → HTTP 200 con `[]` en una base nueva. | Imagen Python 3.13, Docker Compose, PostgreSQL y RabbitMQ temporales. |
+
+Para reproducir los checks Python desde `backend/`, instala uv y Python 3.11 y
+usa las dependencias bloqueadas. CI fija uv 0.13.1 y Docker usa la misma versión.
+
+```bash
+uv sync --python 3.11 --locked --extra dev
+export UV_LOCKED=1
+uv run --extra dev ruff check .
+uv run --extra dev ruff format --check .
+uv run --extra dev pyright --project .. --warnings
+env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL \
+  uv run --extra dev python -m unittest discover -s tests/unit -t . -v
+# Base dedicada, con permisos para crear/eliminar esquemas; sin broker.
+env -u TEST_RABBITMQ_URL \
+  TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+  uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
+```
+
+`UV_LOCKED=1` evita que `uv run` cambie silenciosamente la resolución. Las URLs,
+la preparación de la base de pruebas y el comando de la suite completa se explican
+en [Pruebas](#pruebas). Actions selecciona unitarias e integración; la suite
+completa local también incluye `tests/messaging` y requiere ambas URLs de test.
+Los cinco checks no configuran por sí mismos la protección de `main`.
+
+Ruff usa `backend/pyproject.toml`: Python 3.11, longitud 88 y reglas `E4`, `E7`,
+`E9`, `F` e `I`. Analiza producción y tests, incluido `migrations/env.py`.
+Solo excluye exactamente las cinco revisiones históricas `0001`–`0005`, también
+si se pasan sus rutas explícitamente; las revisiones futuras se analizan.
+Para aplicar correcciones seguras e igualar el formato local, desde `backend/`:
+
+```bash
+uv run --locked --extra dev ruff check --fix .
+uv run --locked --extra dev ruff format .
+```
+
+Revisa el diff antes de integrar, especialmente los imports que registran modelos
+SQLModel. CI ejecuta únicamente las variantes de comprobación.
+
+Para reproducir Docker smoke desde la raíz necesitas Docker y Docker Compose
+**2.24.0 o superior**, con soporte para `!reset`:
+
+```bash
+scripts/ci/smoke.sh
+```
+
+El script combina `compose.yaml` y `compose.ci.yaml`, genera un proyecto temporal
+con volúmenes nuevos y construye/arranca API, migraciones, PostgreSQL y RabbitMQ.
+Espera el arranque hasta 120 segundos y la respuesta HTTP interna hasta 60 segundos.
+No publica puertos ni arranca el worker; comprueba también el acceso al esquema
+migrado. En caso de fallo muestra estado y logs, devuelve un código no cero y
+limpia solo contenedores, red y volúmenes de ese proyecto temporal, conservando
+los datos de desarrollo. No requiere URLs ni credenciales externas.
+
 ## Tipos: Pyright y Pylance
 
 El extra `dev` incluye Pyright, fijado en `uv.lock`. Desde `backend/`:
 
 ```bash
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run --extra dev pyright --project .. --warnings
 ```
 
@@ -615,7 +683,7 @@ dependencias de desarrollo y ejecuta las unitarias desde `backend/`:
 
 ```bash
 # Directorio de trabajo: backend/
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run --extra dev python -m unittest discover -s tests/unit -t . -v
 ```
 

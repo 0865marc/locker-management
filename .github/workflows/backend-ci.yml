@@ -1,0 +1,134 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LOCKED: "1"
+
+jobs:
+  ruff:
+    name: Ruff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.1"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+      - name: Check lint and imports
+        run: uv run --extra dev ruff check .
+      - name: Check format
+        run: uv run --extra dev ruff format --check .
+
+  pyright:
+    name: Pyright
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.1"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+      - name: Check types without errors or warnings
+        run: uv run --extra dev pyright --project .. --warnings
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.1"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+      - name: Run service-free unit suite
+        run: env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL uv run --extra dev python -m unittest discover -s tests/unit -t . -v
+
+  integration:
+    name: PostgreSQL integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/backend_ci
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: backend_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d backend_ci"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.1"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+      - name: Run PostgreSQL and Alembic scenarios
+        run: env -u TEST_RABBITMQ_URL uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
+
+  docker:
+    name: Docker smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI_SMOKE_PROJECT: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Build image and smoke isolated API
+        run: scripts/ci/smoke.sh
+      - name: Ensure disposable stack cleanup
+        if: ${{ always() }}
+        run: docker compose --project-name "$CI_SMOKE_PROJECT" -f compose.yaml -f compose.ci.yaml down --volumes --remove-orphans --timeout 10
