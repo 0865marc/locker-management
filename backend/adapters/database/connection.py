@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 def get_database_url() -> str:
     return os.getenv(
         "DATABASE_URL",
-        "postgresql+asyncpg://hexagonal:hexagonal@localhost:5432/hexagonal",
+        "postgresql+asyncpg://locker_management_demo:locker_management_demo@localhost:5432/locker_management_demo",
     )
 
 

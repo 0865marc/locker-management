@@ -266,42 +266,6 @@ wheels = [
 ]
 
 [[package]]
-name = "hexagonal-fastapi"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aio-pika" },
-    { name = "alembic" },
-    { name = "asyncpg" },
-    { name = "fastapi" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "sqlmodel" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "httpx" },
-    { name = "pyright" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aio-pika", specifier = ">=9.5,<10" },
-    { name = "alembic", specifier = ">=1.13,<2" },
-    { name = "asyncpg", specifier = ">=0.30,<1" },
-    { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.414,<2" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15,<0.16" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<2.1" },
-    { name = "sqlmodel", specifier = ">=0.0.22,<0.1" },
-    { name = "uvicorn", specifier = ">=0.30,<1" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -337,6 +301,42 @@ sdist = { url = "https://files.pythonhosted.org/packages/f5/08/8eea9d4b8302028f3
 wheels = [
     { url = "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl", hash = "sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c", size = 69583, upload-time = "2026-09-17T14:11:03.168Z" },
 ]
+
+[[package]]
+name = "locker-management-demo"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aio-pika" },
+    { name = "alembic" },
+    { name = "asyncpg" },
+    { name = "fastapi" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "sqlmodel" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pyright" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aio-pika", specifier = ">=9.5,<10" },
+    { name = "alembic", specifier = ">=1.13,<2" },
+    { name = "asyncpg", specifier = ">=0.30,<1" },
+    { name = "fastapi", specifier = ">=0.115,<1" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.414,<2" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15,<0.16" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<2.1" },
+    { name = "sqlmodel", specifier = ">=0.0.22,<0.1" },
+    { name = "uvicorn", specifier = ">=0.30,<1" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "mako"
