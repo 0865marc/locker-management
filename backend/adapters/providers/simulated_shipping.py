@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import random
 from typing import ClassVar
 
-from domain.ports import ProviderTechnicalError
+from application.quotations.errors import ProviderTechnicalError
 from domain.shipping_quotes import QuoteOffers, ShippingOffer, ShippingQuoteRequest
 
 # Private execution-time lookups keep production construction free of test settings.

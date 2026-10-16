@@ -3,12 +3,10 @@ from datetime import datetime
 import logging
 from uuid import UUID, uuid4
 
-from application.quotation_models import (
-    Quotation, QuotationStatus, ProcessErrorCode, PublicationError,
-    QuotationStorageError, SubmissionError,
-)
-from application.quotation_ports import QuotationPublisher, QuotationRepository
-from application.shipping_quotes import ShippingQuoteService
+from application.quotations.models import Quotation, QuotationStatus, ProcessErrorCode
+from application.quotations.errors import PublicationError, QuotationStorageError, SubmissionError
+from application.quotations.ports import QuotationPublisher, QuotationRepository
+from application.quotations.comparison import ShippingQuoteComparator
 from domain.shipping_quotes import ShippingQuoteRequest
 
 logger = logging.getLogger(__name__)
@@ -41,7 +39,7 @@ class QuotationService:
 
 
 class QuotationProcessor:
-    def __init__(self, repository: QuotationRepository, comparator: ShippingQuoteService,
+    def __init__(self, repository: QuotationRepository, comparator: ShippingQuoteComparator,
                  clock: Callable[[], datetime]) -> None:
         self.repository = repository
         self.comparator = comparator

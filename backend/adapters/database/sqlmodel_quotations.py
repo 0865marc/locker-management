@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import SQLModel, Field, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from application.quotation_models import Quotation, QuotationStatus, ProcessErrorCode, QuotationStorageError
-from application.shipping_quotes import ProviderResult, ProviderStatus, ProviderErrorCode
+from application.quotations.models import Quotation, QuotationStatus, ProcessErrorCode
+from application.quotations.errors import QuotationStorageError
+from application.quotations.models import ProviderResult, ProviderStatus, ProviderErrorCode
 from domain.shipping_quotes import ShippingQuoteRequest, ShippingOffer
 from domain.lockers import Dimensions
 

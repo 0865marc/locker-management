@@ -2,7 +2,7 @@ from uuid import UUID
 from math import isfinite
 from typing import Annotated, TypeGuard, TypeVar
 from collections.abc import Awaitable, Mapping, Sequence
-from application.lockers import LockerService
+from application.lockers.use_cases import LockerService
 from pydantic import BeforeValidator
 from fastapi import APIRouter, HTTPException, Query, Response, Request, Depends
 from domain.lockers import CapacityConflictError, Dimensions, LockerNotFoundError, Locker, Compartment, Availability

@@ -1,8 +1,8 @@
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Response
 
-from application.quotations import QuotationService
-from application.quotation_models import QuotationStorageError, SubmissionError
+from application.quotations.use_cases import QuotationService
+from application.quotations.errors import QuotationStorageError, SubmissionError
 from adapters.http.quotations.schemas import QuotationInput, QuotationAccepted, QuotationResponse
 
 

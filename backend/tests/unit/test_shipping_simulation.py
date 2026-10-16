@@ -9,9 +9,10 @@ from adapters.providers import simulated_shipping
 from adapters.providers.simulated_shipping import (
     SimulatedEconomyProvider, SimulatedExpressProvider, SimulatedStandardProvider,
 )
-from application.shipping_quotes import ProviderErrorCode, ProviderStatus, ShippingQuoteService
+from application.quotations.models import ProviderErrorCode, ProviderStatus
+from application.quotations.comparison import ShippingQuoteComparator
 from domain.lockers import Dimensions
-from domain.ports import ProviderTechnicalError
+from application.quotations.errors import ProviderTechnicalError
 from domain.shipping_quotes import ShippingQuoteRequest
 
 PROVIDERS = (
@@ -116,7 +117,7 @@ class ShippingSimulationTests(IsolatedAsyncioTestCase):
                      patch.object(simulated_shipping, '_uniform', return_value=bounds[0]) as uniform, \
                      patch.object(simulated_shipping, '_sleep', new_callable=AsyncMock) as sleep:
                     results = await asyncio.wait_for(
-                        ShippingQuoteService([provider_type()], timeout_seconds=.01).compare(request()), 1)
+                        ShippingQuoteComparator([provider_type()], timeout_seconds=.01).compare(request()), 1)
                     self.assertEqual((results[0].status, results[0].error_code), (expected, code))
                     random.assert_called_once_with()
                     uniform.assert_called_once_with(*bounds)
@@ -131,7 +132,7 @@ class ShippingSimulationTests(IsolatedAsyncioTestCase):
             with patch.object(simulated_shipping, '_random', return_value=outcome) as random, \
                  patch.object(simulated_shipping, '_uniform', side_effect=lambda low, high: low), \
                  patch.object(simulated_shipping, '_sleep', new_callable=AsyncMock) as sleep:
-                results = await ShippingQuoteService([item[0]() for item in PROVIDERS], timeout_seconds=.01).compare(request())
+                results = await ShippingQuoteComparator([item[0]() for item in PROVIDERS], timeout_seconds=.01).compare(request())
                 self.assertEqual([result.provider_code for result in results], ['sim-economy', 'sim-express', 'sim-standard'])
                 for result in results:
                     express_success = outcome == .11 and result.provider_code == 'sim-express'
@@ -174,7 +175,7 @@ class ShippingSimulationTests(IsolatedAsyncioTestCase):
                  patch.object(simulated_shipping, '_uniform', return_value=bounds[0]), \
                  patch.object(simulated_shipping, '_sleep', side_effect=sleep):
                 existing = asyncio.all_tasks()
-                task = asyncio.create_task(ShippingQuoteService([provider_type()]).compare(request()))
+                task = asyncio.create_task(ShippingQuoteComparator([provider_type()]).compare(request()))
                 try:
                     await asyncio.wait_for(entered.wait(), 1)
                     task.cancel()

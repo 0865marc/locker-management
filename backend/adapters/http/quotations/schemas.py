@@ -3,8 +3,8 @@ from typing import Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
-from application.quotation_models import QuotationStatus, ProcessErrorCode
-from application.shipping_quotes import ProviderStatus, ProviderErrorCode
+from application.quotations.models import QuotationStatus, ProcessErrorCode
+from application.quotations.models import ProviderStatus, ProviderErrorCode
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 

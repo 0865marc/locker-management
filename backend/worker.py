@@ -10,8 +10,8 @@ from adapters.providers.simulated_shipping import (
     SimulatedEconomyProvider, SimulatedStandardProvider, SimulatedExpressProvider,
 )
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
-from application.quotations import QuotationProcessor
-from application.shipping_quotes import ShippingQuoteService
+from application.quotations.use_cases import QuotationProcessor
+from application.quotations.comparison import ShippingQuoteComparator
 
 
 async def run_worker() -> None:
@@ -21,7 +21,7 @@ async def run_worker() -> None:
         broker = RabbitMQ(get_rabbitmq_url())
         resources.push_async_callback(broker.close)
         await broker.open()
-        comparator = ShippingQuoteService((SimulatedEconomyProvider(),
+        comparator = ShippingQuoteComparator((SimulatedEconomyProvider(),
             SimulatedStandardProvider(), SimulatedExpressProvider()))
         processor = QuotationProcessor(SqlModelQuotationRepository(sessions), comparator,
                                        lambda: datetime.now(timezone.utc))

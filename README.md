@@ -227,13 +227,13 @@ from adapters.providers.simulated_shipping import (
     SimulatedStandardProvider,
     SimulatedExpressProvider,
 )
-from application.shipping_quotes import ShippingQuoteService
+from application.quotations.comparison import ShippingQuoteComparator
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 
 
 async def main() -> None:
-    comparator = ShippingQuoteService([
+    comparator = ShippingQuoteComparator([
         SimulatedEconomyProvider(),
         SimulatedStandardProvider(),
         SimulatedExpressProvider(),
@@ -264,7 +264,7 @@ sim-standard QUOTED standard 520 EUR 2 2
 La colección inyectada es obligatoria, no vacía y tiene códigos abiertos,
 recortados y únicos. `compare` devuelve una tupla de `ProviderResult` ordenada
 por proveedor, con ofertas ordenadas por servicio. El resultado y sus estados
-pertenecen a `application.shipping_quotes`; las solicitudes, ofertas y
+pertenecen a `application.quotations.models`; las solicitudes, ofertas y
 `NoCoverage` pertenecen a `domain.shipping_quotes`. Cada proveedor puede ofrecer
 varios servicios (`QuoteOffers`), rechazar cobertura (`NoCoverage`) o fallar de
 forma aislada. Los estados son `QUOTED`, `NOT_COVERED` y `FAILED`; los errores
@@ -294,16 +294,23 @@ hexagonal_architecture/
 │   │   ├── deliveries.py
 │   │   ├── returns.py
 │   │   ├── lockers.py
-│   │   ├── shipping_quotes.py
-│   │   └── ports.py
+│   │   └── shipping_quotes.py
 │   ├── application/
-│   │   ├── deliveries.py
-│   │   ├── returns.py
-│   │   ├── lockers.py
-│   │   ├── shipping_quotes.py
-│   │   ├── quotation_models.py
-│   │   ├── quotation_ports.py
-│   │   └── quotations.py
+│   │   ├── deliveries/
+│   │   │   ├── ports.py
+│   │   │   └── use_cases.py
+│   │   ├── returns/
+│   │   │   ├── ports.py
+│   │   │   └── use_cases.py
+│   │   ├── lockers/
+│   │   │   ├── ports.py
+│   │   │   └── use_cases.py
+│   │   └── quotations/
+│   │       ├── models.py
+│   │       ├── ports.py
+│   │       ├── errors.py
+│   │       ├── comparison.py
+│   │       └── use_cases.py
 │   ├── adapters/
 │   │   ├── http/
 │   │   │   ├── deliveries/
@@ -365,11 +372,13 @@ hexagonal_architecture/
 ```
 
 Se omiten los archivos `__init__.py`. La organización prioriza las capas:
-Delivery y Return tienen archivos propios para sus entidades, casos de uso y
-adaptadores. Las reglas compartidas de asignación y capacidad permanecen en Locker.
-Cada flujo conserva sus validadores y errores de dominio; sus servicios declaran
-el error de registro inexistente. HTTP agrupa rutas y esquemas en paquetes por
-área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
+Delivery, Return, Locker y Quotation tienen paquetes propios en aplicación.
+Cada área agrupa sus casos de uso en `use_cases.py` y los puertos de salida que
+consume en `ports.py`. Las entidades y reglas permanecen en dominio, incluidas
+las reglas compartidas de asignación y capacidad de Locker. Cada flujo conserva
+sus validadores y errores de dominio; los servicios de entregas y devoluciones
+declaran el error de registro inexistente junto a sus casos de uso. HTTP agrupa
+rutas y esquemas en paquetes por área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
 los repositorios y las migraciones se agrupan en `backend/adapters/database/`; las rutas
 y los modelos HTTP, en `backend/adapters/http/`. Ambos adaptadores son externos al núcleo,
 pero se ejecutan en el mismo proceso: no son microservicios.
@@ -382,10 +391,14 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | `backend/domain/returns.py` | Entidad `Return`, estado `ReturnStatus`, validación y `ReturnConflictError`. Solo Python. |
 | `backend/domain/lockers.py` | Dimensiones, celdas, lockers y reglas de asignación/recepción, sin infraestructura. |
 | `backend/domain/shipping_quotes.py` | Solicitud de transporte, ofertas y respuesta de falta de cobertura (`NoCoverage`), inmutables y validadas. |
-| `backend/domain/ports.py` | Puertos de repositorios y `ShippingProvider`: contratos de salida de la aplicación. |
-| `backend/application/deliveries.py` y `returns.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas con reloj explícito y puertos de persistencia. Declaran `DeliveryNotFoundError` y `ReturnNotFoundError`. |
-| `backend/application/lockers.py` | Casos de uso de configuración y disponibilidad de lockers. |
-| `backend/application/shipping_quotes.py` | `ShippingQuoteService` compara proveedores inyectados; `ProviderResult`, `ProviderStatus` y `ProviderErrorCode` expresan sus resultados. |
+| `backend/application/deliveries/use_cases.py` y `backend/application/returns/use_cases.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas con reloj explícito y puertos de persistencia. Declaran `DeliveryNotFoundError` y `ReturnNotFoundError`. |
+| `backend/application/lockers/use_cases.py` | Casos de uso de configuración y disponibilidad de lockers. |
+| `backend/application/{deliveries,returns,lockers}/ports.py` | Protocolos de repositorio propiedad del área de aplicación que los consume. |
+| `backend/application/quotations/models.py` | `Quotation`, sus estados y errores de proceso, y `ProviderResult`, `ProviderStatus` y `ProviderErrorCode`; independientes del comparador. |
+| `backend/application/quotations/ports.py` | Contratos de salida `ShippingProvider`, `QuotationRepository` y `QuotationPublisher`. |
+| `backend/application/quotations/errors.py` | Errores compartidos de persistencia, publicación, envío y fallo técnico de proveedor. |
+| `backend/application/quotations/comparison.py` | `ShippingQuoteComparator` compara proveedores inyectados y normaliza sus resultados. |
+| `backend/application/quotations/use_cases.py` | `QuotationService` envía y consulta solicitudes; `QuotationProcessor` ejecuta la comparación y guarda resultados. |
 | `backend/adapters/http/deliveries/routes.py` y `schemas.py` | Router de Delivery y sus contratos HTTP. |
 | `backend/adapters/http/returns/routes.py` y `schemas.py` | Router de Return y sus contratos HTTP. |
 | `backend/adapters/http/lockers/routes.py` y `schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
@@ -405,8 +418,16 @@ entrada: expresan las operaciones disponibles sin una interfaz adicional.
 El adaptador HTTP depende directamente de estos servicios y de las entidades
 del dominio; los servicios siguen sin conocer FastAPI ni SQLModel.
 
-Los puertos de salida de `backend/domain/ports.py` sí usan `Protocol`: permiten a los casos
-de uso trabajar con repositorios sin depender de su implementación concreta.
+Los puertos de salida usan `Protocol` y pertenecen al paquete de aplicación que
+los consume: `deliveries/ports.py`, `returns/ports.py`, `lockers/ports.py` y
+`quotations/ports.py`. Permiten trabajar con repositorios, proveedores y publicación
+sin depender de implementaciones concretas. El dominio conserva datos, entidades
+y reglas y no depende de aplicación. Los modelos de cotización dependen solo de
+la biblioteca estándar y del dominio; los adaptadores importan esos modelos desde
+`application.quotations.models` y los errores desde `application.quotations.errors`.
+Los paquetes tienen `__init__.py` vacíos: cada consumidor importa desde el módulo
+propietario, sin reexports ni wrappers de compatibilidad. Los consumidores Python
+deben actualizar las rutas anteriores y usar `ShippingQuoteComparator`.
 
 ### Componer los servicios
 
@@ -725,12 +746,13 @@ resultados ni fecha final; COMPLETED expone el lote entero, incluso cuando todos
 los proveedores fallan. FAILED conserva un error de proceso. Un UUID desconocido
 devuelve 404, uno mal formado 422, y persistencia no disponible 503.
 
-`application/quotation_models.py`, `quotation_ports.py` y `quotations.py` definen
-el estado persistido, los puertos y los casos de uso. Los adaptadores son
-`adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
+`application/quotations/models.py`, `ports.py`, `errors.py`, `comparison.py` y
+`use_cases.py` separan el estado persistido y los resultados, los contratos de
+salida, los errores compartidos, la comparación y los casos de uso. Los adaptadores
+son `adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
 `adapters/queue/rabbitmq.py`; `main.py` compone API y `worker.py` el proceso de
 trabajo. API comparte servicios por instancia y cierra motor y broker incluso
-si falla el arranque. Solo el worker llama a `ShippingQuoteService.compare`.
+si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
 
 `docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
 **un único worker**. API/worker esperan migraciones correctas y broker saludable;

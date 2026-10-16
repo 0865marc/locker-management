@@ -4,7 +4,7 @@ from uuid import UUID
 
 from domain.deliveries import Delivery, DeliveryConflictError
 from domain.lockers import Dimensions, validate_reception
-from domain.ports import DeliveryRepository
+from application.deliveries.ports import DeliveryRepository
 
 
 class DeliveryNotFoundError(LookupError):

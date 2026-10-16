@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from adapters.http.returns.schemas import CreateReturn, ReturnResponse
 from adapters.http.request_validation import require_empty_action_body
 from adapters.http.lockers.routes import capacity_http
-from application.returns import ReturnService, ReturnNotFoundError
+from application.returns.use_cases import ReturnService, ReturnNotFoundError
 from domain.lockers import CapacityConflictError, LockerNotFoundError
 from domain.returns import Return, ReturnConflictError
 

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from domain.returns import Return, ReturnConflictError
 from domain.lockers import Dimensions, validate_reception
-from domain.ports import ReturnRepository
+from application.returns.ports import ReturnRepository
 
 
 class ReturnNotFoundError(LookupError):

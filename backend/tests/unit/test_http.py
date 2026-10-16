@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from adapters.http.routes import create_router
-from application.lockers import LockerService
-from application.deliveries import DeliveryService, DeliveryNotFoundError
-from application.returns import ReturnService, ReturnNotFoundError
+from application.lockers.use_cases import LockerService
+from application.deliveries.use_cases import DeliveryService, DeliveryNotFoundError
+from application.returns.use_cases import ReturnService, ReturnNotFoundError
 from domain.deliveries import Delivery, DeliveryConflictError
 from domain.returns import Return, ReturnConflictError
 

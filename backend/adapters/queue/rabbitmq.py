@@ -11,8 +11,8 @@ import aio_pika
 from pamqp.commands import Basic
 from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractQueue
 
-from application.quotation_models import PublicationError
-from application.quotations import QuotationProcessor
+from application.quotations.errors import PublicationError
+from application.quotations.use_cases import QuotationProcessor
 
 QUEUE_NAME = 'shipping.quotations'
 logger = logging.getLogger(__name__)

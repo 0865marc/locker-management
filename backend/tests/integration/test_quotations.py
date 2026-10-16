@@ -8,8 +8,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
-from application.quotation_models import Quotation, QuotationStatus, ProcessErrorCode, QuotationStorageError
-from application.shipping_quotes import ProviderResult, ProviderStatus, ProviderErrorCode
+from application.quotations.models import Quotation, QuotationStatus, ProcessErrorCode
+from application.quotations.errors import QuotationStorageError
+from application.quotations.models import ProviderResult, ProviderStatus, ProviderErrorCode
 from domain.shipping_quotes import ShippingQuoteRequest, ShippingOffer
 from domain.lockers import Dimensions
 from tests.integration.support import PostgresTestCase

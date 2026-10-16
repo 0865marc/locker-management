@@ -1,7 +1,7 @@
 from uuid import UUID
 from domain.lockers import (Address, Availability, Compartment, CompartmentBatch, Coordinates,
     Dimensions, Locker, LockerNotFoundError, LockerPatch, location_alias, validate_batches, require_instance)
-from domain.ports import LockerRepository
+from application.lockers.ports import LockerRepository
 
 
 class LockerService:

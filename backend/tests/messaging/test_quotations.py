@@ -10,9 +10,10 @@ from aio_pika.abc import AbstractIncomingMessage
 
 from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
 from adapters.queue.rabbitmq import RabbitMQ, handle_delivery
-from application.quotation_models import QuotationStatus
-from application.quotations import QuotationService, QuotationProcessor
-from application.shipping_quotes import ShippingQuoteService, ProviderStatus, ProviderErrorCode
+from application.quotations.models import QuotationStatus
+from application.quotations.use_cases import QuotationService, QuotationProcessor
+from application.quotations.comparison import ShippingQuoteComparator
+from application.quotations.models import ProviderStatus, ProviderErrorCode
 from domain.shipping_quotes import ShippingQuoteRequest, QuoteOffers, NoCoverage, ShippingOffer
 from domain.lockers import Dimensions
 from tests.integration.support import PostgresTestCase
@@ -93,7 +94,7 @@ class MessagingSmokeTests(PostgresTestCase):
         providers = tuple(ControlledProvider(code, outcome, events) for code, outcome in
             (('success', 'success'), ('error', 'error'), ('timeout', 'timeout'), ('uncovered', 'uncovered')))
         repository = SqlModelQuotationRepository(self.sessions)
-        processor = QuotationProcessor(repository, ShippingQuoteService(providers, timeout_seconds=.03),
+        processor = QuotationProcessor(repository, ShippingQuoteComparator(providers, timeout_seconds=.03),
                                        lambda: datetime.now(timezone.utc))
         service = QuotationService(repository, self.broker, lambda: datetime.now(timezone.utc))
         item = await service.submit(ShippingQuoteRequest('ES', '01001', 'ES', '28001', 1200, Dimensions(200, 150, 100)))

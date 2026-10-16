@@ -5,12 +5,13 @@ from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 from typing import TypeAlias
 
-from application.deliveries import DeliveryService, DeliveryNotFoundError
-from application.returns import ReturnService, ReturnNotFoundError
+from application.deliveries.use_cases import DeliveryService, DeliveryNotFoundError
+from application.returns.use_cases import ReturnService, ReturnNotFoundError
 from domain.lockers import Dimensions
 from domain.deliveries import Delivery, DeliveryStatus, DeliveryConflictError
 from domain.returns import Return, ReturnStatus, ReturnConflictError
-from domain.ports import DeliveryRepository, ReturnRepository
+from application.deliveries.ports import DeliveryRepository
+from application.returns.ports import ReturnRepository
 
 
 RECEIVED = datetime(2026, 10, 14, 10, tzinfo=timezone.utc)
@@ -195,9 +196,9 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
                 repository.receive_in_locker.assert_not_awaited()
 
     async def test_locker_service_validates_batches_before_repository(self) -> None:
-        from application.lockers import LockerService
+        from application.lockers.use_cases import LockerService
         from domain.lockers import Dimensions, CompartmentBatch
-        from domain.ports import LockerRepository
+        from application.lockers.ports import LockerRepository
         repository = AsyncMock(spec=LockerRepository)
         service = LockerService(repository)
         for batches in ([], [CompartmentBatch(1001,Dimensions(1,2,3))]):

@@ -12,11 +12,13 @@ import httpx
 
 from adapters.http.quotations.routes import create_quotation_router
 from adapters.queue.rabbitmq import handle_delivery, RabbitMQ
-from application.quotation_models import (Quotation, QuotationStatus, ProcessErrorCode,
-    PublicationError, QuotationStorageError, SubmissionError)
-from application.quotation_ports import QuotationRepository, QuotationPublisher
-from application.quotations import QuotationService, QuotationProcessor
-from application.shipping_quotes import ShippingQuoteService, ProviderResult, ProviderStatus, ProviderErrorCode
+from application.quotations.models import (
+    Quotation, QuotationStatus, ProcessErrorCode, ProviderResult, ProviderStatus, ProviderErrorCode,
+)
+from application.quotations.errors import PublicationError, QuotationStorageError, SubmissionError
+from application.quotations.ports import QuotationRepository, QuotationPublisher
+from application.quotations.use_cases import QuotationService, QuotationProcessor
+from application.quotations.comparison import ShippingQuoteComparator
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 
@@ -69,7 +71,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
                 ProcessErrorCode.PUBLISH_ERROR, NOW)
 
     async def test_process_compares_once_and_completes_even_all_failed(self):
-        comparator = AsyncMock(spec=ShippingQuoteService)
+        comparator = AsyncMock(spec=ShippingQuoteComparator)
         results = (ProviderResult('a', ProviderStatus.FAILED, error_code=ProviderErrorCode.PROVIDER_TIMEOUT),)
         comparator.compare.return_value = results
         self.repository.start.return_value = replace(self.quotation, status=QuotationStatus.PROCESSING)
@@ -80,7 +82,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         self.repository.fail.assert_not_awaited()
 
     async def test_not_pending_is_ignored_and_unexpected_failure_is_not_retried(self):
-        comparator = AsyncMock(spec=ShippingQuoteService)
+        comparator = AsyncMock(spec=ShippingQuoteComparator)
         processor = QuotationProcessor(self.repository, comparator, lambda: NOW)
         self.repository.start.return_value = None
         await processor.process(self.quotation.id)
@@ -200,7 +202,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
              patch('worker.SimulatedEconomyProvider') as economy, \
              patch('worker.SimulatedStandardProvider') as standard, \
              patch('worker.SimulatedExpressProvider') as express, \
-             patch('worker.ShippingQuoteService') as comparator:
+             patch('worker.ShippingQuoteComparator') as comparator:
             await run_worker()
         for factory in (economy, standard, express):
             factory.assert_called_once_with()
@@ -232,7 +234,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         with patch('worker.create_database', return_value=(engine, object())), \
              patch('worker.RabbitMQ', return_value=broker), \
              patch('worker.SqlModelQuotationRepository', return_value=repository), \
-             patch('worker.ShippingQuoteService', return_value=ShippingQuoteService([WaitingProvider()])):
+             patch('worker.ShippingQuoteComparator', return_value=ShippingQuoteComparator([WaitingProvider()])):
             task = asyncio.create_task(run_worker())
             await entered.wait()
             task.cancel()
