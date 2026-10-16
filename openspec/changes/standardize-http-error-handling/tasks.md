@@ -16,7 +16,7 @@ El coordinador mantiene este checklist y registra evidencia antes de marcar tare
 
 - [x] 3.1 `sdd_reviewer`: revisar independientemente los escenarios de aceptación, arquitectura, ocho políticas de errores, frontera de captura, respuesta 204 y evidencia de pruebas/tipos; devolver hallazgos. `sdd_builder` corrige los accionables dentro del alcance y repite los controles afectados; el revisor confirma su resolución.
 - [x] 3.2 Coordinador: ejecutar `openspec validate standardize-http-error-handling --strict` y `git diff --check`, verificar que solo cambian el archivo de rutas y estos artefactos, y registrar resultados sin confundir validación documental con verificación de comportamiento.
-- [ ] 3.3 Coordinador: después de verificar y revisar, crear el commit y publicar la rama nueva en `origin`; comprobar que su referencia remota coincide con el commit local e informar de rama, commit, verificación, revisión y cualquier pendiente. No crear un PR, fusionar, sincronizar especificaciones ni archivar este cambio.
+- [x] 3.3 Coordinador: después de verificar y revisar, crear el commit y publicar la rama nueva en `origin`; comprobar que su referencia remota coincide con el commit local e informar de rama, commit, verificación, revisión y cualquier pendiente. No crear un PR, fusionar, sincronizar especificaciones ni archivar este cambio.
 
 ## Evidencia de ejecución
 
@@ -26,3 +26,4 @@ El coordinador mantiene este checklist y registra evidencia antes de marcar tare
 - Desde `backend/`: `uv run --extra dev python -m unittest discover -s tests -v` terminó con código 0: **95 pruebas, OK, ninguna omitida**, en 17,161 segundos. `TEST_DATABASE_URL` apuntó a una base dedicada en un contenedor PostgreSQL 17 temporal, sin volúmenes y accesible solo por localhost.
 - `sdd_reviewer` revisó independientemente los ocho endpoints, los escenarios y los logs: **sin hallazgos bloqueantes**. La cobertura funcional existente y la revisión del diff acreditan la equivalencia; no hay inyección individual de errores en cada endpoint para comprobar todas las causas y fronteras de captura.
 - `openspec validate standardize-http-error-handling --strict` y `git diff --check` pasaron. No hay cambios de producción fuera del archivo de rutas ni cambios de configuración o pruebas.
+- Implementación publicada en `origin/refactor/explicit-http-error-handling`: commit `d3e3f708e332239ddc8bb14f4a5ce7c872a47773`, verificado idéntico en local y remoto. Se utilizó el conector autenticado de GitHub porque Git local no tenía credenciales HTTPS. `main` conserva el commit de partida; no se creó PR ni se fusionó, sincronizó o archivó el cambio.
