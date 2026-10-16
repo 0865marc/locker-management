@@ -18,8 +18,8 @@
 ## Workflow follow-up
 
 - Plan aprobado explícitamente por el usuario antes de implementar: «adelante pues, implementa el plan».
-- La solicitud posterior de abrir un PR contra `main` autoriza commits, publicación y resolución de conflictos dentro del mismo alcance. El coordinador publicará el PR tras reconciliar y verificar la nueva base; no requiere completar el renombrado remoto ni el traslado local bloqueados.
-- Sincronizar el delta con `application-runtime` y archivar únicamente cuando se autoricen esas fases, indicando por separado su estado y cualquier tarea operativa pendiente.
+- La solicitud posterior de abrir un PR contra `main` autorizó commits, publicación y resolución de conflictos dentro del mismo alcance. La [PR #5](https://github.com/0865marc/hexagonal_architecture/pull/5) contiene el resultado; no requiere completar el renombrado remoto ni el traslado local bloqueados.
+- El usuario solicitó cerrar la fase pendiente con «te ha faltado archivar la spec», después de recibir el estado de las operaciones pendientes. Se sincroniza el delta con `application-runtime` y se archiva el cambio, conservando las tareas 3.1 y 3.2 sin marcar como completadas.
 
 ## Evidencia histórica de implementación y revisión — 2026-10-16, base anterior a 021dfc2
 
@@ -50,4 +50,11 @@ Estos resultados corresponden a la implementación inicial sobre `a974adf` y se 
 
 - **3.1:** GitHub sigue identificando `0865marc/hexagonal_architecture` con ID `1420522580`; la consulta del nombre propuesto devuelve 404. El conector permite consultar el repositorio pero no renombrarlo, y `gh auth status` informa de credencial inválida. `origin` se conserva hasta que se pueda verificar el mismo ID con el nombre nuevo.
 - **3.2:** No hay una herramienta disponible para trasladar y volver a vincular este checkout gestionado. La consulta de proyectos/artefactos de Codex no ofrece una vinculación editable para esta ruta. Se conserva `/workspace/hexagonal_architecture`, conforme a la condición del diseño.
-- Estado actual: adaptación y revisión contra `021dfc2` completas (4/6 tareas), con los límites de verificación registrados arriba. Rama `chore/rename-locker-management-demo` preparada para el PR autorizado contra `main`, tras resolver el rebase. Renombrado remoto y traslado siguen pendientes; el spec principal no se ha sincronizado ni el cambio archivado.
+- Estado al cierre: adaptación y revisión contra `021dfc2` completas (4/6 tareas), con los límites de verificación registrados arriba. La PR #5 está abierta contra `main`. El spec principal está sincronizado y el cambio archivado por solicitud del usuario; renombrado remoto y traslado siguen pendientes.
+
+## Sincronización y archivo — 2026-10-16
+
+- `openspec/specs/application-runtime/spec.md` incorpora el requisito de identidad y las modificaciones de conexión/Compose del delta. Se preservan el título, el propósito, el requisito de recursos por instancia y todos los escenarios existentes.
+- Verificación previa al archivo: los tres requisitos del delta coinciden con el spec principal; `openspec validate --specs --strict` pasa para los ocho specs. El cambio pasó `openspec validate rename-to-locker-management-demo --strict` antes de sincronizar.
+- Comprobación de cierre desde `backend/`: `UV_FROZEN=1 UV_CACHE_DIR=/tmp/uv-cache uv run --extra dev pyright --project .. --warnings`, con **0 errores y 0 advertencias**. Se conserva el lockfile y el código verificados para la PR.
+- Archivo: `openspec/changes/archive/2026-10-16-rename-to-locker-management-demo/`, incluida su metadata `.openspec.yaml`. Las tareas operativas 3.1 y 3.2 quedan pendientes en este registro; archivar no certifica su ejecución.
