@@ -52,7 +52,7 @@ def create_app(
             finally:
                 await engine.dispose()
 
-    app = FastAPI(title="Delivery y Return · Arquitectura hexagonal", lifespan=lifespan)
+    app = FastAPI(title="Locker Management Demo", lifespan=lifespan)
 
     app.state.quotation_service = quotation_service
     app.state.locker_service = locker_service
