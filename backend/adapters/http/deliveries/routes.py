@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from adapters.http.deliveries.schemas import CreateDelivery, DeliveryResponse
 from adapters.http.lockers.routes import capacity_http
 from adapters.http.request_validation import require_empty_action_body
-from application.deliveries import DeliveryNotFoundError, DeliveryService
+from application.deliveries.use_cases import DeliveryNotFoundError, DeliveryService
 from domain.deliveries import Delivery, DeliveryConflictError
 from domain.lockers import CapacityConflictError, LockerNotFoundError
 

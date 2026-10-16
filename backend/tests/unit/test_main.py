@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from application.deliveries import DeliveryService
-from application.returns import ReturnService
-from domain.ports import DeliveryRepository, LockerRepository, ReturnRepository
+from application.deliveries.ports import DeliveryRepository
+from application.deliveries.use_cases import DeliveryService
+from application.lockers.ports import LockerRepository
+from application.returns.ports import ReturnRepository
+from application.returns.use_cases import ReturnService
 
 
 class CompositionTests(unittest.TestCase):
@@ -29,7 +31,7 @@ class CompositionTests(unittest.TestCase):
         delivery_repo.assert_called_once_with(sessions)
         return_repo.assert_called_once_with(sessions)
         locker_repo.assert_called_once_with(sessions)
-        from application.lockers import LockerService
+        from application.lockers.use_cases import LockerService
 
         self.assertIsInstance(app.state.locker_service, LockerService)
         self.assertIsInstance(app.state.delivery_service, DeliveryService)

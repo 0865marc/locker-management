@@ -18,16 +18,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from application.quotation_models import (
+from application.quotations.errors import QuotationStorageError
+from application.quotations.models import (
     ProcessErrorCode,
-    Quotation,
-    QuotationStatus,
-    QuotationStorageError,
-)
-from application.shipping_quotes import (
     ProviderErrorCode,
     ProviderResult,
     ProviderStatus,
+    Quotation,
+    QuotationStatus,
 )
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingOffer, ShippingQuoteRequest

@@ -7,8 +7,8 @@ from adapters.http.quotations.schemas import (
     QuotationInput,
     QuotationResponse,
 )
-from application.quotation_models import QuotationStorageError, SubmissionError
-from application.quotations import QuotationService
+from application.quotations.errors import QuotationStorageError, SubmissionError
+from application.quotations.use_cases import QuotationService
 
 
 def create_quotation_router(service: QuotationService) -> APIRouter:

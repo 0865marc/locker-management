@@ -11,11 +11,11 @@ from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
 from adapters.database.sqlmodel_returns import SqlModelReturnRepository
 from adapters.http.routes import create_router
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
-from application.deliveries import DeliveryService
-from application.lockers import LockerService
-from application.quotation_ports import QuotationPublisher
-from application.quotations import QuotationService
-from application.returns import ReturnService
+from application.deliveries.use_cases import DeliveryService
+from application.lockers.use_cases import LockerService
+from application.quotations.ports import QuotationPublisher
+from application.quotations.use_cases import QuotationService
+from application.returns.use_cases import ReturnService
 
 
 def utc_now() -> datetime:

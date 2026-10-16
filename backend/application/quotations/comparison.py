@@ -2,58 +2,21 @@
 
 import asyncio
 from collections.abc import Iterable
-from dataclasses import dataclass
-from enum import Enum
 from math import isfinite
 
+from application.quotations.models import (
+    ProviderErrorCode,
+    ProviderResult,
+    ProviderStatus,
+)
+from application.quotations.ports import ShippingProvider
 from domain.lockers import require_instance
-from domain.ports import ShippingProvider
 from domain.shipping_quotes import (
     NoCoverage,
     QuoteOffers,
-    ShippingOffer,
     ShippingQuoteRequest,
     validate_code,
 )
-
-
-def _require_offers_tuple(value: object) -> None:
-    if not isinstance(value, tuple):
-        raise ValueError("offers must be an immutable tuple")
-
-
-class ProviderStatus(str, Enum):
-    QUOTED = "QUOTED"
-    NOT_COVERED = "NOT_COVERED"
-    FAILED = "FAILED"
-
-
-class ProviderErrorCode(str, Enum):
-    PROVIDER_ERROR = "PROVIDER_ERROR"
-    PROVIDER_TIMEOUT = "PROVIDER_TIMEOUT"
-
-
-@dataclass(frozen=True)
-class ProviderResult:
-    provider_code: str
-    status: ProviderStatus
-    offers: tuple[ShippingOffer, ...] = ()
-    error_code: ProviderErrorCode | None = None
-
-    def __post_init__(self) -> None:
-        validate_code(self.provider_code, "provider_code")
-        _require_offers_tuple(self.offers)
-        if self.offers:
-            QuoteOffers(self.offers)
-        require_instance(self.status, ProviderStatus, "Invalid provider status")
-        if self.status is ProviderStatus.QUOTED:
-            if not self.offers or self.error_code is not None:
-                raise ValueError("QUOTED requires offers and no error")
-        elif self.status is ProviderStatus.NOT_COVERED:
-            if self.offers or self.error_code is not None:
-                raise ValueError("NOT_COVERED requires no offers and no error")
-        elif self.offers or not isinstance(self.error_code, ProviderErrorCode):
-            raise ValueError("FAILED requires no offers and a provider error code")
 
 
 async def _provider_response(
@@ -63,7 +26,7 @@ async def _provider_response(
     return await provider.quote(request)
 
 
-class ShippingQuoteService:
+class ShippingQuoteComparator:
     def __init__(
         self,
         providers: Iterable[ShippingProvider],

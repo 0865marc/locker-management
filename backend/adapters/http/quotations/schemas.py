@@ -4,8 +4,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
 
-from application.quotation_models import ProcessErrorCode, QuotationStatus
-from application.shipping_quotes import ProviderErrorCode, ProviderStatus
+from application.quotations.models import (
+    ProcessErrorCode,
+    ProviderErrorCode,
+    ProviderStatus,
+    QuotationStatus,
+)
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 

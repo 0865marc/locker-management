@@ -3,16 +3,14 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from application.quotation_models import (
-    ProcessErrorCode,
+from application.quotations.comparison import ShippingQuoteComparator
+from application.quotations.errors import (
     PublicationError,
-    Quotation,
-    QuotationStatus,
     QuotationStorageError,
     SubmissionError,
 )
-from application.quotation_ports import QuotationPublisher, QuotationRepository
-from application.shipping_quotes import ShippingQuoteService
+from application.quotations.models import ProcessErrorCode, Quotation, QuotationStatus
+from application.quotations.ports import QuotationPublisher, QuotationRepository
 from domain.shipping_quotes import ShippingQuoteRequest
 
 logger = logging.getLogger(__name__)
@@ -56,7 +54,7 @@ class QuotationProcessor:
     def __init__(
         self,
         repository: QuotationRepository,
-        comparator: ShippingQuoteService,
+        comparator: ShippingQuoteComparator,
         clock: Callable[[], datetime],
     ) -> None:
         self.repository = repository

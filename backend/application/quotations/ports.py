@@ -2,8 +2,13 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from application.quotation_models import ProcessErrorCode, Quotation, QuotationStatus
-from application.shipping_quotes import ProviderResult
+from application.quotations.models import (
+    ProcessErrorCode,
+    ProviderResult,
+    Quotation,
+    QuotationStatus,
+)
+from domain.shipping_quotes import NoCoverage, QuoteOffers, ShippingQuoteRequest
 
 
 class QuotationRepository(Protocol):
@@ -27,3 +32,12 @@ class QuotationRepository(Protocol):
 
 class QuotationPublisher(Protocol):
     async def publish(self, quotation_id: UUID) -> None: ...
+
+
+class ShippingProvider(Protocol):
+    @property
+    def code(self) -> str: ...
+
+    async def quote(
+        self, request: ShippingQuoteRequest
+    ) -> QuoteOffers | NoCoverage: ...

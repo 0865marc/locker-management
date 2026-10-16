@@ -1,7 +1,6 @@
 """One sequential worker; consumed work has no automatic recovery."""
 
 import asyncio
-import os
 import signal
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -12,37 +11,24 @@ from adapters.providers.simulated_shipping import (
     SimulatedEconomyProvider,
     SimulatedExpressProvider,
     SimulatedStandardProvider,
-    SimulationProfile,
 )
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
-from application.quotations import QuotationProcessor
-from application.shipping_quotes import ShippingQuoteService
-
-
-def simulation_profile() -> SimulationProfile:
-    return SimulationProfile(
-        delay_min_seconds=float(os.getenv("SHIPPING_DELAY_MIN_SECONDS", "0.05")),
-        delay_max_seconds=float(os.getenv("SHIPPING_DELAY_MAX_SECONDS", "0.5")),
-        no_response_probability=float(
-            os.getenv("SHIPPING_NO_RESPONSE_PROBABILITY", "0.05")
-        ),
-        error_probability=float(os.getenv("SHIPPING_ERROR_PROBABILITY", "0.10")),
-    )
+from application.quotations.comparison import ShippingQuoteComparator
+from application.quotations.use_cases import QuotationProcessor
 
 
 async def run_worker() -> None:
-    profile = simulation_profile()
     async with AsyncExitStack() as resources:
         engine, sessions = create_database(get_database_url())
         resources.push_async_callback(engine.dispose)
         broker = RabbitMQ(get_rabbitmq_url())
         resources.push_async_callback(broker.close)
         await broker.open()
-        comparator = ShippingQuoteService(
+        comparator = ShippingQuoteComparator(
             (
-                SimulatedEconomyProvider(profile),
-                SimulatedStandardProvider(profile),
-                SimulatedExpressProvider(profile),
+                SimulatedEconomyProvider(),
+                SimulatedStandardProvider(),
+                SimulatedExpressProvider(),
             )
         )
         processor = QuotationProcessor(

@@ -30,15 +30,19 @@ The locked development dependencies SHALL provide Pyright with shared root confi
 
 ### Requirement: Verify simulation and the single execution flow
 
-Unit tests SHALL verify simulation settings/outcomes, unchanged tariffs, timeout/no retry, enqueue success/failure and early acknowledgement without running services. Controlled randomness, waits and doubles SHALL make tests deterministic. PostgreSQL integration SHALL verify stored requests, mixed results and the additive/protected quotation migration.
+Unit tests SHALL verify fixed provider profiles, zero-argument construction, outcomes, unchanged tariffs, timeout/no retry, enqueue success/failure and early acknowledgement without services. Tests SHALL control randomness/waiting at execution time without constructor configuration, random seeds or concurrent call-order assumptions. PostgreSQL integration SHALL retain request/result and migration coverage.
 
 #### Scenario: Unit and persistence evidence
 - **WHEN** the unit suite runs without services and the PostgreSQL suite runs against an isolated test schema
 - **THEN** the new flow and existing comparator pass deterministically, and another instance reads persisted requests and outcomes with migration safeguards intact
 
+#### Scenario: Fixed profiles without random test failures
+- **WHEN** unit tests exercise the three providers, their thresholds, price examples and worker composition
+- **THEN** locally controlled random/wait operations make outcomes repeatable, constructors receive no configuration and normal production construction remains stochastic
+
 ### Requirement: Verify queue consumption with an isolated smoke test
 
-The messaging smoke SHALL use explicit TEST_RABBITMQ_URL and TEST_DATABASE_URL, isolated queues/schemas and resource cleanup. It SHALL verify one publication, consumption before provider execution, result persistence and no requeue after provider failure. Missing/unusable configuration SHALL fail applicable execution clearly instead of skipping tests or exposing credentials.
+The messaging smoke SHALL use explicit TEST_RABBITMQ_URL and TEST_DATABASE_URL, isolated queues/schemas and resource cleanup. It SHALL verify one publication, consumption before provider execution, result persistence and no requeue after provider failure. Its successful provider double SHALL return a fixed test offer without invoking a stochastic simulator. Missing/unusable configuration SHALL fail clearly instead of skipping tests or exposing credentials.
 
 #### Scenario: Queue to comparison to storage
 - **WHEN** the smoke submits a quotation with controlled successful and failing providers

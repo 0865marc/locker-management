@@ -10,17 +10,21 @@ import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 
 from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
-from adapters.providers.simulated_shipping import SimulatedEconomyProvider
 from adapters.queue.rabbitmq import RabbitMQ, handle_delivery
-from application.quotation_models import QuotationStatus
-from application.quotations import QuotationProcessor, QuotationService
-from application.shipping_quotes import (
+from application.quotations.comparison import ShippingQuoteComparator
+from application.quotations.models import (
     ProviderErrorCode,
     ProviderStatus,
-    ShippingQuoteService,
+    QuotationStatus,
 )
+from application.quotations.use_cases import QuotationProcessor, QuotationService
 from domain.lockers import Dimensions
-from domain.shipping_quotes import NoCoverage, QuoteOffers, ShippingQuoteRequest
+from domain.shipping_quotes import (
+    NoCoverage,
+    QuoteOffers,
+    ShippingOffer,
+    ShippingQuoteRequest,
+)
 from tests.integration.support import PostgresTestCase
 
 
@@ -72,7 +76,7 @@ class ControlledProvider:
             await asyncio.Event().wait()
         if self.outcome == "uncovered":
             return NoCoverage()
-        return await SimulatedEconomyProvider().quote(request)
+        return QuoteOffers((ShippingOffer("economy", 430, "EUR", 4, 4),))
 
 
 class MessagingSmokeTests(PostgresTestCase):
@@ -113,7 +117,7 @@ class MessagingSmokeTests(PostgresTestCase):
         repository = SqlModelQuotationRepository(self.sessions)
         processor = QuotationProcessor(
             repository,
-            ShippingQuoteService(providers, timeout_seconds=0.03),
+            ShippingQuoteComparator(providers, timeout_seconds=0.03),
             lambda: datetime.now(timezone.utc),
         )
         service = QuotationService(
