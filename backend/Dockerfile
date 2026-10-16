@@ -1,15 +1,19 @@
 FROM python:3.13-slim
 
+COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /uvx /bin/
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_PYTHON_DOWNLOADS=never \
+    PATH="/code/.venv/bin:$PATH"
 
 WORKDIR /code
 
-COPY pyproject.toml main.py ./
+COPY pyproject.toml uv.lock main.py worker.py ./
 COPY domain ./domain
 COPY application ./application
 COPY adapters ./adapters
-RUN pip install --no-cache-dir '.[dev]'
+RUN uv sync --locked --extra dev --no-editable
 COPY tests ./tests
 COPY alembic.ini ./
 

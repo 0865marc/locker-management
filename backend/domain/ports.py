@@ -1,9 +1,19 @@
 from typing import Protocol
 from uuid import UUID
 
-from domain.lockers import Dimensions, CompartmentBatch, Locker, Compartment, Availability, Address, Coordinates, LockerPatch
 from domain.deliveries import Delivery
+from domain.lockers import (
+    Address,
+    Availability,
+    Compartment,
+    CompartmentBatch,
+    Coordinates,
+    Dimensions,
+    Locker,
+    LockerPatch,
+)
 from domain.returns import Return
+from domain.shipping_quotes import NoCoverage, QuoteOffers, ShippingQuoteRequest
 
 
 class DeliveryRepository(Protocol):
@@ -11,7 +21,9 @@ class DeliveryRepository(Protocol):
 
     async def save(self, delivery: Delivery) -> None: ...
 
-    async def receive_in_locker(self, delivery: Delivery, locker_id: UUID, dimensions: Dimensions) -> Delivery: ...
+    async def receive_in_locker(
+        self, delivery: Delivery, locker_id: UUID, dimensions: Dimensions
+    ) -> Delivery: ...
 
     async def list_all(self) -> list[Delivery]: ...
 
@@ -27,7 +39,9 @@ class ReturnRepository(Protocol):
 
     async def save(self, item: Return) -> None: ...
 
-    async def receive_in_locker(self, item: Return, locker_id: UUID, dimensions: Dimensions) -> Return: ...
+    async def receive_in_locker(
+        self, item: Return, locker_id: UUID, dimensions: Dimensions
+    ) -> Return: ...
 
     async def list_all(self) -> list[Return]: ...
 
@@ -39,18 +53,32 @@ class ReturnRepository(Protocol):
 
 
 class LockerRepository(Protocol):
-    async def create(self, location_id: str | None, batches: list[CompartmentBatch], active: bool = True, address: Address | None = None, coordinates: Coordinates | None = None) -> Locker: ...
+    async def create(
+        self,
+        location_id: str | None,
+        batches: list[CompartmentBatch],
+        active: bool = True,
+        address: Address | None = None,
+        coordinates: Coordinates | None = None,
+    ) -> Locker: ...
     async def list_all(self, location_id: str | None = None) -> list[Locker]: ...
     async def get_by_id(self, identifier: UUID) -> Locker | None: ...
     async def set_active(self, identifier: UUID, active: bool) -> Locker: ...
     async def update(self, identifier: UUID, patch: LockerPatch) -> Locker: ...
-    async def add_compartments(self, identifier: UUID, batches: list[CompartmentBatch]) -> Locker: ...
-    async def update_compartment(self, identifier: UUID, cell_id: UUID, dimensions: Dimensions | None = None, enabled: bool | None = None) -> Compartment: ...
+    async def add_compartments(
+        self, identifier: UUID, batches: list[CompartmentBatch]
+    ) -> Locker: ...
+    async def update_compartment(
+        self,
+        identifier: UUID,
+        cell_id: UUID,
+        dimensions: Dimensions | None = None,
+        enabled: bool | None = None,
+    ) -> Compartment: ...
     async def retire_compartment(self, identifier: UUID, cell_id: UUID) -> None: ...
-    async def availability(self, location_id: str, dimensions: Dimensions) -> Availability: ...
-
-
-from domain.shipping_quotes import ShippingQuoteRequest, QuoteOffers, NoCoverage
+    async def availability(
+        self, location_id: str, dimensions: Dimensions
+    ) -> Availability: ...
 
 
 class ProviderTechnicalError(Exception):
@@ -61,4 +89,6 @@ class ShippingProvider(Protocol):
     @property
     def code(self) -> str: ...
 
-    async def quote(self, request: ShippingQuoteRequest) -> QuoteOffers | NoCoverage: ...
+    async def quote(
+        self, request: ShippingQuoteRequest
+    ) -> QuoteOffers | NoCoverage: ...

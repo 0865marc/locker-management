@@ -10,7 +10,7 @@
     "backend/adapters/database/migrations/versions/0003_lockers_and_custody.py"
   ],
   "typeCheckingMode": "standard",
-  "strict": ["backend/domain", "backend/application", "backend/adapters", "backend/main.py"],
+  "strict": ["backend/domain", "backend/application", "backend/adapters", "backend/main.py", "backend/worker.py"],
   "pythonVersion": "3.11",
   "venvPath": "backend",
   "venv": ".venv",

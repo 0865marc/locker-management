@@ -5,9 +5,41 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal
+      RABBITMQ_URL: amqp://hexagonal:hexagonal@rabbitmq/
     depends_on:
       migrate:
         condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    command: ["python", "worker.py"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal
+      RABBITMQ_URL: amqp://hexagonal:hexagonal@rabbitmq/
+      SHIPPING_DELAY_MIN_SECONDS: ${SHIPPING_DELAY_MIN_SECONDS:-0.05}
+      SHIPPING_DELAY_MAX_SECONDS: ${SHIPPING_DELAY_MAX_SECONDS:-0.5}
+      SHIPPING_NO_RESPONSE_PROBABILITY: ${SHIPPING_NO_RESPONSE_PROBABILITY:-0.05}
+      SHIPPING_ERROR_PROBABILITY: ${SHIPPING_ERROR_PROBABILITY:-0.10}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4
+    environment:
+      RABBITMQ_DEFAULT_USER: hexagonal
+      RABBITMQ_DEFAULT_PASS: hexagonal
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
 
   migrate:
     build: ./backend
@@ -36,3 +68,4 @@ services:
 
 volumes:
   postgres_data:
+  rabbitmq_data:

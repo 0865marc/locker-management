@@ -2,7 +2,8 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import ConfigDict, StrictStr
-from adapters.http.lockers.schemas import ReceptionInput, AssignmentResponse
+
+from adapters.http.lockers.schemas import AssignmentResponse, ReceptionInput
 from domain.returns import ReturnStatus
 
 
