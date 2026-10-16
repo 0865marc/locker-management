@@ -18,6 +18,8 @@ API -> guardar solicitud -> publicar UUID una vez -> RabbitMQ -> worker -> compa
 
 La cola `shipping.quotations` es durable y los mensajes persistentes. El adaptador `aio-pika` publica con mandatory y confirms; el cuerpo contiene solo `quotation_id`, sin versionado de mensajes ni otra infraestructura de tareas.
 
+El protocolo estructural del adaptador se llama `MessageDelivery`, y `handle_delivery` usa ese nombre en su anotación para distinguir mensajes de la entidad de dominio `Delivery`. Es un cambio de nombre interno sin modificación de comportamiento ni del doble `ObservedDelivery`.
+
 El consumidor tiene prefetch 1 y un bucle secuencial. Hace ack manual temprano, al recibir y antes de leer la solicitud o llamar a proveedores. Si el ack falla, no empieza la comparación. No usa requeue, republicación ni recuperación de solicitudes desde PostgreSQL. Esta elección mantiene explícito que el trabajo consumido puede perderse ante una caída.
 
 Para un UUID válido que siga PENDING, el worker marca PROCESSING, llama `compare` una vez y guarda el lote final junto con COMPLETED en una transacción. Ignora solicitudes inexistentes o que ya no estén PENDING; es una comprobación simple, no un protocolo entre workers. Mensajes inválidos se descartan.

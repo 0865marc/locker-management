@@ -26,13 +26,13 @@ def get_rabbitmq_url() -> str:
     return os.getenv('RABBITMQ_URL', 'amqp://guest:guest@localhost/')
 
 
-class Delivery(Protocol):
+class MessageDelivery(Protocol):
     @property
     def body(self) -> bytes: ...
     async def ack(self) -> None: ...
 
 
-async def handle_delivery(message: Delivery, processor: QuotationProcessor) -> None:
+async def handle_delivery(message: MessageDelivery, processor: QuotationProcessor) -> None:
     # Never execute work if acknowledgement fails. Malformed deliveries are also consumed.
     await message.ack()
     try:

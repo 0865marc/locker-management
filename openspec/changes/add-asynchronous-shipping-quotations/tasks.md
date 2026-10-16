@@ -1,6 +1,6 @@
 # Tasks
 
-La primera fase simplificada está implementada y verificada; las tareas 1–5 y su evidencia se conservan como historial de esa versión. La revisión de proveedores autónomos aprobada después por el usuario también está implementada y verificada en las tareas 6.1–6.3, con evidencia propia.
+La primera fase simplificada está implementada y verificada; las tareas 1–5 y su evidencia se conservan como historial de esa versión. La revisión de proveedores autónomos aprobada después por el usuario también está implementada y verificada en las tareas 6.1–6.3, con evidencia propia. El ajuste nominal solicitado después está completado y verificado en la tarea 7.1.
 
 ## 1. Contratos y simuladores
 
@@ -31,6 +31,10 @@ La primera fase simplificada está implementada y verificada; las tareas 1–5 y
 - [x] 6.2 Simplificar worker a instancias sin argumentos; eliminar simulation_profile() y las cuatro variables SHIPPING de simulación de worker/Compose/README. Actualizar pruebas de composición y sustituir el éxito del smoke por una oferta fija del doble; verificar que no quedan consumidores de configuración eliminada y que las variables antiguas no alteran los perfiles.
 - [x] 6.3 Ejecutar unidades sin servicios y smoke PostgreSQL/RabbitMQ con sus URLs de prueba; exigir cero errores/warnings en `uv run --extra dev pyright --project .. --warnings`, validar OpenSpec strict y obtener revisión independiente de sdd_reviewer. Registrar evidencia nueva y corregir hallazgos sin modificar contratos de cola/API/persistencia ni añadir migraciones.
 
+## 7. Claridad del nombre del protocolo de mensajería
+
+- [x] 7.1 Renombrar únicamente `Delivery(Protocol)` a `MessageDelivery` y su anotación en `handle_delivery` dentro de `backend/adapters/queue/rabbitmq.py`, sin cambiar comportamiento, la entidad de dominio ni `ObservedDelivery`; ejecutar `uv run --extra dev python -m unittest tests.unit.test_quotations -v`, exigir cero errores/warnings en `uv run --extra dev pyright --project .. --warnings` y obtener revisión independiente, registrando la nueva evidencia antes de completar la tarea.
+
 ## Verification commands
 
 Desde `backend/`, con TEST_DATABASE_URL y TEST_RABBITMQ_URL de prueba cuando la suite los requiera:
@@ -52,3 +56,4 @@ No se añaden pruebas de recuperación, múltiples workers, leases o reinicios d
 - Evidencia actual de perfiles autónomos: 77 pruebas unitarias sin variables de servicios correctas (3.296 s), un smoke PostgreSQL/RabbitMQ aislado correcto (0.372 s) y `uv run --extra dev pyright --project .. --warnings` con cero errores y cero warnings. Logs: `/tmp/quotation-fixed-unit.log` y `/tmp/quotation-fixed-messaging.log`. Búsqueda de consumidores confirma que worker/Compose/README ya no usan la configuración eliminada; las únicas menciones de las variables antiguas en código están en las regresiones que verifican su falta de efecto. No se repite integración PostgreSQL ajena al ajuste porque no cambian API, repositorios ni migraciones.
 - Validación estricta de OpenSpec y configuración de Compose correctas. Revisión independiente sin hallazgos: 24 pruebas de simuladores/comparador y la regresión de composición del worker verificadas de nuevo; Pyright independiente con cero errores y cero warnings.
 - Sincronización y archivado quedan fuera de esta revisión.
+- Evidencia del ajuste nominal 7.1: las 15 pruebas de `tests.unit.test_quotations` pasan (0.338 s); `uv run --extra dev pyright --project .. --warnings` devuelve cero errores y cero warnings, también en la revisión independiente. No hay hallazgos ni referencias obsoletas al protocolo; validación OpenSpec estricta correcta.
