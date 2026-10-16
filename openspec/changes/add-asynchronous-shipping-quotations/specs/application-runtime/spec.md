@@ -12,7 +12,7 @@ Each API instance SHALL wire together and reuse its delivery, return, locker and
 
 ### Requirement: Coordinate readiness and persistence with Compose
 
-Compose SHALL require healthy PostgreSQL before migrations and successful migrations before API or worker startup. API and the single worker SHALL also wait for healthy RabbitMQ. PostgreSQL and RabbitMQ SHALL retain their data in named postgres_data and rabbitmq_data volumes.
+Compose SHALL default to project `locker-management-demo`, with explicit overrides supported. It SHALL wait for healthy PostgreSQL before migrations and for successful migrations and healthy RabbitMQ before API and single-worker startup. Data SHALL use named `postgres_data` and `rabbitmq_data` volumes. PostgreSQL database/user/password and RabbitMQ user/password SHALL default to `locker_management_demo`, with explicit existing settings supported.
 
 #### Scenario: Startup depends on migrations
 - **WHEN** the services start with Compose
@@ -21,6 +21,22 @@ Compose SHALL require healthy PostgreSQL before migrations and successful migrat
 #### Scenario: Retain the volume when stopping services
 - **WHEN** docker compose down runs without requesting volume removal
 - **THEN** postgres_data and rabbitmq_data remain available for subsequent startup
+
+#### Scenario: Fresh installation with default settings
+- **WHEN** Compose starts with no project or service-credential overrides and no existing volumes for that project
+- **THEN** it uses project `locker-management-demo`, PostgreSQL database/user/password `locker_management_demo`, and RabbitMQ user/password `locker_management_demo`
+- **AND** API, migration service and worker share the PostgreSQL settings through host `db`, while API and worker share the broker settings through host `rabbitmq`
+
+#### Scenario: Continue using an existing installation
+- **WHEN** an operator follows the documented transition for a running installation at the current schema revision, selects its previous Compose project and PostgreSQL/RabbitMQ credentials explicitly, and stops only API and worker
+- **THEN** Compose selects the previous physical `postgres_data` and `rabbitmq_data` volumes and configures clients consistently with those credentials
+- **AND** database records and the Alembic revision are preserved without renaming roles, databases or volumes
+- **AND** the existing RabbitMQ container and node remain unchanged through the identity-only transition
+
+#### Scenario: Preserve the current quotation runtime
+- **WHEN** the renamed installation starts with a healthy database and broker and receives a quotation request
+- **THEN** the API and worker retain the current quotation behavior and queue semantics, using each simulator's fixed internal profile without worker simulation settings
+- **AND** the conventional local RabbitMQ fallback remains `amqp://guest:guest@localhost/` when `RABBITMQ_URL` is absent outside Compose
 
 ## ADDED Requirements
 

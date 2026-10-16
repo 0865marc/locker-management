@@ -2,9 +2,9 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
-from domain.returns import Return, ReturnConflictError
-from domain.lockers import Dimensions, validate_reception
 from application.returns.ports import ReturnRepository
+from domain.lockers import Dimensions, validate_reception
+from domain.returns import Return, ReturnConflictError
 
 
 class ReturnNotFoundError(LookupError):
@@ -12,11 +12,20 @@ class ReturnNotFoundError(LookupError):
 
 
 class ReturnService:
-    def __init__(self, repository: ReturnRepository, clock: Callable[[], datetime]) -> None:
+    def __init__(
+        self, repository: ReturnRepository, clock: Callable[[], datetime]
+    ) -> None:
         self.repository = repository
         self.clock = clock
 
-    async def create(self, tracking_number: str, carrier_code: str, sender_name: str | None = None, locker_id: UUID | None = None, parcel_dimensions: Dimensions | None = None) -> Return:
+    async def create(
+        self,
+        tracking_number: str,
+        carrier_code: str,
+        sender_name: str | None = None,
+        locker_id: UUID | None = None,
+        parcel_dimensions: Dimensions | None = None,
+    ) -> Return:
         item = Return(
             tracking_number=tracking_number,
             carrier_code=carrier_code,
@@ -25,7 +34,9 @@ class ReturnService:
         )
         validate_reception(locker_id, parcel_dimensions)
         if locker_id is not None and parcel_dimensions is not None:
-            return await self.repository.receive_in_locker(item, locker_id, parcel_dimensions)
+            return await self.repository.receive_in_locker(
+                item, locker_id, parcel_dimensions
+            )
         await self.repository.save(item)
         return item
 
@@ -38,5 +49,7 @@ class ReturnService:
             raise ReturnNotFoundError("Return no encontrada")
         updated = item.hand_over(self.clock())
         if not await self.repository.save_exit(updated):
-            raise ReturnConflictError("Otro proceso ya ha registrado la salida del paquete")
+            raise ReturnConflictError(
+                "Otro proceso ya ha registrado la salida del paquete"
+            )
         return updated

@@ -1,8 +1,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import AwareDatetime, field_validator, ConfigDict, StrictStr
-from adapters.http.lockers.schemas import ReceptionInput, AssignmentResponse
+from pydantic import AwareDatetime, ConfigDict, StrictStr, field_validator
+
+from adapters.http.lockers.schemas import AssignmentResponse, ReceptionInput
 from domain.deliveries import DeliveryStatus
 
 
@@ -22,7 +23,9 @@ class CreateDelivery(ReceptionInput):
             try:
                 return datetime.fromisoformat(value)
             except ValueError as error:
-                raise ValueError("pickup_deadline_at debe ser una fecha con zona horaria") from error
+                raise ValueError(
+                    "pickup_deadline_at debe ser una fecha con zona horaria"
+                ) from error
         if value is not None and not isinstance(value, datetime):
             raise ValueError("pickup_deadline_at debe ser una fecha con zona horaria")
         return value

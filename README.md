@@ -1,6 +1,7 @@
-# Arquitectura hexagonal con FastAPI
+# Locker Management Demo
 
-PoC de un **punto de entrega y recogida de paquetes**. **Delivery** registra un
+Demo de backend para gestionar **lockers y puntos de entrega y recogida de paquetes**,
+con arquitectura hexagonal y FastAPI. **Delivery** registra un
 paquete recibido del transportista para que lo recoja el destinatario; **Return**
 registra uno depositado por el cliente para que lo retire el transportista.
 Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
@@ -24,6 +25,11 @@ no son claves únicas; el UUID identifica el registro.
 ## Arrancar
 
 Necesitas Docker con Docker Compose. Ejecuta Compose desde la raíz del repositorio:
+
+Una instalación nueva usa el proyecto Compose `locker-management-demo` y la base,
+usuario y contraseña PostgreSQL locales `locker_management_demo`; RabbitMQ usa
+el mismo usuario y contraseña de demostración. Si ya tienes datos,
+aplica primero la [transición de identidad](#transición-de-identidad-en-instalaciones-existentes).
 
 ```bash
 docker compose up --build
@@ -73,6 +79,86 @@ campos retirados, desconocidos o de sistema, tipos incorrectos, textos obligator
 blancos o plazos sin zona devuelven `422`. Las acciones solo aceptan ausencia de
 cuerpo o `{}`; incluso `null` se rechaza. Los datos persisten en el volumen
 `postgres_data` al ejecutar `docker compose down`.
+
+### Transición de identidad en instalaciones existentes
+
+Antes del primer arranque con este nombre, haz una copia de seguridad. El nuevo
+proyecto predeterminado selecciona otros volúmenes; cambiar `POSTGRES_*` o
+`RABBITMQ_DEFAULT_*` tampoco modifica los usuarios ni credenciales ya existentes.
+
+Identifica el proyecto anterior, ambos contenedores y sus volúmenes reales:
+
+```bash
+docker compose ls
+# Sustituye PROYECTO_ANTERIOR por el nombre encontrado.
+docker compose -p PROYECTO_ANTERIOR ps -q db rabbitmq
+# Guarda los IDs y comprueba los volúmenes montados de cada contenedor.
+docker inspect CONTENEDOR_DB CONTENEDOR_RABBITMQ --format '{{.Id}} {{json .Mounts}}'
+docker volume inspect VOLUMEN_POSTGRES_EXISTENTE VOLUMEN_RABBITMQ_EXISTENTE
+# Guarda también la identidad del nodo del broker.
+docker compose -p PROYECTO_ANTERIOR exec rabbitmq rabbitmq-diagnostics -q status
+# Detén únicamente los escritores, manteniendo PostgreSQL y RabbitMQ en marcha.
+docker compose -p PROYECTO_ANTERIOR stop api worker
+```
+
+Comprueba las etiquetas `com.docker.compose.project` y `com.docker.compose.volume`
+de ambos volúmenes: deben corresponder al proyecto anterior y, respectivamente,
+a `postgres_data` y `rabbitmq_data`. Sin personalizaciones, el proyecto era
+`hexagonal_architecture` y los volúmenes `hexagonal_architecture_postgres_data`
+y `hexagonal_architecture_rabbitmq_data`; si usaste `-p` o `COMPOSE_PROJECT_NAME`,
+conserva los valores reales verificados.
+
+Guarda la selección en el archivo local `.env` de la raíz, ignorado por Git.
+Este ejemplo corresponde únicamente a los valores originales; sustitúyelos si
+tu instalación tenía otros:
+
+```dotenv
+COMPOSE_PROJECT_NAME=hexagonal_architecture
+POSTGRES_USER=hexagonal
+POSTGRES_PASSWORD=hexagonal
+POSTGRES_DB=hexagonal
+RABBITMQ_DEFAULT_USER=hexagonal
+RABBITMQ_DEFAULT_PASS=hexagonal
+```
+
+Para API, worker y Alembic ejecutados fuera de Compose, exporta las conexiones
+existentes en esa terminal; `uv run` no carga automáticamente ese `.env`:
+
+```bash
+export DATABASE_URL='postgresql+asyncpg://hexagonal:hexagonal@localhost:5432/hexagonal'
+# Usa el host/puerto reales del broker accesible desde esa terminal.
+export RABBITMQ_URL='amqp://hexagonal:hexagonal@localhost/'
+```
+
+Revisa `docker compose config`: las URLs PostgreSQL de `api`, `migrate` y `worker`
+deben coincidir con `db`, y las URLs AMQP de API/worker con `rabbitmq`. Los nombres
+físicos de `volumes.postgres_data` y `volumes.rabbitmq_data` deben ser los existentes
+comprobados. La salida contiene las contraseñas configuradas; consérvala localmente.
+También puedes fijar el proyecto con `-p` en **cada** comando. Antes de continuar,
+verifica que la configuración de `db` y `rabbitmq` coincide con la existente para
+que Compose conserve sus contenedores. Arranca la configuración revisada:
+
+```bash
+docker compose config
+docker compose up --build
+```
+
+Durante esta transición no ejecutes `down` ni `--force-recreate`, ni recrees el
+broker para aplicar el nombre. Comprueba después los IDs, montajes e identidad de
+nodo con los mismos comandos: el contenedor y nodo RabbitMQ deben ser los mismos,
+y ambos volúmenes físicos deben conservarse. Si Compose propone recrear el broker,
+detén la transición y revisa la configuración conservada antes de continuar.
+
+Comprueba los registros existentes y la revisión con
+`docker compose run --rm migrate alembic current`, y prueba una cotización nueva.
+La transición de nombre no requiere otra revisión Alembic. Esta comprobación
+supone una instalación ya en el head actual `0005`; las versiones de esquema
+anteriores siguen el procedimiento de
+[migración segura](#base-de-datos-de-la-versión-anterior). No se añade recuperación
+ni migración de mensajes; se conserva el comportamiento actual de RabbitMQ.
+Conserva proyecto, credenciales y URLs explícitos también si reviertes el cambio
+de contenido. Cambiar un valor predeterminado no mueve ni recupera datos. No
+borres, copies ni renombres los volúmenes, la base o los roles para esta transición.
 
 ## Lockers: configuración y capacidad física
 
@@ -286,7 +372,7 @@ ejecuta el comparador. No hay reserva ni contratación.
 ## Organización
 
 ```text
-hexagonal_architecture/
+locker-management-demo/
 ├── backend/
 │   ├── main.py
 │   ├── worker.py
@@ -519,12 +605,12 @@ Instala las dependencias y ejecuta Alembic desde `backend/`:
 ```bash
 # Desde la raíz del repositorio.
 cd backend
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run alembic upgrade head
 ```
 
 La API y Alembic usan `DATABASE_URL`. Si no se define, ambos conectan a
-`postgresql+asyncpg://hexagonal:hexagonal@localhost:5432/hexagonal`.
+`postgresql+asyncpg://locker_management_demo:locker_management_demo@localhost:5432/locker_management_demo`.
 
 Después de modificar los modelos de persistencia, desde `backend/`:
 
@@ -609,12 +695,80 @@ Detén las escrituras o conserva la versión capaz de liberarlas hasta resolverl
 Para recuperar datos, usa la copia de seguridad según el procedimiento operativo;
 no fuerces un downgrade destructivo ni borres volúmenes para superar las guardas.
 
+## CI del backend y comprobaciones locales
+
+El workflow `.github/workflows/backend-ci.yml` ejecuta cinco checks independientes
+para todas las PR dirigidas a `main` y cada push a `main`, sin filtros por rutas.
+Los jobs corren en paralelo, tienen tiempos máximos y cancelan una ejecución
+anterior de la misma PR cuando llega otro commit. Usa permisos de lectura y
+caché de uv; la instalación bloqueada comprueba siempre `backend/uv.lock`.
+
+| Check | Comprobación | Dependencias |
+| --- | --- | --- |
+| `Ruff` | Lint, imports y formato sin modificar archivos. | Python 3.11. |
+| `Pyright` | Análisis configurado, cero errores y advertencias. | Python 3.11, sin servicios. |
+| `Unit tests` | `tests/unit`, dominio, aplicación y adaptadores aislados. | Python 3.11, sin URLs de test ni servicios. |
+| `PostgreSQL integration` | `tests/integration`, persistencia, API y migraciones Alembic. | Python 3.11, PostgreSQL 17 temporal y `TEST_DATABASE_URL` explícita; sin RabbitMQ. |
+| `Docker smoke` | Construcción bloqueada, migraciones y `GET /lockers` → HTTP 200 con `[]` en una base nueva. | Imagen Python 3.13, Docker Compose, PostgreSQL y RabbitMQ temporales. |
+
+Para reproducir los checks Python desde `backend/`, instala uv y Python 3.11 y
+usa las dependencias bloqueadas. CI fija uv 0.13.1 y Docker usa la misma versión.
+
+```bash
+uv sync --python 3.11 --locked --extra dev
+export UV_LOCKED=1
+uv run --extra dev ruff check .
+uv run --extra dev ruff format --check .
+uv run --extra dev pyright --project .. --warnings
+env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL \
+  uv run --extra dev python -m unittest discover -s tests/unit -t . -v
+# Base dedicada, con permisos para crear/eliminar esquemas; sin broker.
+env -u TEST_RABBITMQ_URL \
+  TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/locker_management_demo_test' \
+  uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
+```
+
+`UV_LOCKED=1` evita que `uv run` cambie silenciosamente la resolución. Las URLs,
+la preparación de la base de pruebas y el comando de la suite completa se explican
+en [Pruebas](#pruebas). Actions selecciona unitarias e integración; la suite
+completa local también incluye `tests/messaging` y requiere ambas URLs de test.
+Los cinco checks no configuran por sí mismos la protección de `main`.
+
+Ruff usa `backend/pyproject.toml`: Python 3.11, longitud 88 y reglas `E4`, `E7`,
+`E9`, `F` e `I`. Analiza producción y tests, incluido `migrations/env.py`.
+Solo excluye exactamente las cinco revisiones históricas `0001`–`0005`, también
+si se pasan sus rutas explícitamente; las revisiones futuras se analizan.
+Para aplicar correcciones seguras e igualar el formato local, desde `backend/`:
+
+```bash
+uv run --locked --extra dev ruff check --fix .
+uv run --locked --extra dev ruff format .
+```
+
+Revisa el diff antes de integrar, especialmente los imports que registran modelos
+SQLModel. CI ejecuta únicamente las variantes de comprobación.
+
+Para reproducir Docker smoke desde la raíz necesitas Docker y Docker Compose
+**2.24.0 o superior**, con soporte para `!reset`:
+
+```bash
+scripts/ci/smoke.sh
+```
+
+El script combina `compose.yaml` y `compose.ci.yaml`, genera un proyecto temporal
+con volúmenes nuevos y construye/arranca API, migraciones, PostgreSQL y RabbitMQ.
+Espera el arranque hasta 120 segundos y la respuesta HTTP interna hasta 60 segundos.
+No publica puertos ni arranca el worker; comprueba también el acceso al esquema
+migrado. En caso de fallo muestra estado y logs, devuelve un código no cero y
+limpia solo contenedores, red y volúmenes de ese proyecto temporal, conservando
+los datos de desarrollo. No requiere URLs ni credenciales externas.
+
 ## Tipos: Pyright y Pylance
 
 El extra `dev` incluye Pyright, fijado en `uv.lock`. Desde `backend/`:
 
 ```bash
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run --extra dev pyright --project .. --warnings
 ```
 
@@ -640,7 +794,7 @@ dependencias de desarrollo y ejecuta las unitarias desde `backend/`:
 
 ```bash
 # Directorio de trabajo: backend/
-uv sync --extra dev
+uv sync --locked --extra dev
 uv run --extra dev python -m unittest discover -s tests/unit -t . -v
 ```
 
@@ -662,12 +816,12 @@ Desde `backend/`, ejecuta integración o la suite completa:
 
 ```bash
 # Solo integración.
-TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/locker_management_demo_test' \
   uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f
 
 # Suite completa, incluyendo mensajería (necesita ambas URLs).
-TEST_RABBITMQ_URL='amqp://test_user:test_password@localhost/hexagonal_test' \
-TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/hexagonal_test' \
+TEST_RABBITMQ_URL='amqp://test_user:test_password@localhost/locker_management_demo_test' \
+TEST_DATABASE_URL='postgresql+asyncpg://test_user:test_password@localhost:5432/locker_management_demo_test' \
   uv run --extra dev python -m unittest discover -s tests -t . -v -f
 ```
 
@@ -682,7 +836,7 @@ raíz del repositorio:
 
 ```bash
 docker compose exec \
-  -e TEST_DATABASE_URL=postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal_test \
+  -e TEST_DATABASE_URL=postgresql+asyncpg://locker_management_demo:locker_management_demo@db:5432/locker_management_demo_test \
   api python -m unittest discover -s tests/integration -t . -v -f
 ```
 

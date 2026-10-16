@@ -1,7 +1,8 @@
 """Fixed provider behavior with cancellable simulation and unchanged tariffs."""
+
 import asyncio
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 from typing import ClassVar
 
 from application.quotations.errors import ProviderTechnicalError
@@ -28,7 +29,7 @@ async def _simulate(profile: _SimulationProfile) -> None:
     if outcome < profile.no_response_probability:
         await asyncio.Event().wait()
     elif outcome < profile.no_response_probability + profile.error_probability:
-        raise ProviderTechnicalError('Simulated provider failure')
+        raise ProviderTechnicalError("Simulated provider failure")
 
 
 def _billable_weight_and_zone(request: ShippingQuoteRequest) -> tuple[int, int]:
@@ -43,14 +44,19 @@ class SimulatedEconomyProvider:
 
     @property
     def code(self) -> str:
-        return 'sim-economy'
+        return "sim-economy"
 
     async def quote(self, request: ShippingQuoteRequest) -> QuoteOffers:
         await _simulate(self.__profile)
         kilograms, zone = _billable_weight_and_zone(request)
         days = 3 + zone
-        return QuoteOffers((ShippingOffer('economy', 250 + 40 * kilograms + 100 * zone,
-                                         'EUR', days, days),))
+        return QuoteOffers(
+            (
+                ShippingOffer(
+                    "economy", 250 + 40 * kilograms + 100 * zone, "EUR", days, days
+                ),
+            )
+        )
 
 
 class SimulatedStandardProvider:
@@ -58,14 +64,19 @@ class SimulatedStandardProvider:
 
     @property
     def code(self) -> str:
-        return 'sim-standard'
+        return "sim-standard"
 
     async def quote(self, request: ShippingQuoteRequest) -> QuoteOffers:
         await _simulate(self.__profile)
         kilograms, zone = _billable_weight_and_zone(request)
         days = 2 + zone
-        return QuoteOffers((ShippingOffer('standard', 400 + 60 * kilograms + 150 * zone,
-                                         'EUR', days, days),))
+        return QuoteOffers(
+            (
+                ShippingOffer(
+                    "standard", 400 + 60 * kilograms + 150 * zone, "EUR", days, days
+                ),
+            )
+        )
 
 
 class SimulatedExpressProvider:
@@ -73,11 +84,16 @@ class SimulatedExpressProvider:
 
     @property
     def code(self) -> str:
-        return 'sim-express'
+        return "sim-express"
 
     async def quote(self, request: ShippingQuoteRequest) -> QuoteOffers:
         await _simulate(self.__profile)
         kilograms, zone = _billable_weight_and_zone(request)
         days = 1 + zone
-        return QuoteOffers((ShippingOffer('express', 650 + 90 * kilograms + 200 * zone,
-                                         'EUR', days, days),))
+        return QuoteOffers(
+            (
+                ShippingOffer(
+                    "express", 650 + 90 * kilograms + 200 * zone, "EUR", days, days
+                ),
+            )
+        )

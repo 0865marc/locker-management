@@ -11,7 +11,7 @@ class PublicationError(Exception):
 
 class SubmissionError(Exception):
     def __init__(self, quotation_id: UUID) -> None:
-        super().__init__('Quotation publication failed')
+        super().__init__("Quotation publication failed")
         self.quotation_id = quotation_id
 
 

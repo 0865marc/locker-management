@@ -1,8 +1,8 @@
 from typing import Protocol
 from uuid import UUID
 
-from domain.returns import Return
 from domain.lockers import Dimensions
+from domain.returns import Return
 
 
 class ReturnRepository(Protocol):
@@ -10,7 +10,9 @@ class ReturnRepository(Protocol):
 
     async def save(self, item: Return) -> None: ...
 
-    async def receive_in_locker(self, item: Return, locker_id: UUID, dimensions: Dimensions) -> Return: ...
+    async def receive_in_locker(
+        self, item: Return, locker_id: UUID, dimensions: Dimensions
+    ) -> Return: ...
 
     async def list_all(self) -> list[Return]: ...
 

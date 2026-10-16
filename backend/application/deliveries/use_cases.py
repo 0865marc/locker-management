@@ -2,9 +2,9 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from application.deliveries.ports import DeliveryRepository
 from domain.deliveries import Delivery, DeliveryConflictError
 from domain.lockers import Dimensions, validate_reception
-from application.deliveries.ports import DeliveryRepository
 
 
 class DeliveryNotFoundError(LookupError):
@@ -12,7 +12,9 @@ class DeliveryNotFoundError(LookupError):
 
 
 class DeliveryService:
-    def __init__(self, repository: DeliveryRepository, clock: Callable[[], datetime]) -> None:
+    def __init__(
+        self, repository: DeliveryRepository, clock: Callable[[], datetime]
+    ) -> None:
         self.repository = repository
         self.clock = clock
 
@@ -36,7 +38,9 @@ class DeliveryService:
         )
         validate_reception(locker_id, parcel_dimensions)
         if locker_id is not None and parcel_dimensions is not None:
-            return await self.repository.receive_in_locker(delivery, locker_id, parcel_dimensions)
+            return await self.repository.receive_in_locker(
+                delivery, locker_id, parcel_dimensions
+            )
         await self.repository.save(delivery)
         return delivery
 
@@ -49,7 +53,9 @@ class DeliveryService:
 
     async def return_to_carrier(self, identifier: UUID) -> Delivery:
         delivery = await self._find(identifier)
-        return await self._save_parcel_departure(delivery.return_to_carrier(self.clock()))
+        return await self._save_parcel_departure(
+            delivery.return_to_carrier(self.clock())
+        )
 
     async def _find(self, identifier: UUID) -> Delivery:
         delivery = await self.repository.get_by_id(identifier)
@@ -59,5 +65,7 @@ class DeliveryService:
 
     async def _save_parcel_departure(self, delivery: Delivery) -> Delivery:
         if not await self.repository.save_exit(delivery):
-            raise DeliveryConflictError("Otro proceso ya ha registrado la salida del paquete")
+            raise DeliveryConflictError(
+                "Otro proceso ya ha registrado la salida del paquete"
+            )
         return delivery

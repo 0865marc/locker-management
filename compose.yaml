@@ -1,11 +1,13 @@
+name: locker-management-demo
+
 services:
   api:
     build: ./backend
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal
-      RABBITMQ_URL: amqp://hexagonal:hexagonal@rabbitmq/
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-locker_management_demo}:${POSTGRES_PASSWORD:-locker_management_demo}@db:5432/${POSTGRES_DB:-locker_management_demo}
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-locker_management_demo}:${RABBITMQ_DEFAULT_PASS:-locker_management_demo}@rabbitmq/
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -16,8 +18,8 @@ services:
     build: ./backend
     command: ["python", "worker.py"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal
-      RABBITMQ_URL: amqp://hexagonal:hexagonal@rabbitmq/
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-locker_management_demo}:${POSTGRES_PASSWORD:-locker_management_demo}@db:5432/${POSTGRES_DB:-locker_management_demo}
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-locker_management_demo}:${RABBITMQ_DEFAULT_PASS:-locker_management_demo}@rabbitmq/
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -27,8 +29,8 @@ services:
   rabbitmq:
     image: rabbitmq:4
     environment:
-      RABBITMQ_DEFAULT_USER: hexagonal
-      RABBITMQ_DEFAULT_PASS: hexagonal
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-locker_management_demo}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-locker_management_demo}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -41,7 +43,7 @@ services:
     build: ./backend
     command: ["alembic", "upgrade", "head"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://hexagonal:hexagonal@db:5432/hexagonal
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-locker_management_demo}:${POSTGRES_PASSWORD:-locker_management_demo}@db:5432/${POSTGRES_DB:-locker_management_demo}
     depends_on:
       db:
         condition: service_healthy
@@ -51,9 +53,9 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: hexagonal
-      POSTGRES_PASSWORD: hexagonal
-      POSTGRES_DB: hexagonal
+      POSTGRES_USER: ${POSTGRES_USER:-locker_management_demo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-locker_management_demo}
+      POSTGRES_DB: ${POSTGRES_DB:-locker_management_demo}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

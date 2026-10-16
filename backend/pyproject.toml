@@ -1,7 +1,7 @@
 [project]
-name = "hexagonal-fastapi"
+name = "locker-management-demo"
 version = "0.1.0"
-description = "Delivery y Return: arquitectura hexagonal con FastAPI y PostgreSQL"
+description = "Demo de backend para gestionar lockers y puntos de entrega y recogida con FastAPI y PostgreSQL"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
@@ -15,7 +15,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["httpx>=0.27,<1", "pyright>=1.1.414,<2"]
+dev = [
+    "httpx>=0.27,<1",
+    "pyright>=1.1.414,<2",
+    "ruff>=0.15,<0.16",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -26,3 +30,18 @@ py-modules = ["main", "worker"]
 
 [tool.setuptools.packages.find]
 include = ["domain*", "application*", "adapters*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+force-exclude = true
+extend-exclude = [
+    "adapters/database/migrations/versions/0001_create_delivery_and_return.py",
+    "adapters/database/migrations/versions/0002_parcel_custody.py",
+    "adapters/database/migrations/versions/0003_lockers_and_custody.py",
+    "adapters/database/migrations/versions/0004_locker_geography.py",
+    "adapters/database/migrations/versions/0005_shipping_quotations.py",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

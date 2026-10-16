@@ -23,3 +23,13 @@ El coordinador ha capturado la base de OpenAPI y los metadatos/DDL de ocho tabla
 - `uv run --extra dev pyright --project .. --warnings` ejecutado desde backend: cero errores y cero advertencias, confirmado también por el revisor independiente.
 - Revisión independiente sin hallazgos: seis puertos en aplicación, modelos independientes de ejecutores, paquetes sin efectos laterales, sin ciclos ni imports obsoletos o dependencias de dominio hacia aplicación.
 - `openspec validate refactor-application-feature-boundaries --strict` y `git diff --check` correctos. Implementación completa; sincronización y archivado no realizados.
+
+## Archivado y verificación para la PR
+
+- Archivado autorizado el 2026-10-16. El cambio declara `skip_specs: true`; no tiene deltas que sincronizar.
+- Integrado `main` en `a94ae06`, conservando su manejo HTTP explícito, identidad del proyecto, credenciales configurables, dependencias bloqueadas y CI. Los módulos trasladados adoptan el formato e imports exigidos por Ruff.
+- La reconciliación del delta asíncrono anterior conserva los escenarios de runtime añadidos en `main`; ese cambio sigue activo, sin sincronizar ni archivar.
+- Verificación posterior a la integración: 77 pruebas unitarias (3.599 s), 50 de PostgreSQL (26.886 s) y 1 de mensajería (0.485 s), todas correctas y sin omisiones. Se restauró el doble determinista de éxito del smoke que la resolución inicial había perdido.
+- `uv sync --locked --extra dev`, `ruff check .`, `ruff format --check .` y `uv run --extra dev pyright --project .. --warnings` correctos; Pyright informa cero errores y cero advertencias. Configuración Compose válida.
+- OpenAPI completo (12 rutas) y DDL/índices PostgreSQL (8 tablas) idénticos a `main` en `a94ae06`. Revisión independiente de producción y de los 22 módulos de pruebas sin hallazgos pendientes.
+- `openspec validate --all --strict`: 10 elementos correctos. Los checks de GitHub Actions, incluido Docker smoke, se ejecutarán al abrir la PR.
