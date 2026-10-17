@@ -32,6 +32,34 @@ estáticos generados; el navegador consulta directamente la API del puerto 8000.
 El frontend puede arrancar aunque la API no esté disponible: en ese caso muestra
 el estado de error y permite reintentar cuando el backend esté preparado.
 
+### Navegar y buscar una ubicación
+
+La vista inicial se acerca a la península. Usa la rueda sobre el mapa para
+acercar o alejar, o sus controles de zoom; «Ver España» encuadra también Baleares,
+Canarias, Ceuta y Melilla. Las cargas vacías y actualizaciones conservan tu
+encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
+
+Encima de las dimensiones, escribe una **dirección o código postal** y pulsa
+Enter o «Buscar». No se consulta mientras escribes. Un código de cinco dígitos
+se conserva como texto, incluidos ceros iniciales como `01001`. Una coincidencia
+se sitúa directamente; con varias, elige uno de hasta cinco resultados. El punto
+azul señala la ubicación buscada en el área libre del mapa, con el listado
+abierto o cerrado. Buscar no filtra lockers, cambia su disponibilidad ni utiliza
+las medidas del paquete; tampoco geocodifica lockers sin coordenadas.
+
+La consulta se envía directamente desde tu navegador al servicio público
+[Photon](https://photon.komoot.io/), basado en datos de OpenStreetMap, con país
+España. Las direcciones usan `/api/` y los códigos postales `/structured`, según
+[Photon API v1](https://github.com/komoot/photon/blob/master/docs/api-v1.md).
+No requiere claves ni proxy y el frontend sigue siendo estático y compatible
+con Cloudflare Pages. Es un servicio de demostración para uso razonable, sin
+garantía de disponibilidad: los errores y el límite de cinco segundos tienen
+su propio estado y reintento, sin interrumpir la consulta de lockers. Cambiar la
+búsqueda cancela la anterior; sus respuestas obsoletas se descartan. No se guardan
+las consultas ni se hacen reintentos automáticos. Las pruebas controlan Photon
+y las teselas; no demuestran conectividad real o CORS del proveedor externo en
+este entorno.
+
 ### Desarrollo opcional con npm
 
 Para editar el frontend con recarga automática necesitas **Node 24 LTS** y npm.
@@ -138,6 +166,46 @@ El mapa depende de teselas externas de
 con atribución visible. Si fallan, aparece un aviso y la lista/detalles siguen
 utilizables. Las pruebas controlan las teselas; no demuestran conectividad con
 el proveedor real.
+
+### Generar lockers sintéticos de demostración
+
+El generador es manual: no se ejecuta al arrancar, compilar o abrir el mapa.
+Añade por defecto **1000 lockers**, con **semilla 42**, a
+`http://127.0.0.1:8000`. Comprueba primero los payloads con `--dry-run`, que
+imprime un array JSON y no hace peticiones. Desde la raíz, con una API de
+**demostración** y su imagen reconstruida para incluir el script:
+
+```bash
+docker compose up --build -d api
+docker compose exec -T api python scripts/seed_lockers.py --dry-run > /tmp/lockers-demo.json
+# Tras revisar el JSON, creación explícita en la API de demostración:
+docker compose exec api python scripts/seed_lockers.py --count 1000 --seed 42
+```
+
+También puedes ejecutarlo localmente desde `backend/`:
+
+```bash
+uv run python scripts/seed_lockers.py --dry-run > /tmp/lockers-demo.json
+uv run python scripts/seed_lockers.py --base-url http://127.0.0.1:8000 --count 1000 --seed 42
+```
+
+`--count` exige un entero positivo; `--seed` acepta un entero y `--base-url`
+selecciona la API HTTP(S). Cada locker lleva alias `DEMO-<seed>-<índice>`, dirección
+`null`, estado activo y seis celdas habilitadas y libres de 400×400×600 mm. Sus
+posiciones se muestrean dentro de los polígonos terrestres españoles de Natural
+Earth, respetando huecos; no se usa Photon. La [procedencia y licencia del dato](backend/scripts/data/README.md)
+identifica el extracto local de dominio público y su versión. Son ubicaciones
+sintéticas con límites generalizados, sin instalaciones o direcciones reales ni
+cuotas iguales por territorio. «Ver España» permite explorar también las islas.
+
+La misma semilla reproduce los payloads y las coordenadas, no los UUID asignados
+por el servidor. **Repetir añade nuevos registros**, incluso con la misma semilla;
+no hay idempotencia. El script crea secuencialmente mediante `POST /lockers` y se
+detiene al primer fallo, informa cuántas creaciones se confirmaron y sale con
+código no cero. La última respuesta incierta puede corresponder a una creación:
+no reintenta escrituras ni borra los datos existentes o ya creados. Revisa el
+resultado antes de volver a ejecutarlo. Los smoke tests de generación usan solo
+stacks desechables y conservan los datos del usuario.
 
 ### CORS local y de producción
 

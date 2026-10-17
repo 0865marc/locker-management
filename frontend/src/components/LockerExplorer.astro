@@ -24,6 +24,42 @@
         </div>
       </div>
       <form
+        id="location-search"
+        class="location-search"
+        aria-label="Buscar dirección o código postal"
+        autocomplete="off"
+      >
+        <label for="location-query">Dirección o código postal</label>
+        <div class="search-input-row">
+          <input
+            id="location-query"
+            type="search"
+            placeholder="Ej. Gran Vía, Madrid o 01001"
+            aria-describedby="search-provider"
+          />
+          <button type="submit">Buscar</button>
+        </div>
+        <p id="search-provider">
+          La consulta se envía a <a href="https://photon.komoot.io/">Photon</a>,
+          con datos de OpenStreetMap.
+        </p>
+        <div
+          id="search-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          hidden
+        ></div>
+        <button id="search-retry" type="button" hidden>
+          Reintentar búsqueda
+        </button>
+        <ul
+          id="search-results"
+          aria-label="Ubicaciones encontradas"
+          hidden
+        ></ul>
+      </form>
+      <form
         id="parcel-form"
         aria-labelledby="parcel-title"
         aria-describedby="parcel-note"

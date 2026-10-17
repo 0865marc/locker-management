@@ -622,3 +622,108 @@ input[aria-invalid='true'] {
     animation: none;
   }
 }
+
+/* Geographic search is independent of parcel measurements and locker results. */
+.location-search {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+  margin-bottom: 17px;
+}
+.location-search > label {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.search-input-row {
+  display: flex;
+  gap: 7px;
+}
+.search-input-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d7e1e7;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #17384d;
+  background: #fafcfd;
+}
+.search-input-row input::placeholder {
+  color: #8494a0;
+  font-size: 10px;
+}
+.search-input-row button {
+  font-size: 11px;
+  padding: 9px;
+}
+#search-provider {
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+#search-provider a {
+  text-underline-offset: 2px;
+}
+#search-status {
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin-top: 10px;
+}
+#search-retry {
+  margin-top: 10px;
+  font-size: 10px;
+  padding: 7px;
+}
+#search-results {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  max-height: 150px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+#search-results button {
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: left;
+  justify-content: flex-start;
+  width: 100%;
+  border: 0;
+  padding: 9px;
+  overflow-wrap: anywhere;
+}
+#search-results li + li {
+  border-top: 1px solid var(--line);
+}
+#search-results button[aria-pressed='true'] {
+  background: #edf6f4;
+  box-shadow: inset 3px 0 var(--teal);
+}
+.search-location {
+  border: 3px solid white;
+  border-radius: 50%;
+  background: #1767b9;
+  box-shadow:
+    0 0 0 6px #1767b926,
+    0 2px 8px #17394e70;
+}
+.search-location span {
+  display: block;
+  width: 6px;
+  height: 6px;
+  background: white;
+  border-radius: 50%;
+  margin: 6px;
+}
+@media (max-width: 760px) {
+  .search-input-row input {
+    font-size: 16px;
+  }
+  .search-input-row input::placeholder {
+    font-size: 10px;
+  }
+}

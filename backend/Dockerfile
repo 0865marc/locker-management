@@ -15,6 +15,7 @@ COPY application ./application
 COPY adapters ./adapters
 RUN uv sync --locked --extra dev --no-editable
 COPY tests ./tests
+COPY scripts ./scripts
 COPY alembic.ini ./
 
 EXPOSE 8000

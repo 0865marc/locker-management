@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { loadLockers } from '../lib/locker-api';
+import { searchPlaces, isPostalCode, type Place } from '../lib/geocoder';
 import type { AvailableLocker } from '../lib/lockers';
 function element<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -57,10 +58,14 @@ const spainBounds: L.LatLngBoundsExpression = [
   [27.5, -18.5],
   [44, 4.5],
 ];
+const peninsulaBounds: L.LatLngBoundsExpression = [
+  [35.8, -9.4],
+  [43.9, 3.4],
+];
 const map = L.map('map', {
-  scrollWheelZoom: false,
+  scrollWheelZoom: true,
   zoomControl: false,
-}).fitBounds(spainBounds, {
+}).fitBounds(peninsulaBounds, {
   padding: [15, 15],
 });
 const zoom = L.control.zoom({ position: 'topright' }).addTo(map);
@@ -110,17 +115,17 @@ function arrow(): SVGSVGElement {
 // Pan to the space between overlays; the stored marker coordinates stay unchanged.
 function revealPosition(position: [number, number]): boolean {
   const menu = element('map-panels').getBoundingClientRect();
-  const panel = results.getBoundingClientRect();
+  const panel = results.hidden ? null : results.getBoundingClientRect();
   const size = map.getSize();
   const left = menu.right + 12;
-  let right = panel.left - 12;
+  let right = panel ? panel.left - 12 : size.x - 24;
   let top = 24;
   let bottom = size.y - 24;
-  if (right - left < 40) {
+  if (window.matchMedia('(max-width: 760px)').matches) {
     // On mobile the list is below the menu, leaving a narrow strip on its right.
     right = size.x - 12;
     top = (zoom.getContainer()?.getBoundingClientRect().bottom ?? 80) + 48;
-    bottom = panel.top - 12;
+    bottom = panel ? panel.top - 12 : size.y - 24;
   }
   const target = L.point((left + right) / 2, (top + bottom) / 2);
   map.panBy(map.latLngToContainerPoint(position).subtract(target), {
@@ -236,7 +241,6 @@ function render(): void {
       markers.set(locker.id, marker);
     }
   });
-  if (!markers.size) map.fitBounds(spainBounds, { padding: [15, 15] });
   if (selectedId && lockers.some((item) => item.id === selectedId))
     select(selectedId, false, false);
   else {
@@ -289,3 +293,105 @@ async function update(): Promise<void> {
 refresh.addEventListener('click', update);
 retry.addEventListener('click', update);
 void update();
+
+const searchForm = element<HTMLFormElement>('location-search');
+const searchInput = element<HTMLInputElement>('location-query');
+const searchStatus = element('search-status');
+const searchResults = element('search-results');
+const searchRetry = element<HTMLButtonElement>('search-retry');
+let searchGeneration = 0;
+let pendingSearch: AbortController | null = null;
+let searchMarker: L.Marker | null = null;
+function invalidateSearch(): void {
+  searchGeneration++;
+  pendingSearch?.abort();
+  pendingSearch = null;
+  searchForm.removeAttribute('aria-busy');
+  searchResults.replaceChildren();
+  searchResults.hidden = true;
+  searchStatus.hidden = true;
+  searchRetry.hidden = true;
+  searchMarker?.remove();
+  searchMarker = null;
+}
+searchInput.addEventListener('input', invalidateSearch);
+function locate(
+  place: Place,
+  postal: boolean,
+  selectedButton?: HTMLButtonElement,
+): void {
+  searchMarker?.remove();
+  searchMarker = L.marker(place.position, {
+    title: `Ubicación buscada: ${place.label}`,
+    icon: L.divIcon({
+      className: 'search-location',
+      html: '<span aria-hidden="true"></span>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    }),
+  }).addTo(map);
+  map.closePopup();
+  map.setView(place.position, postal ? 13 : 16, { animate: false });
+  revealPosition(place.position);
+  searchStatus.className = 'search-success';
+  searchStatus.textContent = `Ubicación localizada: ${place.label}`;
+  for (const button of searchResults.querySelectorAll('button'))
+    button.setAttribute('aria-pressed', String(button === selectedButton));
+}
+searchForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  invalidateSearch();
+  const query = searchInput.value.trim();
+  searchStatus.hidden = false;
+  if (!query) {
+    searchStatus.className = '';
+    searchStatus.textContent = 'Escribe una dirección o un código postal.';
+    return;
+  }
+  const generation = searchGeneration;
+  const controller = new AbortController();
+  pendingSearch = controller;
+  searchForm.setAttribute('aria-busy', 'true');
+  searchStatus.className = 'loading';
+  searchStatus.textContent = 'Buscando ubicaciones…';
+  try {
+    const places = await searchPlaces(query, controller.signal);
+    if (generation !== searchGeneration || controller.signal.aborted) return;
+    searchStatus.className = '';
+    if (!places.length)
+      searchStatus.textContent =
+        'No se han encontrado ubicaciones en España. Prueba otra consulta.';
+    else if (places.length === 1) locate(places[0]!, isPostalCode(query));
+    else {
+      searchStatus.textContent =
+        'Selecciona una ubicación para verla en el mapa.';
+      searchResults.hidden = false;
+      for (const place of places) {
+        const li = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = place.label;
+        button.setAttribute('aria-pressed', 'false');
+        button.addEventListener('click', () =>
+          locate(place, isPostalCode(query), button),
+        );
+        li.append(button);
+        searchResults.append(li);
+      }
+    }
+  } catch (error) {
+    if (generation !== searchGeneration || controller.signal.aborted) return;
+    searchStatus.className = 'error';
+    searchStatus.textContent =
+      error instanceof Error
+        ? error.message
+        : 'No se ha podido completar la búsqueda.';
+    searchRetry.hidden = false;
+  } finally {
+    if (generation === searchGeneration) {
+      pendingSearch = null;
+      searchForm.removeAttribute('aria-busy');
+    }
+  }
+});
+searchRetry.addEventListener('click', () => searchForm.requestSubmit());

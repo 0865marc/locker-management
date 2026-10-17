@@ -28,6 +28,32 @@ The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled lengt
 - **THEN** those interactions operate on the panel without being interpreted as map navigation
 - **AND** toggling the locker list or manually refreshing availability preserves entered values
 
+### Requirement: Locate a Spanish address or postal code
+
+A labelled "Dirección o código postal" field SHALL appear above the parcel dimensions. A nonempty query SHALL search Spanish locations only after Enter or an explicit search action, never on each keystroke. Five-digit postal codes SHALL remain strings, including leading zeroes. One valid result SHALL be located directly; multiple results SHALL offer at most five keyboard-selectable labels. Choosing a location SHALL zoom to its position in the visible map area.
+
+#### Scenario: Explicit address or postal-code search
+- **WHEN** the user types an address or "01001" and submits it
+- **THEN** one geographic request is issued for Spain, preserving postal text, and a single valid result is brought into view
+- **AND** merely typing or submitting blank text issues no geographic request
+
+#### Scenario: Resolve an ambiguous location
+- **WHEN** the provider returns multiple valid Spanish locations
+- **THEN** up to five labels are displayed as literal text for selection, without moving the map until one is selected
+- **AND** selection changes only the map view, preserves parcel values and locker availability/selection, and does not force the locker list open
+
+### Requirement: Isolate geographic-search failures and stale responses
+
+Geographic search SHALL have independent loading, no-results and error states, with a five-second timeout and explicit retry. It SHALL accept only valid Spanish point results and render provider text safely. A superseded or cancelled response SHALL NOT update results or move the map. Search SHALL NOT mutate lockers, infer missing locker coordinates or call locker APIs, and a search failure SHALL leave the existing map and locker data usable.
+
+#### Scenario: No result or unavailable provider
+- **WHEN** geographic search returns no valid Spanish result, fails, times out or yields malformed data
+- **THEN** its own status communicates no results or failure and permits another explicit attempt without replacing locker results or their status
+
+#### Scenario: A later query supersedes an earlier request
+- **WHEN** a user edits or replaces a pending query and its earlier response subsequently arrives
+- **THEN** the earlier response is ignored, and only the latest submitted query can update search results or map position
+
 ### Requirement: Keep locker results in a separate collapsible overlay
 
 The locker list SHALL initially be collapsed and open through a keyboard-accessible "Ver lockers" control outside the parcel form. Its overlay SHALL retain all list and detail functionality with internal scrolling and an accessible close control. Selecting a map marker SHALL reveal that locker's details. Loading, empty, error, retry and refresh controls SHALL remain accessible while the list is closed.
@@ -69,11 +95,20 @@ The frontend SHALL read the complete locker list and consider a locker available
 
 ### Requirement: Display real coordinates across Spain
 
-The map SHALL initially frame mainland Spain, the Balearic Islands, the Canary Islands, Ceuta and Melilla, including when results are empty. Available lockers with valid finite WGS84 coordinates SHALL be represented at their stored positions without inferring or altering geography. The user SHALL be able to pan, zoom and return to the Spain view.
+The map SHALL initially frame mainland Spain more closely than the all-territories view. "Ver España" SHALL frame mainland Spain, the Balearic Islands, the Canary Islands, Ceuta and Melilla. Available lockers with valid coordinates SHALL keep their stored positions. Mouse-wheel input over the map SHALL zoom in or out; input over overlay controls SHALL NOT navigate it. Data loads and empty results SHALL preserve the current view.
 
 #### Scenario: Island and autonomous-city lockers remain reachable
-- **WHEN** available lockers have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla
+- **WHEN** available lockers have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla and the user chooses "Ver España"
 - **THEN** all five positions are included in the Spain view and remain individually selectable from the results
+
+#### Scenario: Closer initial view and wheel navigation
+- **WHEN** the page opens and the user scrolls the wheel over the map in either direction
+- **THEN** the initial view focuses on mainland Spain, wheel-up zooms in and wheel-down zooms out
+- **AND** scrolling the search, parcel or results panel does not change map zoom
+
+#### Scenario: Empty loads preserve user navigation
+- **WHEN** a load or refresh completes without positioned lockers after initial framing or a geographic search
+- **THEN** the current view remains unchanged instead of resetting to the all-territories bounds
 
 #### Scenario: Coordinates are independent of address
 - **WHEN** an available locker has valid coordinates but a null address
@@ -86,7 +121,7 @@ Available lockers with null, incomplete, nonnumeric, nonfinite or out-of-range c
 
 #### Scenario: Available lockers cannot be mapped
 - **WHEN** all available lockers lack usable coordinates
-- **THEN** the list and available count remain populated, the map stays on Spain without markers, and the UI explains that these lockers have no usable map coordinates
+- **THEN** the list and available count remain populated, the map retains its current view without locker markers, and the UI explains that these lockers have no usable map coordinates
 - **AND** this state is distinct from having no available lockers
 
 ### Requirement: Identify and inspect each available locker

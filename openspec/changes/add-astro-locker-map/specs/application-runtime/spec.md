@@ -2,6 +2,29 @@
 
 ## ADDED Requirements
 
+### Requirement: Generate synthetic lockers manually through the API
+
+The repository SHALL provide a manually invoked script that creates 1000 synthetic lockers by default using the existing POST /lockers API. It SHALL support a positive count, API base URL, reproducible random seed and a dry run without HTTP writes. Generated lockers SHALL be active with enabled free compartments, a synthetic alias, null address and terrestrial coordinates within the bundled Spanish boundary. Startup and builds SHALL NOT run the script automatically.
+
+#### Scenario: Create the requested demonstration collection
+- **WHEN** the script runs against an empty dedicated API with default count and successful responses
+- **THEN** exactly 1000 lockers are created and appear as available in the existing list/map
+- **AND** every generated coordinate belongs to the bundled Spanish land geometry, rather than an unrestricted bounding rectangle
+
+#### Scenario: Reproduce generation without writing
+- **WHEN** two dry runs use the same seed, count and boundary version
+- **THEN** they produce the same ordered creation payloads without making API requests
+- **AND** reproducibility covers coordinates and input fields, not UUIDs generated later by the server
+
+### Requirement: Report partial demonstration creation without destructive recovery
+
+The generator SHALL validate its options before sending data, issue bounded sequential creation requests and stop on the first failed or uncertain response. It SHALL report confirmed creations and the failure, return a nonzero exit code, and preserve all existing data. It SHALL NOT retry writes blindly, delete lockers or claim a batch rollback. Documentation SHALL identify synthetic data and explain that another execution adds new records.
+
+#### Scenario: Partial or uncertain failure
+- **WHEN** a creation request fails or times out after earlier requests succeeded
+- **THEN** the script reports the confirmed count and affected item, stops further creation and makes no retry or deletion
+- **AND** an uncertain final request is not reported as a confirmed creation
+
 ### Requirement: Build and serve a fully static frontend
 
 The repository SHALL provide locked frontend dependencies and documented development, build and static-preview commands. A build SHALL generate only static HTML, CSS and browser assets in `frontend/dist`, without reading locker data. The output SHALL run on a generic static HTTP host without an application server or server-side functions. Existing backend Compose services and persistence SHALL remain independent of the frontend.

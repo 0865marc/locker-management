@@ -2,7 +2,7 @@
 
 ## Context
 
-Ver la motivación en `proposal.md`. El frontend estático, CORS y Nginx en Compose ya están implementados y verificados. La página actual tiene cabecera, introducción, pie y un área compartida por mapa/lista. La ampliación propuesta ocupa todo el viewport con el mapa y añade entrada local de dimensiones y peso, conservando consulta e interacción en el navegador y compatibilidad con Cloudflare Pages.
+Ver la motivación en `proposal.md`. El frontend estático a pantalla completa, formulario local, CORS y Nginx están implementados. La nueva ampliación añade navegación con rueda, vista inicial más cercana, búsqueda geográfica y generación manual de lockers sintéticos. `POST /lockers` ya acepta alias con dirección nula y coordenadas, y crea las celdas libres; no requiere modificar contratos ni persistencia.
 
 ## Goals / Non-Goals
 
@@ -42,9 +42,9 @@ Validar en el cliente los campos usados a partir de `unknown`: lista, UUID, acti
 
 ### 5. Mapa y estados
 
-Leaflet usa `https://tile.openstreetmap.org/{z}/{x}/{y}.png` con atribución y enlace visibles. Vista inicial y «Ver España»: límites aproximados `[27.5, -18.5]` a `[44, 4.5]`, incluyendo península, Baleares, Canarias, Ceuta y Melilla. No inferir coordenadas ni aplicar geocerca. La lista puede seleccionar cualquier posición válida almacenada, incluso fuera del encuadre inicial.
+Leaflet usa `https://tile.openstreetmap.org/{z}/{x}/{y}.png` con atribución y enlace visibles. La vista inicial ajusta aproximadamente `[35.8, -9.4]` a `[43.9, 3.4]`, centrada en la península y más cercana que el encuadre global; «Ver España» conserva `[27.5, -18.5]` a `[44, 4.5]`, incluyendo ambos archipiélagos, Ceuta y Melilla. Habilitar `scrollWheelZoom` sobre el mapa y conservar el aislamiento de rueda de los paneles. No inferir coordenadas de lockers ni aplicar geocerca. La lista puede seleccionar cualquier posición válida almacenada, incluso fuera del encuadre inicial.
 
-Seleccionar una fila o un marcador encuadra su posición en el área visible entre paneles sin cambiar coordenadas ni tamaño del mapa y muestra el popup cuando el espacio libre permita mostrarlo sin cubrir paneles o marcador; si no cabe, el detalle completo permanece en la lista. Dos lockers coincidentes conservan sus coordenadas y filas independientes, y la selección trae al frente su marcador. Mostrar disponibles y posicionables, con «Sin coordenadas válidas» cuando corresponda. Sin resultados, el mapa conserva la vista de España.
+Seleccionar una fila o un marcador encuadra su posición en el área visible entre paneles sin cambiar coordenadas ni tamaño del mapa y muestra el popup cuando el espacio libre permita mostrarlo sin cubrir paneles o marcador; si no cabe, el detalle completo permanece en la lista. Dos lockers coincidentes conservan sus coordenadas y filas independientes, y la selección trae al frente su marcador. Mostrar disponibles y posicionables, con «Sin coordenadas válidas» cuando corresponda. Carga, actualización o ausencia de marcadores conservan el encuadre actual: retirar el `fitBounds` incondicional de `render()` para no deshacer la vista inicial o una búsqueda.
 
 Carga inicial, actualizar y reintentar comparten flujo; impedir intentos simultáneos. Tras fallo se eliminan resultados/posiciones que podrían confundirse con disponibilidad vigente. Cada éxito reemplaza resultados y limpia una selección desaparecida. Los errores de teselas generan aviso independiente y conservan la lista utilizable. No precargar mapas ni incluir teselas de prueba en producción; respetar atribución, caché HTTP y Referer del proveedor.
 
@@ -55,6 +55,16 @@ Arriba a la izquierda, panel compacto «Tu paquete» con cuatro campos etiquetad
 Conservar listado y detalles en un panel independiente cerrado inicialmente, abierto con «Ver lockers» fuera del formulario. Se superpone a la derecha en escritorio o en la zona inferior en móvil, con scroll interno y cierre accesible. Seleccionar un marcador abre el panel para mostrar su detalle; cerrar devuelve el foco al control de apertura cuando proceda. Un enlace de salto al listado también debe abrirlo. Así siguen accesibles los lockers sin coordenadas y los coincidentes, sin restar espacio permanente al mapa.
 
 Los controles de actualizar, reintentar y ver España y los estados de carga/error siguen accesibles aunque el listado esté cerrado, en controles o avisos compactos ajenos al formulario. Reubicar zoom y otros controles Leaflet para evitar el menú y mantener visible la atribución. Evitar propagación de clic, arrastre, rueda y teclado de los paneles hacia el mapa sin impedir edición, tabulación o scroll interno. En 375 px, limitar ancho/altura de paneles y conservar mapa, controles y campos accesibles sin desbordamiento de la página. La interfaz sigue describiendo la disponibilidad general como última consulta, sin relacionarla con las medidas introducidas.
+
+#### Búsqueda de dirección o código postal
+
+Colocar un formulario de búsqueda etiquetado encima del formulario de dimensiones, dentro del panel visual pero sin formularios HTML anidados. Su estado y validación son independientes: el selector actual de validación numérica debe limitarse a los cuatro campos del paquete. Enter o «Buscar» envían una consulta recortada; escribir no hace peticiones, y una consulta vacía no se envía. Resultados y estados de búsqueda tienen su propia región accesible, con hasta cinco botones de selección y scroll interno aislado del mapa.
+
+Usar el servicio público Photon directamente desde el navegador, sin claves ni proxy: direcciones en `https://photon.komoot.io/api/?q=...&countrycode=ES&limit=5`; cinco dígitos ASCII se mantienen como texto y usan `https://photon.komoot.io/structured?postcode=...&countrycode=ES&limit=5`. El contrato se documenta en [Photon API v1](https://github.com/komoot/photon/blob/master/docs/api-v1.md). Es un servicio de demostración para uso razonable, sin garantía de disponibilidad; no añadir autocompletado por tecla, peticiones automáticas repetidas ni fallback a Nominatim. El acceso público real y CORS no pudieron comprobarse en esta red: no confundir los mocks con prueba de conectividad.
+
+Un helper tipado `frontend/src/lib/geocoder.ts` construye URLs con `URLSearchParams`, hace GET sin credenciales con timeout de cinco segundos y normaliza GeoJSON `FeatureCollection` desde `unknown`. Aceptar solo puntos finitos WGS84 de país ES, manteniendo orden y como máximo cinco; renderizar etiquetas con texto DOM, nunca HTML. Una colección válida sin candidatos españoles se trata como vacío, mientras una estructura malformada o HTTP/red/timeout es error de búsqueda. No guardar consultas ni generar ubicaciones ficticias.
+
+Una única coincidencia centra directamente; varias requieren selección. Aproximar zoom 16 para dirección y 13 para CP, mostrando la posición en el área libre entre overlays. Adaptar el encuadre existente para lista abierta o cerrada y móvil, sin abrir el listado ni alterar la selección de locker. La búsqueda no solicita `GET /lockers`, no filtra resultados ni completa coordenadas ausentes. Cada nueva búsqueda cancela la anterior; editar el texto invalida resultados pendientes y una generación de solicitud impide aplicar respuestas obsoletas, incluso si el transporte ignora cancelación. Errores, vacío y reintento son independientes de API de lockers y teselas. Mostrar atribución/enlace a Photon y a OpenStreetMap, y explicar que la consulta se envía a ese proveedor externo.
 
 ### 6. Nginx estático y arranque completo con Compose
 
@@ -84,7 +94,19 @@ Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas c
 
 La ampliación de pantalla completa se limita a `frontend/src/pages/index.astro`, `frontend/src/components/LockerExplorer.astro`, `frontend/src/styles/global.css`, `frontend/src/scripts/locker-map.ts`, `frontend/tests/e2e/explorer.spec.ts` y una nota de uso en `README.md`. No modifica configuración de despliegue, dependencias ni backend.
 
-### 8. Verificación
+La nueva ampliación afecta al componente, script y CSS del mapa; añade `frontend/src/lib/geocoder.ts` y sus pruebas, amplía los E2E y documenta el uso en README. El generador añade `backend/scripts/seed_lockers.py`, `backend/scripts/data/spain.geojson`, un archivo de procedencia/licencia junto al dato y `backend/tests/unit/test_seed_lockers.py`. Añadir `COPY scripts ./scripts` en `backend/Dockerfile` para incluir el CLI y sus datos en la imagen API y permitir el comando manual de Compose tras reconstruirla. No necesita nuevas dependencias de producción, cambios Compose, dominio, API o migraciones.
+
+### 8. Generador manual de lockers de demostración
+
+Crear un CLI Python con biblioteca estándar, invocable desde `backend/` mediante `uv run python scripts/seed_lockers.py` o, tras reconstruir la imagen API, con `docker compose exec api python scripts/seed_lockers.py`, apuntando al puerto 8000 del mismo contenedor. Opciones: `--count` positivo, por defecto 1000; `--seed` entero, por defecto 42; `--base-url`, por defecto `http://127.0.0.1:8000`; y `--dry-run`, que imprime los payloads JSON sin efectuar ninguna petición. Validar opciones y cargar geografía antes de escribir. El script es un cliente externo del contrato HTTP, sin acceso directo a repositorios o base de datos y sin integrarse en startup/build.
+
+Bundlear el extracto `ADM0_A3 == ESP` de [Natural Earth admin 0 a escala 1:10m](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_10m_admin_0_countries.geojson), fijando commit de origen y registrando procedencia y [dominio público](https://www.naturalearthdata.com/about/terms-of-use/) junto al archivo. El extracto inspeccionado contiene 23 polígonos e incluye península, islas, Ceuta, Melilla y Llívia. Muestrear con `random.Random(seed)` y rechazo contra esos polígonos, respetando huecos; comprobar también el par redondeado que se enviará. Una caja rectangular sin comprobar pertenencia no es suficiente. Los límites son generalizados: estos puntos son datos sintéticos, no instalaciones o direcciones reales; no se promete distribución idéntica por territorio ni precisión catastral.
+
+Generar alias deterministas `DEMO-<seed>-<índice>`, `address: null`, coordenadas válidas y `active: true`. Una configuración sencilla de seis celdas habilitadas de 400×400×600 mm por locker basta; la API crea las celdas libres. La semilla reproduce los payloads y coordenadas con el mismo dato de referencia, no los UUID del servidor. No usar Photon para generar puntos ni inventar direcciones.
+
+Enviar `POST /lockers` secuencialmente con timeout acotado, contando únicamente respuestas de creación confirmadas. Ante primer fallo o respuesta incierta, detenerse, informar del índice y número confirmado y salir con código no cero, sin reintentar escrituras, borrar existentes o simular rollback global. Otra ejecución añade nuevos registros, aunque repita semilla/alias: no se añade idempotencia. README muestra primero dry-run y después ejecución explícita contra una API de demostración; las comprobaciones escribirán solo en un stack desechable, nunca en los datos del usuario.
+
+### 9. Verificación
 
 - `npm ci`, check y build con API apagada; inspeccionar salida y servir `dist` mediante HTTP estático genérico. Comprobar que solo el navegador pide lockers y que cambiar la URL requiere nuevo build.
 - Vitest para contrato, disponibilidad, coordenadas inválidas, URL/configuración, errores y timeout. Tests backend de CORS en aplicación real con dependencias simuladas, siguiendo las pruebas actuales de `create_app`.
@@ -97,13 +119,17 @@ La ampliación Nginx conserva la evidencia anterior y añade comprobaciones prop
 
 Para pantalla completa y formulario: comprobar geometría del mapa contra el viewport y ubicación del menú en escritorio/móvil; etiquetas, campos vacíos y decimales positivos; edición/tabulación/scroll sin mover el mapa ni añadir peticiones; apertura/cierre de lista y selección de detalles, incluidos lockers sin coordenadas y coincidentes; errores/reintento visibles con panel cerrado. Ejecutar check, build y E2E afectados, inspección visual, Pyright obligatorio con cero errores/advertencias, validación OpenSpec y revisión independiente. La evidencia anterior no sustituye estas verificaciones nuevas.
 
+Para la nueva ampliación: Vitest de URLs dirección/CP con cero inicial, país, normalización y errores/cancelación; E2E de rueda dentro/fuera de overlays, inicial frente a «Ver España», búsqueda única/ambigua/vacía/fallida, respuestas obsoletas y encuadre visible con lista abierta/cerrada en móvil. Verificar que las búsquedas no llaman a la API de lockers y que una carga vacía no deshace el encuadre. Pruebas unitarias Python de 1000 payloads, pertenencia geográfica y huecos, determinismo, dry-run sin HTTP, contrato de creación y fallo parcial sin reintento. Smoke API y navegador con los 1000 lockers en un stack temporal, sin seeds automáticos. Ejecutar check/test/build/E2E afectados, unitarias backend y Pyright obligatorio, validación estricta y revisión independiente; documentar por separado la conectividad externa no comprobada.
+
 ## Risks / Trade-offs
 
 - API pública o CORS todavía sin configurar -> placeholders y requisitos explícitos; un build local no demuestra que la futura URL pública funcione.
 - El plan gratuito de Pages cubre el frontend estático -> no presupone alojamiento del backend ni sus dependencias.
 - OSM puede fallar y la colección completa puede crecer -> listado disponible y pruebas deterministas; paginación o cambio de proveedor quedan para una necesidad posterior.
 - Capacidad cambia entre lecturas y existen datos sin coordenadas -> refresco manual y mensajes honestos, sin reservar ni inventar posiciones.
+- Photon puede fallar o no localizar una dirección/CP -> estado independiente y reintento explícito, sin alterar lockers; las pruebas controladas no garantizan cobertura del proveedor.
+- El generador puede terminar con creaciones parciales y sus límites son cartográficos -> informar progreso confirmado, no reintentar automáticamente y documentar datos sintéticos y procedencia.
 
 ## Migration Plan
 
-No hay migraciones. La ampliación de pantalla completa y entrada local de paquete requiere aprobación del plan antes de implementar. Después, modificar la interfaz, verificar y actualizar la explicación de uso. Revertir esa ampliación solo cambia presentación, sin tocar datos ni despliegue. Publicación efectiva, sincronización y archivo no forman parte de esta actualización de planificación.
+No hay migraciones. La ampliación de navegación, búsqueda y generador requiere aprobación del plan antes de implementar. El generador se entrega como herramienta manual; su incorporación no crea registros en instalaciones existentes. Los datos creados por una ejecución posterior persisten en la API y no se borran al retirar el script. Publicación efectiva, sincronización y archivo no forman parte de esta actualización de planificación.
