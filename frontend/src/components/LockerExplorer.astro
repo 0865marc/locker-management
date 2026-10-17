@@ -100,56 +100,16 @@
           ))}
         </div>
       </form>
-      <div
-        class="availability-panel"
-        role="group"
-        aria-label="Disponibilidad y controles"
-      >
+      <div class="availability-panel" role="group" aria-label="Disponibilidad">
         <div id="status" role="status" aria-live="polite" aria-atomic="true">
           Cargando lockers…
         </div>
         <button id="retry" type="button" hidden>
           Reintentar consulta
         </button>
-        <div class="primary-actions">
-          <button
-            id="open-results"
-            class="primary"
-            type="button"
-            aria-controls="results"
-            aria-expanded="false"
-          >
-            Ver lockers{' '}
-            <svg
-              aria-hidden="true"
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-            >
-              <path
-                d="M2 4h12M2 8h12M2 12h12"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
-            </svg>
-          </button>
-          <button id="refresh" type="button">
-            <span aria-hidden="true">↻</span> Actualizar
-          </button>
-        </div>
-        <div class="secondary-actions">
-          <span id="updated-at">Sin lectura todavía</span>
-          <button id="spain-view" type="button">
-            Ver España
-          </button>
-        </div>
-        <p class="availability-note">
-          Consulta informativa. No reserva celdas.
-        </p>
         <p id="tile-warning" class="tile-warning" role="status" hidden>
           No se ha podido cargar el fondo del mapa. Puedes consultar todos los
-          lockers en el listado.
+          lockers en el selector de destino.
         </p>
       </div>
       <div class="metrics">
@@ -171,36 +131,72 @@
   >
     <div class="results-heading">
       <div>
-        <p class="eyebrow">EXPLORA LA RED</p>
-        <h2 id="results-title">Lockers disponibles</h2>
+        <p class="eyebrow">COTIZADOR DEMO</p>
+        <h2 id="results-title">Enviar a este locker</h2>
       </div>
-      <button
-        id="close-results"
-        type="button"
-        aria-label="Cerrar listado de lockers"
-      >
-        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
-          <path d="m4 4 8 8m0-8-8 8" stroke="currentColor" stroke-width="1.5" />
-        </svg>
+      <button id="close-results" type="button" aria-label="Cerrar cotizador">
+        ×
       </button>
     </div>
-    <div
-      id="results-scroll"
-      class="results-scroll"
-      tabindex="0"
-      aria-label="Resultados de lockers"
-    >
-      <ul id="locker-list" aria-label="Lockers disponibles"></ul>
-      <section
-        id="locker-detail"
-        class="detail"
-        aria-label="Detalle del locker"
-        aria-live="polite"
-        hidden
-      ></section>
-      <p class="list-note">
-        Selecciona un locker para consultar su ubicación y las celdas libres.
+    <div class="results-scroll">
+      <form id="shipping-form" novalidate>
+        <label for="destination-locker">Locker de destino</label>
+        <select id="destination-locker">
+          <option value="">Elige un locker disponible</option>
+        </select>
+        <p id="destination-address" class="address"></p>
+        <p id="destination-position" class="unmapped" hidden>
+          Ubicación no disponible en el mapa.
+        </p>
+        <div class="postal-fields">
+          <div>
+            <label for="origin-postal">CP de origen</label>
+            <input
+              id="origin-postal"
+              inputmode="numeric"
+              autocomplete="postal-code"
+              maxlength="5"
+              placeholder="28001"
+              aria-describedby="origin-postal-error"
+            />
+            <span class="field-error" id="origin-postal-error" hidden></span>
+          </div>
+          <div>
+            <label for="destination-postal">CP de destino</label>
+            <input
+              id="destination-postal"
+              inputmode="numeric"
+              maxlength="5"
+              placeholder="01001"
+              aria-describedby="destination-postal-note destination-postal-error"
+            />
+            <span
+              class="field-error"
+              id="destination-postal-error"
+              hidden
+            ></span>
+          </div>
+        </div>
+        <p id="destination-postal-note" class="address"></p>
+        <button id="compare-shipping" class="primary" type="submit">
+          Comparar envíos
+        </button>
+      </form>
+      <p class="demo-note">
+        Simulación demo: proveedores, precios y plazos simulados. No reserva el
+        locker ni crea un envío.
       </p>
+      <div
+        id="quotation-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      ></div>
+      <p id="quotation-reference" class="address" hidden></p>
+      <button id="quotation-resume" type="button" hidden>
+        Seguir consultando
+      </button>
+      <div id="quotation-offers" aria-label="Resultados de cotización"></div>
     </div>
   </section>
 </section>

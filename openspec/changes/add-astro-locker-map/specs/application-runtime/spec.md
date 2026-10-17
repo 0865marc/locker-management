@@ -80,26 +80,23 @@ The frontend SHALL use `PUBLIC_API_BASE_URL` embedded at build time for direct b
 - **WHEN** an operator changes the build environment's API URL but serves the previous `dist` unchanged
 - **THEN** the page still uses its embedded URL until a new build is generated and published
 
-### Requirement: Allow browser reads from explicit origins
+### Requirement: Allow scoped browser access from explicit origins
 
-The API SHALL configure CORS from `CORS_ALLOWED_ORIGINS`, a comma-separated list of exact HTTP(S) origins, defaulting to none when absent or empty. It SHALL expose responses only to listed origins and grant preflight permission for GET, without credentials or wildcards. Invalid entries SHALL fail configuration clearly. CORS SHALL preserve endpoint behavior and requests without an Origin header; it is not authorization.
+CORS SHALL use the existing exact-origin allowlist, without credentials or wildcards. It SHALL permit GET generally and preflight for POST with JSON Content-Type only at /quotations. Other write preflights SHALL remain denied. Invalid origins SHALL fail configuration; absent/empty configuration SHALL allow none. Endpoint contracts and requests without Origin SHALL remain unchanged; CORS is not authorization.
 
-#### Scenario: Allowed origin and preflight
-- **WHEN** a listed frontend origin sends a locker GET or a valid GET preflight
-- **THEN** the API supplies that exact allowed origin and the browser can read the response without credentials
+#### Scenario: Allowed quotation creation and observation
+- **WHEN** a listed origin requests preflight for POST /quotations with Content-Type and then submits valid JSON
+- **THEN** browser CORS permits the existing POST and subsequent GET /quotations/{id}, without credentials or a proxy
+- **AND** GET /lockers remains readable from that same exact origin
 
-#### Scenario: Unlisted origin or unsupported preflight
-- **WHEN** an unlisted origin requests lockers or an origin requests preflight permission for a write method
-- **THEN** the API does not grant the requested browser access; an unsupported preflight fails
-- **AND** the policy does not imply that CORS prevents direct HTTP clients from calling existing endpoints
+#### Scenario: Unlisted origin or unrelated write
+- **WHEN** an unlisted origin requests access, or a client requests preflight for POST /lockers, PATCH, DELETE or an unsupported header
+- **THEN** that preflight is denied and no broad write-method or origin wildcard is introduced
+- **AND** the policy does not claim to prevent direct HTTP clients from invoking existing endpoints
 
-#### Scenario: Requests without Origin
-- **WHEN** a client calls existing API routes without an Origin header
-- **THEN** route statuses and representations remain unchanged
-
-#### Scenario: Invalid configuration
-- **WHEN** configuration contains a wildcard or a value that is not an exact HTTP(S) origin
-- **THEN** startup reports a configuration error instead of broadening the allowlist
+#### Scenario: No Origin and invalid configuration
+- **WHEN** requests omit Origin or the allowlist is configured with an invalid origin
+- **THEN** normal endpoint behavior remains unchanged for requests without Origin, while invalid configuration fails clearly before application startup
 
 ### Requirement: Document static Cloudflare Pages publication
 

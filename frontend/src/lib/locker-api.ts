@@ -1,7 +1,8 @@
 import { availableLockers, type AvailableLocker } from './lockers';
-export function lockersUrl(
+export function publicApiUrl(
   config: string | undefined,
   pageProtocol: string,
+  path: string,
 ): string {
   try {
     if (!config?.trim()) throw new Error();
@@ -15,13 +16,19 @@ export function lockersUrl(
       (pageProtocol === 'https:' && url.protocol !== 'https:')
     )
       throw new Error();
-    url.pathname = `${url.pathname.replace(/\/+$/, '')}/lockers`;
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/${path}`;
     return url.href;
   } catch {
     throw new Error(
       'La conexión con el servicio de lockers no está configurada correctamente. Contacta con el responsable del sitio.',
     );
   }
+}
+export function lockersUrl(
+  config: string | undefined,
+  pageProtocol: string,
+): string {
+  return publicApiUrl(config, pageProtocol, 'lockers');
 }
 export async function loadLockers(
   config: string | undefined,

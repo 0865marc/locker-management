@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Let people locate available lockers across Spain and inspect their current free capacity through an accessible, read-only map and list backed by real locker data.
+Let people locate available lockers across Spain and compare shipping quotations toward a selected locker through an accessible static frontend backed by existing APIs.
 
 ## ADDED Requirements
 
@@ -14,14 +14,14 @@ The map SHALL fill the visible viewport without surrounding page margins, header
 - **WHEN** the page opens on desktop or a 375-pixel-wide mobile viewport, or the viewport changes size
 - **THEN** the map fills that viewport, the parcel panel remains in its upper-left area and the zoom controls and attribution remain accessible
 
-### Requirement: Combine search and availability in one upper-left panel
+### Requirement: Keep the upper-left menu focused on the parcel
 
-One upper-left panel SHALL contain geographic search, parcel fields, compact actions/status and live available/mapped counts at its bottom. It SHALL retain refresh, retry, "Ver España" and "Ver lockers" without a second availability card. The UI SHALL omit the search button, visible Photon paragraph, location-success sentence and parcel explanatory note while preserving labels, necessary status and map attribution.
+The upper-left menu SHALL contain geographic search, parcel fields and live available/mapped counts. It SHALL omit the availability-success sentence, "Ver lockers", "Actualizar", last-read time, "Ver España" and informational note. Loading, empty, error/retry and tile warnings SHALL appear only when applicable. Labels, geographic suggestions and map attribution SHALL remain accessible.
 
-#### Scenario: Unified controls and current counts
-- **WHEN** locker data loads or changes and the general locker list is closed
-- **THEN** one upper-left panel shows controls and current counts at its bottom on desktop and a 375×480 viewport
-- **AND** all actions remain accessible, removed text has no dangling accessibility references, and map attribution remains visible
+#### Scenario: Successful load leaves a compact menu
+- **WHEN** lockers load successfully on desktop or a 375×480 viewport
+- **THEN** current counts and map markers appear without the removed controls or success section
+- **AND** removed elements leave no broken focus targets, accessibility references or handlers
 
 ### Requirement: Enter parcel measurements locally
 
@@ -35,7 +35,7 @@ The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled lengt
 #### Scenario: Interact with the overlay
 - **WHEN** a user clicks, types or drags within the dimension or weight controls, or scrolls the panel
 - **THEN** those interactions operate on the panel without being interpreted as map navigation
-- **AND** toggling the locker list or manually refreshing availability preserves entered values
+- **AND** opening or closing the quotation panel preserves entered parcel values
 
 ### Requirement: Locate a Spanish address or postal code
 
@@ -49,7 +49,7 @@ A labelled "Dirección o código postal" field SHALL appear above parcel dimensi
 #### Scenario: Select a single or ambiguous location
 - **WHEN** the provider returns one or more valid Spanish locations and the user chooses a displayed candidate
 - **THEN** up to five literal labels require selection even for a single match; choosing one fills the field, reveals its map marker and closes suggestions without another request
-- **AND** parcel values and locker availability/selection are preserved, the general locker list is not forced open, and no visible "Ubicación localizada" sentence appears
+- **AND** parcel values and locker availability/selection are preserved, the quotation panel is not forced open, and no visible "Ubicación localizada" sentence appears
 
 ### Requirement: Animate and dismiss geographic suggestions accessibly
 
@@ -72,25 +72,25 @@ Geographic search SHALL have independent loading, no-results and error states, w
 - **WHEN** a user edits or replaces a pending query and its earlier response subsequently arrives
 - **THEN** the earlier response is ignored, and only the latest eligible query can update suggestions; the map moves only after selection
 
-### Requirement: Keep locker results in a separate collapsible overlay
+### Requirement: Select a locker as the shipping destination
 
-The locker list SHALL initially be collapsed and open through a keyboard-accessible "Ver lockers" control outside the parcel form. Its overlay SHALL retain all list and detail functionality with internal scrolling and an accessible close control. Selecting a map marker SHALL reveal that locker's details. Loading, empty, error, retry and refresh controls SHALL remain accessible while the list is closed.
+Selecting a locker marker SHALL open "Enviar a este locker", replacing the technical list/detail panel. The panel SHALL show its destination label/address and a compact selector of available lockers, including coincident or unmapped ones. A keyboard-accessible "Elegir destino y cotizar" link SHALL open the same selector. Closing or Escape SHALL restore focus to the opening control when possible, without resizing the map.
 
-#### Scenario: Inspect lockers without permanently reducing the map
-- **WHEN** a user opens the list, selects an unmapped locker or one sharing coordinates, then closes it
-- **THEN** the correct individual detail is accessible, closing restores focus to the list-opening control when appropriate, and the map retains its full viewport dimensions
+#### Scenario: Select individually without a technical catalogue
+- **WHEN** a visitor selects a marker or uses the destination selector, including lockers sharing a position or lacking coordinates
+- **THEN** the chosen locker becomes the destination and its recorded position is revealed when usable
+- **AND** the panel contains no technical catalogue, UUID/cell detail sheet or inherited general-list opening action
 
-#### Scenario: Recover from failure with the list closed
-- **WHEN** the initial locker read fails while the list is collapsed
-- **THEN** the page displays the failure and an accessible retry action outside the hidden list
-- **AND** the existing read-only recovery flow remains usable without entering parcel data
+#### Scenario: Keyboard entry and return
+- **WHEN** a keyboard user follows the destination link, selects a locker and closes the panel
+- **THEN** the selector and quote controls are usable without map pointer interaction and closing restores focus to the link
 
 ### Requirement: Read live lockers in the browser
 
 The browser SHALL load lockers directly from the configured API using GET without credentials or custom request headers. Each load SHALL bypass the browser response cache and cancel after five seconds without completion. Response validation, availability filtering and map interaction SHALL execute client-side. Missing or invalid essential data SHALL produce a visible data error, while unusable coordinates alone SHALL retain the locker without a map position.
 
 #### Scenario: Fresh client-side observation
-- **WHEN** a visitor opens the static page or requests a manual update
+- **WHEN** a visitor opens the static page or retries a failed locker load
 - **THEN** the browser performs a new API read and computes availability from that response rather than build-time data or a stored availability cache
 
 #### Scenario: Timeout and unreadable response
@@ -100,89 +100,139 @@ The browser SHALL load lockers directly from the configured API using GET withou
 
 ### Requirement: Derive general availability from current locker data
 
-The frontend SHALL read the complete locker list and consider a locker available exactly when active is true and at least one returned compartment is enabled and unoccupied. It SHALL display only available lockers in its results and count their enabled, unoccupied compartments. It SHALL explain in Spanish that this is information from the last successful load, without parcel-size matching or reservation.
+The frontend SHALL consider a locker available exactly when active is true and at least one returned compartment is enabled and unoccupied. Only available lockers SHALL appear in the map/destination selector. Counts SHALL reflect the current successful load. Availability and shipping quotations SHALL NOT claim parcel fit, reserve capacity or create a shipment.
 
 #### Scenario: Mixed capacity and operational states
-- **WHEN** the response contains an active locker with two enabled free cells, one disabled free cell and one occupied cell, an inactive locker with free cells, a full locker and a locker with no enabled cells
-- **THEN** only the first locker is listed as available, with a free-cell count of two
-- **AND** the UI makes no parcel-fit or reservation guarantee and performs no write request
+- **WHEN** data includes an active locker with enabled free cells, disabled or occupied cells, an inactive locker, a full locker and one without enabled cells
+- **THEN** only the active locker with an enabled free cell is offered as a destination
+- **AND** editing parcel dimensions does not filter lockers or create a quotation
 
-#### Scenario: Capacity changes between loads
-- **WHEN** an initially available locker has no enabled free cells in the next successful manual update
-- **THEN** that locker disappears from both available results and map, and any selection of it is cleared
+#### Scenario: Collection replaced on a new successful load
+- **WHEN** a fresh locker load no longer includes a previously selected available locker
+- **THEN** that selection and its active quotation display are cleared rather than being presented as current
 
 ### Requirement: Display real coordinates across Spain
 
-The map SHALL initially frame mainland Spain more closely than the all-territories view. "Ver España" SHALL frame mainland Spain, the Balearic Islands, the Canary Islands, Ceuta and Melilla. Available lockers with valid coordinates SHALL keep their stored positions. Mouse-wheel input over the map SHALL zoom in or out; input over overlay controls SHALL NOT navigate it. Data loads and empty results SHALL preserve the current view.
+The map SHALL initially frame mainland Spain closely. Mainland, Balearic, Canary Island, Ceuta and Melilla lockers SHALL remain reachable through navigation and destination selection without a "Ver España" control. Valid stored positions SHALL remain unchanged. Wheel input over the map SHALL zoom in/out, while overlay interactions SHALL NOT navigate it. Data loads and empty results SHALL preserve the current view.
 
-#### Scenario: Island and autonomous-city lockers remain reachable
-- **WHEN** available lockers have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla and the user chooses "Ver España"
-- **THEN** all five positions are included in the Spain view and remain individually selectable from the results
+#### Scenario: Island and autonomous-city destinations remain reachable
+- **WHEN** available destinations have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla and the user selects each
+- **THEN** each stored position is revealed in the visible map area with that locker selected as destination
 
-#### Scenario: Closer initial view and wheel navigation
+#### Scenario: Initial view and wheel navigation
 - **WHEN** the page opens and the user scrolls the wheel over the map in either direction
 - **THEN** the initial view focuses on mainland Spain, wheel-up zooms in and wheel-down zooms out
-- **AND** scrolling the search, parcel or results panel does not change map zoom
+- **AND** scrolling search, parcel or quotation controls does not change map zoom
 
-#### Scenario: Empty loads preserve user navigation
-- **WHEN** a load or refresh completes without positioned lockers after initial framing or a geographic search
-- **THEN** the current view remains unchanged instead of resetting to the all-territories bounds
+#### Scenario: Empty loads preserve navigation
+- **WHEN** a locker load finishes without positioned lockers after initial framing or geographic search
+- **THEN** the current view remains unchanged
 
 #### Scenario: Coordinates are independent of address
-- **WHEN** an available locker has valid coordinates but a null address
-- **THEN** it has a map position using those coordinates and does not receive an invented address
-- **AND** valid stored positions are not silently discarded based on an address or mainland-only boundary
+- **WHEN** a locker has valid coordinates but no address
+- **THEN** it keeps its stored map position without receiving an invented address or postal code
 
 ### Requirement: Retain available lockers without usable coordinates
 
-Available lockers with null, incomplete, nonnumeric, nonfinite or out-of-range coordinates SHALL remain in the results with a Spanish indication that their map position is unavailable. They SHALL NOT produce a marker, be geocoded from their address or be placed at an invented fallback location. Result counts SHALL distinguish all available lockers from those positioned on the map.
+Available lockers with missing or invalid coordinates SHALL remain selectable as destinations, with an indication that their map position is unavailable. They SHALL NOT receive invented positions or be geocoded. Counts SHALL distinguish all available lockers from mapped ones.
 
-#### Scenario: Available lockers cannot be mapped
-- **WHEN** all available lockers lack usable coordinates
-- **THEN** the list and available count remain populated, the map retains its current view without locker markers, and the UI explains that these lockers have no usable map coordinates
-- **AND** this state is distinct from having no available lockers
+#### Scenario: No available locker can be mapped
+- **WHEN** every available locker lacks usable coordinates
+- **THEN** the available count and destination selector remain populated, the mapped count is zero and the map retains its view
+- **AND** users can select a destination through the keyboard entry without a fabricated marker
 
-### Requirement: Identify and inspect each available locker
+### Requirement: Identify each available destination safely
 
-The list and map SHALL allow inspecting each available locker by its UUID, using its alias, address or UUID as its display label in that order. Details SHALL show the recorded address when present and the free-cell count, with explicit missing-address text when absent. Selecting a positioned locker from the list SHALL reveal its map location. Values from the API SHALL be rendered as text, never executable markup.
+Locker identity SHALL remain independent of its label and coordinates. Public labels SHALL use alias, recorded address or a neutral numbered fallback, with duplicate labels distinguishable in the selector. The panel SHALL show the recorded address or its absence without a technical UUID/cell sheet. External text SHALL be rendered literally, never as executable markup.
 
-#### Scenario: Multiple lockers share one position
-- **WHEN** two available lockers have the same coordinates or alias
-- **THEN** each remains a separate identifiable list result and can be selected to inspect its own UUID and free-cell count
-- **AND** overlapping map markers do not prevent accessing either locker through the list
+#### Scenario: Coincident or identically labelled lockers
+- **WHEN** two lockers share a position or label
+- **THEN** the compact selector permits choosing each distinct destination without changing its stored position
 
-#### Scenario: Nullable labels and untrusted text
-- **WHEN** one locker lacks an alias, another lacks both alias and address, and another has markup-like text in its alias or address
-- **THEN** the first uses its recorded address, the second uses its UUID, and all supplied text is displayed literally without executing markup
+#### Scenario: Missing or untrusted labels
+- **WHEN** alias/address is absent or contains markup-like text
+- **THEN** a usable fallback or literal label is shown without executing markup or inventing an address
 
 ### Requirement: Distinguish loading, empty results and data failure
 
-The frontend SHALL show Spanish loading, success, empty and error states. Empty results SHALL appear only after a successful load with no available lockers. Network failures, timeouts, non-success responses and malformed data SHALL show an error with retry. Manual refresh and retry SHALL perform a new read and replace the displayed results after success; failed refreshes SHALL NOT present old results as current availability.
+Locker loading, empty and error states SHALL be communicated in Spanish. Empty SHALL follow only a successful load without available lockers. Network, timeout, HTTP or data failures SHALL offer retry and SHALL NOT present obsolete data as current availability. Success SHALL update counts/map and hide loading/error status without the former repeated success sentence or timestamp.
 
-#### Scenario: Initial load and empty response
-- **WHEN** the data request is pending and then succeeds with an empty list or only unavailable lockers
-- **THEN** a loading indicator is replaced by a no-available-lockers message, without sample lockers or an error state
+#### Scenario: Loading, empty and success
+- **WHEN** a pending locker load completes
+- **THEN** loading disappears and either a no-available-lockers message or populated map/counts is shown
 
 #### Scenario: Failure and recovery
-- **WHEN** a request fails, times out or returns malformed data and the user retries after the service recovers
-- **THEN** a distinguishable error state offers retry and the subsequent success displays the returned available lockers without a page reload
-
-#### Scenario: Refresh fails after prior success
-- **WHEN** a manual refresh fails after lockers were displayed
-- **THEN** the UI clears current availability results and markers, reports the failure and offers retry
+- **WHEN** a locker read fails and the user retries after recovery
+- **THEN** an accessible error/retry outside the closed quotation panel leads to a fresh read and usable data without entering parcel measurements
 
 ### Requirement: Preserve access when external cartography fails
 
-The map SHALL display attribution for its cartography provider. Tile-loading failures SHALL produce a Spanish cartography warning without converting successful locker data into a backend error or empty result. The list, details and result counts SHALL remain usable independently of tile availability.
+The map SHALL retain provider attribution. Tile failures SHALL show a cartography warning without converting successful locker data into a backend error or empty result. The destination selector, counts and quotation controls SHALL remain usable independently of tiles.
 
-#### Scenario: Tiles unavailable while locker data succeeds
-- **WHEN** external map tiles fail but the locker request succeeds
-- **THEN** the UI reports the map-background problem, retains provider attribution and allows inspecting every available locker in the list
+#### Scenario: Tiles fail while data succeeds
+- **WHEN** external tiles fail but locker data loads
+- **THEN** the warning and attribution remain visible and every available destination is selectable through the panel
 
 ### Requirement: Support Spanish mobile and keyboard use
 
-The page SHALL use Spanish content and document language, retain a visible usable map and readable results at mobile and desktop widths, and expose labelled controls, visible keyboard focus and announced loading/error status. Every locker's details SHALL be accessible through keyboard-operable list controls without requiring pointer interaction with the map.
+The page SHALL use Spanish content, preserve a usable map and readable panels at desktop and mobile sizes, and expose labelled controls, visible focus and announced loading/error status. Destination selection and quotation controls SHALL be keyboard operable without requiring pointer interaction with the map. Panels SHALL scroll internally without page-level horizontal overflow.
 
-#### Scenario: Narrow viewport and keyboard navigation
-- **WHEN** the page is viewed at 375 CSS pixels wide or operated using only the keyboard
-- **THEN** map, list and details remain accessible without page-level horizontal overflow, and selecting a list result reveals its details with visible focus
+#### Scenario: Small viewport and keyboard operation
+- **WHEN** the page is used at 375×480 CSS pixels or with keyboard alone
+- **THEN** search, parcel fields, destination selection, quotation controls/results and map attribution remain accessible without covering the selected position or losing focus
+
+### Requirement: Use explicit postal data for a shipment toward the locker
+
+The selected locker SHALL be the destination. Origin postal code SHALL be required. A valid structured destination postal code SHALL be used as recorded; if missing or invalid, the visitor SHALL enter it explicitly with a missing-code indication. Both countries SHALL be ES and postal codes SHALL remain five-digit ASCII strings. Search labels or coordinates SHALL NOT supply inferred postal codes, and manual entry SHALL NOT modify locker data.
+
+#### Scenario: Recorded destination postal code
+- **WHEN** a selected locker has structured postal code "01001" and the visitor enters origin "28001"
+- **THEN** comparison uses ES origin "28001" and ES destination "01001", preserving leading zeroes and keeping the recorded destination code read-only
+
+#### Scenario: Missing code and changed destination
+- **WHEN** a locker has no valid postal code, or the visitor changes from one such locker to another
+- **THEN** destination code must be entered for that locker before submission, without carrying a previous locker's manual code
+- **AND** origin and parcel measurements are preserved while obsolete quotation results are cleared
+
+### Requirement: Submit only explicitly validated shipping input
+
+"Comparar envíos" SHALL reuse the existing parcel fields and create one quotation only after valid destination, postal and parcel input. Dimensions SHALL convert exactly from cm to integer mm in 1..2000, and weight from kg to integer grams in 1..30000. Invalid or unrepresentable fractions SHALL show field errors without submission. Editing, selecting a locker or searching SHALL NOT submit automatically; duplicate clicks during submission SHALL NOT create duplicate requests.
+
+#### Scenario: Exact conversion and payload
+- **WHEN** the visitor compares length 25.5 cm, width 15 cm, height 10 cm and weight 2.5 kg with valid postal input
+- **THEN** one POST contains depth_mm 255, width_mm 150, height_mm 100 and weight_grams 2500, both ES countries and postal strings, with no locker_id or other extra fields
+
+#### Scenario: Invalid input and uncertain submission
+- **WHEN** required fields are empty, dimensions cannot represent integer mm, weight cannot represent integer grams, or limits are exceeded
+- **THEN** the relevant field is identified and no POST is made
+- **AND** a later POST failure, timeout or unreadable response is reported without automatic resubmission or invented provider failures
+
+### Requirement: Observe asynchronous quotations with bounded waiting
+
+After accepted creation, the browser SHALL read that quotation sequentially about once per second, with five-second HTTP timeouts and a thirty-second local waiting limit. PENDING/PROCESSING SHALL show waiting; COMPLETED/FAILED SHALL stop polling. A read failure or waiting limit SHALL permit manually continuing the same identifier without a new POST. Process failure SHALL be distinguished from provider outcomes.
+
+#### Scenario: Pending work completes or fails
+- **WHEN** an accepted quotation progresses through pending/processing to a terminal state
+- **THEN** reads do not overlap and stop at the terminal state, showing its offers/provider outcomes or process error
+
+#### Scenario: Long wait or interrupted read
+- **WHEN** the local waiting limit is reached or a GET fails while the request identifier is known
+- **THEN** the UI stops waiting and offers to continue reading the same quotation rather than creating another one
+- **AND** it does not claim the server-side work was cancelled
+
+### Requirement: Invalidate obsolete quotation interaction
+
+Closing the panel, changing destination/postal/parcel input or leaving the page SHALL stop local polling and invalidate pending responses. Obsolete results SHALL NOT be shown for new input. Cancellation SHALL affect browser waiting only, without claiming to cancel persisted worker work or an actual shipment. Continuing a known quotation SHALL be allowed only for its unchanged input snapshot.
+
+#### Scenario: Edit or close during creation or polling
+- **WHEN** an older POST/GET completes after the visitor edits input, changes destination or closes the panel
+- **THEN** it cannot reopen the panel or replace current state/results, and it is never repeated automatically
+
+### Requirement: Present provider offers honestly
+
+The panel SHALL show every returned provider/service, EUR price and transit-day range from the quotation, without calculating tariffs or inventing brands. QUOTED, NOT_COVERED and provider FAILED SHALL remain distinguishable, including partial success. Current simulated providers and demonstration prices SHALL be visibly identified. Quotes SHALL NOT imply real-provider coverage, cell fit, reservation, payment or shipment creation.
+
+#### Scenario: Partial and total provider failures
+- **WHEN** a completed quotation includes offers, no coverage or provider error/timeout outcomes
+- **THEN** each provider remains visible with its own outcome and any successful services retain their prices and transit-day ranges
+- **AND** an all-failed provider set is shown faithfully as a completed comparison rather than a fabricated process failure

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from application.lockers.ports import LockerRepository
+from application.quotations.ports import QuotationRepository
 
 
 class CorsTests(unittest.TestCase):
@@ -16,18 +17,124 @@ class CorsTests(unittest.TestCase):
 
         repository = AsyncMock(spec=LockerRepository)
         repository.list_all.return_value = []
+        self.quotation_repository = AsyncMock(spec=QuotationRepository)
+        self.publisher = AsyncMock()
         with (
             patch.dict("os.environ", {}, clear=False),
             patch("main.create_database", return_value=(AsyncMock(), object())),
             patch("main.SqlModelLockerRepository", return_value=repository),
+            patch(
+                "main.SqlModelQuotationRepository",
+                return_value=self.quotation_repository,
+            ),
         ):
             if origins is None:
                 os.environ.pop("CORS_ALLOWED_ORIGINS", None)
             else:
                 os.environ["CORS_ALLOWED_ORIGINS"] = origins
             return create_app(
-                "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
+                "postgresql+asyncpg://unused/unused", publisher=self.publisher
             )
+
+    def test_quotation_json_preflight_is_scoped_to_exact_route(self) -> None:
+        allowed = "https://project.pages.dev"
+        with TestClient(self.make_app(allowed)) as client:
+            for path, origin, method, headers, status in (
+                ("/quotations", allowed, "POST", "content-type", 200),
+                ("/quotations", allowed, "GET", "", 200),
+                ("/quotations/", allowed, "POST", "content-type", 400),
+                (
+                    "/quotations/00000000-0000-4000-8000-000000000001",
+                    allowed,
+                    "POST",
+                    "content-type",
+                    400,
+                ),
+                ("/lockers", allowed, "POST", "content-type", 400),
+                ("/deliveries", allowed, "POST", "content-type", 400),
+                ("/returns", allowed, "POST", "content-type", 400),
+                ("/quotations", allowed, "PATCH", "content-type", 400),
+                ("/quotations", allowed, "DELETE", "content-type", 400),
+                ("/quotations", allowed, "POST", "content-type,x-admin", 400),
+                ("/quotations", allowed, "POST", "authorization", 400),
+                ("/quotations", "https://other.pages.dev", "POST", "content-type", 400),
+            ):
+                with self.subTest(
+                    path=path, origin=origin, method=method, headers=headers
+                ):
+                    preflight_headers = {
+                        "Origin": origin,
+                        "Access-Control-Request-Method": method,
+                    }
+                    if headers:
+                        preflight_headers["Access-Control-Request-Headers"] = headers
+                    response = client.options(path, headers=preflight_headers)
+                    self.assertEqual(response.status_code, status)
+                    self.assertNotIn(
+                        "access-control-allow-credentials", response.headers
+                    )
+                    if origin != allowed:
+                        self.assertNotIn(
+                            "access-control-allow-origin", response.headers
+                        )
+                    if status == 200:
+                        self.assertEqual(
+                            response.headers["access-control-allow-origin"], allowed
+                        )
+                        self.assertIn(
+                            "content-type",
+                            response.headers["access-control-allow-headers"].lower(),
+                        )
+            self.quotation_repository.save.assert_not_awaited()
+            self.publisher.publish.assert_not_awaited()
+
+    def test_quotation_post_and_get_keep_real_contract_with_and_without_origin(
+        self,
+    ) -> None:
+        allowed = "https://project.pages.dev"
+        payload = {
+            "origin_country_code": "ES",
+            "origin_postal_code": "28001",
+            "destination_country_code": "ES",
+            "destination_postal_code": "01001",
+            "weight_grams": 2500,
+            "dimensions": {"width_mm": 150, "height_mm": 100, "depth_mm": 255},
+        }
+        for origin in (allowed, None):
+            with (
+                self.subTest(origin=origin),
+                TestClient(self.make_app(allowed)) as client,
+            ):
+                headers = {"Origin": origin} if origin is not None else {}
+                response = client.post("/quotations", json=payload, headers=headers)
+                self.assertEqual(response.status_code, 202)
+                self.assertEqual(response.json()["status"], "PENDING")
+                saved = self.quotation_repository.save.call_args.args[0]
+                self.publisher.publish.assert_awaited_once_with(saved.id)
+                self.assertEqual(str(saved.id), response.json()["id"])
+                self.quotation_repository.get.return_value = saved
+                read = client.get(f"/quotations/{saved.id}", headers=headers)
+                self.assertEqual(read.status_code, 200)
+                self.assertEqual(read.json()["request"], payload)
+                for result in (response, read):
+                    self.assertNotIn("access-control-allow-credentials", result.headers)
+                    if origin is None:
+                        self.assertNotIn("access-control-allow-origin", result.headers)
+                    else:
+                        self.assertEqual(
+                            result.headers["access-control-allow-origin"], allowed
+                        )
+
+    def test_quotation_validation_errors_remain_readable_for_allowed_origin(
+        self,
+    ) -> None:
+        origin = "https://project.pages.dev"
+        with TestClient(self.make_app(origin)) as client:
+            response = client.post("/quotations", json={}, headers={"Origin": origin})
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(response.headers["access-control-allow-origin"], origin)
+            self.quotation_repository.save.assert_not_awaited()
+            self.publisher.publish.assert_not_awaited()
 
     def test_exact_allowed_origins_receive_readable_get_without_credentials(
         self,
@@ -104,6 +211,15 @@ class CorsTests(unittest.TestCase):
                     headers={**headers, "Access-Control-Request-Method": "GET"},
                 )
                 self.assertEqual(response.status_code, 400)
+                quotation = client.options(
+                    "/quotations",
+                    headers={
+                        **headers,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "content-type",
+                    },
+                )
+                self.assertEqual(quotation.status_code, 400)
 
     def test_invalid_configuration_fails_before_allocating_infrastructure(self) -> None:
         invalid = (

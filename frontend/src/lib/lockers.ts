@@ -2,6 +2,7 @@ export interface AvailableLocker {
   id: string;
   label: string;
   address: string | null;
+  postalCode: string | null;
   position: [number, number] | null;
   freeCount: number;
 }
@@ -20,13 +21,14 @@ function addressText(value: unknown): string | null {
   const keys = [
     'street',
     'street_number',
-    'postal_code',
     'city',
     'province',
     'country_code',
   ] as const;
   if (!keys.every((key) => typeof value[key] === 'string')) return invalid();
-  return `${value.street} ${value.street_number}, ${value.postal_code} ${value.city}, ${value.province}, ${value.country_code}`;
+  const postal =
+    typeof value.postal_code === 'string' ? `${value.postal_code} ` : '';
+  return `${value.street} ${value.street_number}, ${postal}${value.city}, ${value.province}, ${value.country_code}`;
 }
 function position(value: unknown): [number, number] | null {
   if (!record(value)) return null;
@@ -44,7 +46,7 @@ export function availableLockers(payload: unknown): AvailableLocker[] {
   if (!Array.isArray(payload)) return invalid();
   const seen = new Set<string>();
   const results: AvailableLocker[] = [];
-  for (const value of payload) {
+  for (const [index, value] of payload.entries()) {
     if (
       !record(value) ||
       typeof value.id !== 'string' ||
@@ -74,11 +76,39 @@ export function availableLockers(payload: unknown): AvailableLocker[] {
         label:
           (typeof value.location_id === 'string' && value.location_id.trim()) ||
           address ||
-          id,
+          `Locker ${index + 1}`,
         address,
+        postalCode:
+          record(value.address) &&
+          value.address.country_code === 'ES' &&
+          typeof value.address.postal_code === 'string' &&
+          /^[0-9]{5}$/.test(value.address.postal_code)
+            ? value.address.postal_code
+            : null,
         position: position(value.coordinates),
         freeCount,
       });
+  }
+  const counts = new Map<string, number>();
+  for (const locker of results)
+    counts.set(locker.label, (counts.get(locker.label) ?? 0) + 1);
+  // Reserve original labels so generated suffixes never collide with an alias.
+  const reserved = new Set(results.map((locker) => locker.label));
+  const used = new Set<string>();
+  const occurrence = new Map<string, number>();
+  for (const locker of results) {
+    const label = locker.label;
+    if ((counts.get(label) ?? 0) > 1) {
+      let number = (occurrence.get(label) ?? 0) + 1;
+      while (
+        reserved.has(`${label} · ${number}`) ||
+        used.has(`${label} · ${number}`)
+      )
+        number++;
+      occurrence.set(label, number);
+      locker.label = `${label} · ${number}`;
+    }
+    used.add(locker.label);
   }
   return results;
 }

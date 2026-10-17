@@ -5,6 +5,36 @@ import re
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
+from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+
+class ScopedCORSMiddleware:
+    """Keep browser writes limited to the existing quotation submission route."""
+
+    def __init__(self, app: ASGIApp, allow_origins: list[str]) -> None:
+        self.reads = CORSMiddleware(
+            app,
+            allow_origins=allow_origins,
+            allow_methods=["GET"],
+            allow_credentials=False,
+        )
+        self.quotations = CORSMiddleware(
+            app,
+            allow_origins=allow_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+            allow_credentials=False,
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        middleware = (
+            self.quotations
+            if scope["type"] == "http" and scope["path"] == "/quotations"
+            else self.reads
+        )
+        await middleware(scope, receive, send)
+
 
 def get_cors_allowed_origins() -> list[str]:
     value = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()

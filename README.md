@@ -5,7 +5,7 @@ con arquitectura hexagonal y FastAPI. **Delivery** registra un
 paquete recibido del transportista para que lo recoja el destinatario; **Return**
 registra uno depositado por el cliente para que lo retire el transportista.
 El [mapa de lockers](#mapa-de-lockers-frontend-estático) permite consultar su
-disponibilidad desde el navegador. Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
+disponibilidad y comparar envíos simulados hacia un locker desde el navegador. Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
 usa **SQLModel asíncrono sobre PostgreSQL** y **Alembic** gestiona las migraciones.
 
 Ambas entidades contienen `tracking_number`, `carrier_code` y `received_at` UTC
@@ -35,11 +35,10 @@ el estado de error y permite reintentar cuando el backend esté preparado.
 ### Navegar y buscar una ubicación
 
 La vista inicial se acerca a la península. Usa la rueda sobre el mapa para
-acercar o alejar, o sus controles de zoom; «Ver España» encuadra también Baleares,
-Canarias, Ceuta y Melilla. Las cargas vacías y actualizaciones conservan tu
-encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
+acercar o alejar, o sus controles de zoom. Puedes navegar también a Baleares,
+Canarias, Ceuta y Melilla. Las cargas vacías conservan tu encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
 
-Un único panel reúne buscador, medidas del paquete, controles y los contadores
+Un único panel reúne buscador, medidas del paquete y los contadores
 vivos de disponibles/en mapa al final. Escribe una **dirección o código postal**:
 con al menos tres caracteres aparecen sugerencias después de 350 ms sin cambios.
 No hay botón de envío; Enter no duplica la consulta. Los códigos de cinco dígitos
@@ -50,8 +49,7 @@ el campo, sitúa el punto azul en el área libre del mapa y cierra las sugerenci
 sin otra petición. Puedes usar Tab o las flechas y Enter/Espacio; Escape cierra
 y devuelve el foco al campo. Salir del buscador también cierra y cancela trabajo
 pendiente. La apertura/cierre se anima brevemente, respetando la preferencia de
-movimiento reducido. El listado general de lockers conserva su control
-independiente «Ver lockers». Buscar no filtra lockers, cambia su disponibilidad
+movimiento reducido. Buscar no filtra lockers, cambia su disponibilidad
 ni utiliza las medidas del paquete; tampoco geocodifica lockers sin coordenadas.
 
 La consulta se envía directamente desde tu navegador al servicio público
@@ -150,29 +148,54 @@ La suite levanta su servidor estático y FastAPI con middleware CORS real y dobl
 de persistencia; no necesita PostgreSQL ni RabbitMQ. Deja libres los puertos
 4321 y 8765 antes de ejecutarla.
 
-El mapa ocupa toda la pantalla. Arriba a la izquierda, «Tu paquete» permite
-anotar largo, ancho y alto en centímetros y peso en kilogramos. Los campos
-empiezan vacíos, admiten decimales positivos y se pueden vaciar. Son datos locales
-de la página: no se guardan, envían, filtran lockers ni calculan cotizaciones.
-Actualizar la disponibilidad o abrir/cerrar el listado conserva las medidas.
+El mapa ocupa toda la pantalla. «Tu paquete» permite introducir largo, ancho y
+alto en centímetros y peso en kilogramos. Los datos empiezan vacíos y permanecen
+locales hasta pulsar **Comparar envíos**. Buscar una dirección no los envía.
 
-«Ver lockers» abre el listado y sus detalles en un panel independiente, cerrado
-al entrar; también se abre al seleccionar un marcador. Puedes cerrarlo con su
-botón o Escape y seguir consultando el mapa. Actualizar, reintentar y ver España
-siguen accesibles con el listado cerrado.
+### Comparar envíos hacia un locker
 
-Se muestran lockers activos con al menos una celda habilitada y libre; el
-contador suma solo esas celdas. La disponibilidad corresponde a la última lectura
-correcta: no reserva espacio ni comprueba si cabe un paquete. «Actualizar» vuelve
-a consultar; un fallo elimina los resultados anteriores y ofrece reintento.
-Los disponibles sin coordenadas válidas permanecen en la lista, sin marcador ni
-ubicación inventada. Disponibles y posicionables tienen contadores distintos.
+Elige un marcador o usa el enlace de teclado **Elegir destino y cotizar**. El
+panel «Enviar a este locker» incluye un selector accesible con todos los lockers
+disponibles, también los que carecen de coordenadas. Los nombres repetidos se
+distinguen con un número. No hay catálogo técnico ni se muestran identificadores
+de lockers. Cierra con su botón o Escape para devolver el foco al origen.
 
-El mapa depende de teselas externas de
-[OpenStreetMap, © sus colaboradores](https://www.openstreetmap.org/copyright),
-con atribución visible. Si fallan, aparece un aviso y la lista/detalles siguen
-utilizables. Las pruebas controlan las teselas; no demuestran conectividad con
-el proveedor real.
+Introduce el CP de origen. El CP de destino procede exclusivamente de la dirección
+estructurada española del locker, si contiene cinco dígitos; de lo contrario,
+el panel pide introducirlo manualmente. Conserva ceros iniciales. Cambiar de
+locker borra el CP manual anterior y conserva origen, medidas y peso.
+
+**Comparar envíos** valida dimensiones entre 0,1 y 200 cm (milímetros enteros) y
+peso entre 0,001 y 30 kg (gramos enteros). No redondea fracciones incompatibles:
+`1.001 kg` son exactamente `1001 g`. Largo se envía como profundidad. Envía
+únicamente países ES, códigos postales y paquete al contrato existente de
+`POST /quotations`; no envía UUID de locker, dirección ni coordenadas. La
+cotización usa esos CP, sin comprobar que el paquete cabe, reservar ni crear un
+envío. Las tarjetas son una **demo con proveedores, precios y plazos simulados**:
+pueden mostrar ofertas en EUR, ausencia de cobertura o fallo/timeout de proveedor.
+Un fallo del proceso se presenta por separado.
+
+Tras un 202 consulta `GET /quotations/{id}` secuencialmente, aproximadamente cada
+segundo. Cada petición tiene límite de cinco segundos y cada espera local,
+treinta segundos. Un fallo de lectura o fin de espera permite **Seguir consultando**
+la misma referencia sin otro POST. No hay reintentos automáticos de creación.
+Una creación no confirmada puede haberse guardado; un error de publicación con
+referencia permite consultar ese estado. El backend persiste las solicitudes.
+Editar datos, cerrar el panel o salir detiene la espera local y descarta respuestas
+obsoletas; no cancela el trabajo remoto. No se usa almacenamiento del navegador.
+
+Solo aparecen lockers activos con alguna celda habilitada y libre. Los contadores
+muestran lockers disponibles y posicionables, no celdas. La lectura inicial y el
+reintento tras fallo consultan disponibilidad; no hay actualización periódica.
+Los lockers sin coordenadas siguen siendo destinos seleccionables sin inventar
+ubicación. Una respuesta vacía o un error no mueve el mapa.
+
+El fondo utiliza teselas de [OpenStreetMap, © sus colaboradores](https://www.openstreetmap.org/copyright),
+con atribución visible. Si fallan, el selector y cotizador siguen utilizables.
+Las pruebas controlan teselas y Photon; el recorrido CORS de cotización usa la
+aplicación FastAPI real con repositorios y publicación de prueba, sin interceptar
+las peticiones de lockers o cotizaciones. No demuestra conectividad del proveedor
+externo ni la integración del worker real.
 
 ### Generar lockers sintéticos de demostración
 
@@ -207,7 +230,7 @@ posiciones se muestrean dentro de los polígonos terrestres españoles de Natura
 Earth, respetando huecos; no se usa Photon. La [procedencia y licencia del dato](backend/scripts/data/README.md)
 identifica el extracto local de dominio público y su versión. Son ubicaciones
 sintéticas con límites generalizados, sin instalaciones o direcciones reales ni
-cuotas iguales por territorio. «Ver España» permite explorar también las islas.
+cuotas iguales por territorio. Puedes explorar las islas desplazando y alejando el mapa.
 
 La misma semilla reproduce los payloads y las coordenadas, no los UUID asignados
 por el servidor. **Repetir añade nuevos registros**, incluso con la misma semilla;
@@ -223,7 +246,9 @@ stacks desechables y conservan los datos del usuario.
 FastAPI lee `CORS_ALLOWED_ORIGINS` al arrancar: orígenes HTTP(S) exactos separados
 por comas, recortando espacios. Sin variable o con valor vacío no permite ningún
 origen de navegador. Rechaza comodines, credenciales, rutas (también `/` final),
-query, fragmentos y entradas inválidas. Permite preflight GET sin credenciales;
+query, fragmentos y entradas inválidas. Permite GET general y, exclusivamente en
+la ruta exacta `/quotations`, POST JSON con `Content-Type` y su preflight. No
+permite POST en otras rutas, credenciales ni cabeceras personalizadas adicionales;
 CORS no es autenticación ni impide que un cliente HTTP use las rutas existentes.
 
 Compose configura solo en API los orígenes locales explícitos

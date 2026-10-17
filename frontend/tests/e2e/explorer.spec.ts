@@ -34,516 +34,12 @@ async function data(page: Page, payload: unknown, open = true) {
     route.fulfill({ json: payload }),
   );
   await page.goto('/');
-  if (open)
-    await page
-      .getByRole('button', { name: 'Ver lockers', exact: true })
-      .click();
+  if (open) await openPanel(page);
 }
-test('real cross-origin FastAPI middleware allows exact origin and denies another', async ({
-  page,
-  context,
-}) => {
-  await tiles(page); // The API request is intentionally never intercepted here.
-  const response = page.waitForResponse('http://127.0.0.1:8765/lockers');
-  await page.goto('/');
-  await expect(
-    page.getByRole('status').filter({ hasText: 'No hay lockers' }),
-  ).toBeVisible();
-  expect((await response).headers()['access-control-allow-origin']).toBe(
-    'http://127.0.0.1:4321',
-  );
-  const denied = await context.newPage();
-  await tiles(denied);
-  await denied.goto('http://localhost:4321/');
-  await expect(denied.locator('#status')).toContainText(
-    'conectar con el servicio de lockers',
-  );
-  await expect(
-    denied.getByRole('button', { name: 'Reintentar consulta' }),
-  ).toBeVisible();
-  expect(
-    await denied.evaluate(async () => {
-      try {
-        await fetch('http://127.0.0.1:8765/lockers', { credentials: 'omit' });
-        return 'readable';
-      } catch {
-        return 'blocked';
-      }
-    }),
-  ).toBe('blocked');
-});
-test('Spain view includes territories, keeps positions and permits shared-coordinate selection', async ({
-  page,
-}) => {
-  const positions = [
-    [40.4168, -3.7038],
-    [39.5696, 2.6502],
-    [28.4636, -16.2518],
-    [35.8894, -5.3213],
-    [35.2923, -2.9381],
-    [40.4168, -3.7038],
-  ];
-  await data(
-    page,
-    positions.map(([latitude, longitude], i) =>
-      locker(
-        i + 1,
-        ['Madrid', 'Palma', 'Tenerife', 'Ceuta', 'Melilla', 'Madrid segundo'][
-          i
-        ],
-        { latitude, longitude },
-      ),
-    ),
-  );
-  await expect(page.locator('#available-count')).toHaveText('6');
-  await expect(page.locator('#positioned-count')).toHaveText('6');
-  const markers = page.locator('.locker-marker');
-  await expect(markers).toHaveCount(6);
-  await page.getByRole('button', { name: 'Ver España', exact: true }).click();
-  const mapBox = await page.locator('#map').boundingBox();
-  for (let i = 0; i < 6; i++) {
-    const box = await markers.nth(i).boundingBox();
-    expect(box!.x).toBeGreaterThanOrEqual(mapBox!.x - 20);
-    expect(box!.x).toBeLessThan(mapBox!.x + mapBox!.width);
-    expect(box!.y).toBeGreaterThanOrEqual(mapBox!.y - 40);
-    expect(box!.y).toBeLessThan(mapBox!.y + mapBox!.height);
-  }
-  for (let i = 0; i < 6; i++) {
-    await page.locator(`[data-id="${id(i + 1)}"]`).click();
-    await expect(page.locator('#locker-detail')).toContainText(id(i + 1));
-    await expect(page.locator('.leaflet-popup')).toHaveCount(1);
-    await expect(page.locator('.leaflet-popup')).toContainText(id(i + 1));
-    await page.getByRole('button', { name: 'Ver España' }).click();
-  }
-  await page.getByRole('button', { name: 'Cerrar listado de lockers' }).click();
-  await page.locator('.locker-marker').nth(1).click();
-  await expect(page.locator('#locker-detail')).toContainText(id(2));
-});
-test('nullable labels, postal text and untrusted markup stay literal in list, detail and popup', async ({
-  page,
-}) => {
-  const address = {
-    country_code: 'ES',
-    postal_code: '01001',
-    province: 'Álava',
-    city: 'Vitoria',
-    street: '<img src=x onerror="window.pwned=1">',
-    street_number: '2',
-  };
-  await data(page, [
-    { ...locker(1, null), address },
-    locker(2, null, null),
-    locker(3, '<script>window.pwned=1</script>'),
-  ]);
-  await expect(page.locator('#locker-list')).toContainText('01001');
-  await expect(page.locator('#locker-list')).toContainText(id(2));
-  await page.locator(`[data-id="${id(3)}"]`).click();
-  await expect(page.locator('#locker-detail')).toContainText(
-    '<script>window.pwned=1</script>',
-  );
-  await expect(page.locator('.leaflet-popup')).toContainText(
-    '<script>window.pwned=1</script>',
-  );
-  expect(await page.evaluate(() => 'pwned' in window)).toBe(false);
-  await expect(
-    page.locator(
-      '#locker-list img, #locker-detail script, .leaflet-popup script',
-    ),
-  ).toHaveCount(0);
-});
-test('all unmapped lockers remain usable and distinct from an empty response', async ({
-  page,
-}) => {
-  await data(page, [
-    locker(1, 'Sin posición', null),
-    locker(2, 'Incompleto', { latitude: 40 }),
-  ]);
-  await expect(page.locator('#available-count')).toHaveText('2');
-  await expect(page.locator('#positioned-count')).toHaveText('0');
-  await expect(page.locator('#status')).toContainText(
-    'Ninguno tiene coordenadas',
-  );
-  await expect(page.locator('.locker-marker')).toHaveCount(0);
-  await page.locator(`[data-id="${id(1)}"]`).click();
-  await expect(page.locator('#locker-detail')).toContainText(
-    'Sin coordenadas válidas',
-  );
-});
-test('loading, refresh failure, retry and capacity changes replace stale availability with GET only', async ({
-  page,
-}) => {
-  await tiles(page);
-  let count = 0;
-  const methods: string[] = [];
-  await page.route('http://127.0.0.1:8765/lockers', async (route) => {
-    methods.push(route.request().method());
-    count++;
-    if (count === 1) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      await route.fulfill({ json: [locker(1)] });
-    } else if (count === 2)
-      await route.fulfill({ status: 503, body: 'unavailable' });
-    else if (count === 3) await route.fulfill({ json: [locker(1)] });
-    else
-      await route.fulfill({
-        json: [
-          { ...locker(1), compartments: [{ enabled: true, occupied: true }] },
-        ],
-      });
-  });
-  await page.goto('/');
-  await expect(page.locator('#status')).toContainText('Consultando');
-  await page.getByRole('button', { name: 'Ver lockers', exact: true }).click();
-  await expect(page.locator('#locker-list button')).toHaveCount(1);
-  await page.locator('#locker-list button').click();
-  await page.getByRole('button', { name: 'Actualizar' }).click();
-  await expect(page.locator('#status')).toContainText('HTTP 503');
-  await expect(page.locator('#locker-list button')).toHaveCount(0);
-  await expect(page.locator('.locker-marker')).toHaveCount(0);
-  await expect(page.locator('#locker-detail')).toBeHidden();
-  await page.getByRole('button', { name: 'Reintentar consulta' }).click();
-  await expect(page.locator('#locker-list button')).toHaveCount(1);
-  await page.locator('#locker-list button').click();
-  await page.getByRole('button', { name: 'Actualizar' }).click();
-  await expect(page.locator('#status')).toContainText(
-    'No hay lockers disponibles',
-  );
-  await expect(page.locator('#locker-detail')).toBeHidden();
-  expect(methods).toEqual(['GET', 'GET', 'GET', 'GET']);
-});
-test('tile failure preserves keyboard details and 375px layout', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 375, height: 900 });
-  await tiles(page, true);
-  await page.route('http://127.0.0.1:8765/lockers', (route) =>
-    route.fulfill({ json: [locker(1, 'Nombre muy largo '.repeat(10))] }),
-  );
-  await page.goto('/');
-  await expect(page.locator('#tile-warning')).toBeVisible();
-  await page.getByRole('button', { name: 'Ver lockers', exact: true }).click();
-  const button = page.locator('#locker-list button');
-  await button.focus();
+async function openPanel(page: Page) {
+  await page.locator('#skip-results').focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator('#locker-detail')).toContainText(id(1));
-  await expect(button).toBeFocused();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
-  await expect(page.getByRole('link', { name: 'OpenStreetMap' })).toBeVisible();
-  await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
-});
-test('malformed data and network failures remain errors with retry', async ({
-  page,
-}) => {
-  await data(page, { invalid: 'not a collection' });
-  await expect(page.locator('#status')).toContainText(
-    'datos de lockers no válidos',
-  );
-  await expect(page.locator('#retry')).toBeVisible();
-  await page.unroute('http://127.0.0.1:8765/lockers');
-  await page.route('http://127.0.0.1:8765/lockers', (route) => route.abort());
-  await page.locator('#retry').click();
-  await expect(page.locator('#status')).toContainText(
-    'conectar con el servicio de lockers',
-  );
-  await expect(page.locator('#locker-list button')).toHaveCount(0);
-});
-
-test('a stalled read times out visibly and allows another attempt', async ({
-  page,
-}) => {
-  await tiles(page);
-  await page.route('http://127.0.0.1:8765/lockers', () => {});
-  await page.goto('/');
-  await expect(page.locator('#status')).toContainText('cinco segundos', {
-    timeout: 7000,
-  });
-  await expect(page.locator('#retry')).toBeVisible();
-  await expect(page.locator('#refresh')).toBeEnabled();
-});
-
-test('keyboard selection reveals unmapped details inside a long scrollable list', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await data(
-    page,
-    Array.from({ length: 20 }, (_, i) =>
-      locker(i + 1, `Locker ${i + 1}`, null),
-    ),
-  );
-  for (const n of [1, 20, 10]) {
-    const button = page.locator(`[data-id="${id(n)}"]`);
-    await button.focus();
-    await page.keyboard.press('Enter');
-    await expect(button).toBeFocused();
-    const detail = page.locator('#locker-detail');
-    await expect(detail).toContainText(id(n));
-    const geometry = await detail.evaluate((node) => {
-      const detail = node.getBoundingClientRect();
-      const panel = document.querySelector('#results')!.getBoundingClientRect();
-      return {
-        top: detail.top,
-        bottom: detail.bottom,
-        panelTop: panel.top,
-        panelBottom: panel.bottom,
-        viewportHeight: window.innerHeight,
-      };
-    });
-    expect(geometry.top).toBeGreaterThanOrEqual(
-      Math.max(geometry.panelTop, 0) - 1,
-    );
-    expect(geometry.bottom).toBeLessThanOrEqual(
-      Math.min(geometry.panelBottom, geometry.viewportHeight) + 1,
-    );
-  }
-});
-
-async function fullViewport(page: Page, width: number, height: number) {
-  const box = await page.locator('#map').boundingBox();
-  expect(box).toEqual({ x: 0, y: 0, width, height });
-  expect(
-    await page.evaluate(() => ({
-      width: document.documentElement.scrollWidth,
-      height: document.documentElement.scrollHeight,
-    })),
-  ).toEqual({ width, height });
-  await expect(page.locator('header, footer')).toHaveCount(0);
 }
-function overlaps(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number },
-) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
-for (const viewport of [
-  { width: 1280, height: 800, name: 'desktop' },
-  { width: 375, height: 667, name: 'mobile' },
-  { width: 375, height: 480, name: 'mobile-short' },
-]) {
-  test(`full viewport, compact parcel menu and independent list geometry ${viewport.name}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({
-      width: viewport.width,
-      height: viewport.height,
-    });
-    await data(
-      page,
-      [
-        locker(1, 'Madrid · Atocha'),
-        locker(2, 'Palma · Centro', { latitude: 39.57, longitude: 2.65 }),
-        locker(3, 'Sin coordenadas', null),
-      ],
-      false,
-    );
-    await expect(page.locator('#available-count')).toHaveText('3');
-    await expect(page.locator('#results')).toBeHidden();
-    await fullViewport(page, viewport.width, viewport.height);
-    const parcel = await page.locator('.parcel-panel').boundingBox();
-    expect(parcel!.x).toBeLessThan(35);
-    expect(parcel!.y).toBeLessThan(35);
-    for (const label of [
-      'Largo (cm)',
-      'Ancho (cm)',
-      'Alto (cm)',
-      'Peso (kg)',
-    ]) {
-      const input = page.getByRole('spinbutton', { name: label, exact: true });
-      await expect(input).toHaveValue('');
-      await expect(input).toBeVisible();
-    }
-    const zoom = await page.locator('.leaflet-control-zoom').boundingBox();
-    expect(overlaps(parcel!, zoom!)).toBe(false);
-    await expect(
-      page.getByRole('button', { name: 'Acercar mapa' }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'OpenStreetMap' }),
-    ).toBeVisible();
-    await page.screenshot({ path: `test-results/${viewport.name}-closed.png` });
-    await page
-      .getByRole('button', { name: 'Ver lockers', exact: true })
-      .click();
-    await expect(page.locator('#close-results')).toBeFocused();
-    await expect(page.locator('#open-results')).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
-    await fullViewport(page, viewport.width, viewport.height);
-    const resultBox = await page.locator('#results').boundingBox();
-    const leftBox = await page.locator('#map-panels').boundingBox();
-    const attribution = await page
-      .locator('.leaflet-control-attribution')
-      .boundingBox();
-    const openZoom = await page.locator('.leaflet-control-zoom').boundingBox();
-    expect(overlaps(resultBox!, leftBox!)).toBe(false);
-    expect(overlaps(resultBox!, attribution!)).toBe(false);
-    expect(overlaps(resultBox!, openZoom!)).toBe(false);
-    await page.screenshot({ path: `test-results/${viewport.name}-open.png` });
-    await page.locator(`[data-id="${id(1)}"]`).click();
-    const selectedMarker = page.locator(
-      '.locker-marker[title="Madrid · Atocha"]',
-    );
-    expect(
-      await selectedMarker.evaluate((node) => {
-        const rect = node.getBoundingClientRect();
-        return (
-          document
-            .elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-            ?.closest('.locker-marker') === node
-        );
-      }),
-    ).toBe(true);
-    await expect(page.locator('#locker-detail')).toContainText(id(1));
-    await page.screenshot({
-      path: `test-results/${viewport.name}-selected.png`,
-    });
-    await page.keyboard.press('Escape');
-    await expect(page.locator('#results')).toBeHidden();
-    await expect(page.locator('#open-results')).toBeFocused();
-    await page.locator('#skip-results').focus();
-    await page.keyboard.press('Enter');
-    await expect(page.locator('#results')).toBeVisible();
-  });
-}
-
-test('parcel fields accept local positive decimals without changing map, availability or requests', async ({
-  page,
-}) => {
-  await data(page, [locker(1)], false);
-  await expect(page.locator('#available-count')).toHaveText('1');
-  let extraRequests = 0;
-  page.on('request', (request) => {
-    if (!request.url().startsWith('https://tile.openstreetmap.org/'))
-      extraRequests++;
-  });
-  const markerBefore = await page.locator('.locker-marker').boundingBox();
-  const mapPaneBefore = await page
-    .locator('.leaflet-map-pane')
-    .getAttribute('style');
-  const inputs = page.locator('#parcel-form input');
-  for (const [i, value] of ['25.5', '15', '10', '2.5'].entries()) {
-    await inputs.nth(i).fill(value);
-    expect(
-      await inputs
-        .nth(i)
-        .evaluate((node: HTMLInputElement) => node.checkValidity()),
-    ).toBe(true);
-  }
-  await inputs.nth(0).focus();
-  await page.keyboard.press('Tab');
-  await expect(inputs.nth(1)).toBeFocused();
-  await page.keyboard.press('Enter');
-  await inputs.nth(2).fill('0');
-  await expect(inputs.nth(2)).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.locator('#parcel-height-error')).toBeVisible();
-  await inputs.nth(2).fill('-1.5');
-  expect(
-    await inputs
-      .nth(2)
-      .evaluate((node: HTMLInputElement) => node.checkValidity()),
-  ).toBe(false);
-  await inputs.nth(2).fill('');
-  await expect(inputs.nth(2)).toHaveAttribute('aria-invalid', 'false');
-  await inputs.nth(2).fill('0.005');
-  expect(
-    await inputs
-      .nth(2)
-      .evaluate((node: HTMLInputElement) => node.checkValidity()),
-  ).toBe(true);
-  await page.locator('.parcel-heading').hover();
-  const heading = await page.locator('.parcel-heading').boundingBox();
-  await page.mouse.move(heading!.x + 20, heading!.y + 15);
-  await page.mouse.down();
-  await page.mouse.move(heading!.x + 100, heading!.y + 45);
-  await page.mouse.up();
-  await page.mouse.wheel(0, 180);
-  await expect(page.locator('#available-count')).toHaveText('1');
-  expect(await page.locator('.locker-marker').boundingBox()).toEqual(
-    markerBefore,
-  );
-  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-    mapPaneBefore,
-  );
-  expect(extraRequests).toBe(0);
-  await page.getByRole('button', { name: 'Ver lockers', exact: true }).click();
-  await page.locator('#close-results').click();
-  await page.locator('#refresh').click();
-  await expect(page.locator('#available-count')).toHaveText('1');
-  await expect(inputs.nth(0)).toHaveValue('25.5');
-  await expect(inputs.nth(3)).toHaveValue('2.5');
-  expect(extraRequests).toBe(1);
-  expect(
-    await page.evaluate(() => ({
-      local: localStorage.length,
-      session: sessionStorage.length,
-    })),
-  ).toEqual({ local: 0, session: 0 });
-});
-
-test('marker selection opens details; refreshing a closed selected list keeps it closed', async ({
-  page,
-}) => {
-  await data(page, [locker(1, 'Madrid')], false);
-  await page.locator('.locker-marker').click();
-  await expect(page.locator('#results')).toBeVisible();
-  await expect(page.locator('#locker-detail')).toContainText(id(1));
-  await page.locator('#close-results').click();
-  await page.locator('#refresh').click();
-  await expect(page.locator('#available-count')).toHaveText('1');
-  await expect(page.locator('#results')).toBeHidden();
-  await expect(page.locator('#open-results')).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
-});
-
-test('short mobile panels scroll internally without moving the map or losing local input', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 375, height: 480 });
-  await data(page, [locker(1)], false);
-  await expect(page.locator('#available-count')).toHaveText('1');
-  await page.getByRole('spinbutton', { name: 'Largo (cm)' }).fill('25.5');
-  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
-  const markerBefore = await page.locator('.locker-marker').boundingBox();
-  let requests = 0;
-  page.on('request', (request) => {
-    if (!request.url().startsWith('https://tile.openstreetmap.org/'))
-      requests++;
-  });
-  await page.locator('.parcel-heading').hover();
-  await page.mouse.wheel(0, 250);
-  await expect
-    .poll(() => page.locator('#map-panels').evaluate((node) => node.scrollTop))
-    .toBeGreaterThan(0);
-  await expect(page.locator('#refresh')).toBeInViewport();
-  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-    before,
-  );
-  expect(await page.locator('.locker-marker').boundingBox()).toEqual(
-    markerBefore,
-  );
-  await page.getByRole('spinbutton', { name: 'Largo (cm)' }).focus();
-  await page.keyboard.press('Tab');
-  await expect(
-    page.getByRole('spinbutton', { name: 'Ancho (cm)' }),
-  ).toBeFocused();
-  await expect(
-    page.getByRole('spinbutton', { name: 'Largo (cm)' }),
-  ).toHaveValue('25.5');
-  expect(requests).toBe(0);
-});
-
 const photon = 'https://photon.komoot.io/**';
 function place(
   label = 'Madrid',
@@ -666,9 +162,7 @@ for (const viewport of [
     await page.screenshot({
       path: `test-results/${viewport.name}-menu-selected.png`,
     });
-    await page
-      .getByRole('button', { name: 'Ver lockers', exact: true })
-      .click();
+    await openPanel(page);
     await page.unroute(photon);
     await page.route(photon, (route) => {
       geoReads++;
@@ -750,7 +244,8 @@ test('geographic errors, empty, malformed and timeout retain independent retry',
   });
   await query.fill('Madrid');
   await expect(page.locator('#search-status')).toContainText('HTTP 503');
-  await expect(page.locator('#status')).toContainText('1 locker disponible');
+  await expect(page.locator('#status')).toBeHidden();
+  await expect(page.locator('#available-count')).toHaveText('1');
   await page.getByRole('button', { name: 'Reintentar búsqueda' }).click();
   await expect(page.locator('#search-status')).toContainText(
     'No se han encontrado',
@@ -934,69 +429,6 @@ test('touching a suggestion selects before blur and does not trigger another sea
   }
 });
 
-test('wheel zoom works in both directions, Spain is wider and empty refresh preserves navigation', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  let reads = 0;
-  await tiles(page);
-  await page.route('http://127.0.0.1:8765/lockers', (route) => {
-    reads++;
-    return route.fulfill({
-      json:
-        reads === 1
-          ? [
-              locker(1),
-              locker(2, 'Valencia', { latitude: 39.47, longitude: -0.38 }),
-            ]
-          : [],
-    });
-  });
-  await page.goto('/');
-  await expect(page.locator('.locker-marker')).toHaveCount(2);
-  const distance = async () => {
-    const boxes = await page.locator('.locker-marker').evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const box = node.getBoundingClientRect();
-        return { x: box.x, y: box.y };
-      }),
-    );
-    return Math.hypot(boxes[1]!.x - boxes[0]!.x, boxes[1]!.y - boxes[0]!.y);
-  };
-  const initial = await distance();
-  await page.getByRole('button', { name: 'Ver España', exact: true }).click();
-  await expect.poll(distance).toBeLessThan(initial);
-  await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
-    /leaflet-zoom-anim/,
-  );
-  const wide = await distance();
-  await page.mouse.move(850, 600);
-  await page.mouse.wheel(0, -300);
-  await expect.poll(distance).toBeGreaterThan(wide);
-  await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
-    /leaflet-zoom-anim/,
-  );
-  const close = await distance();
-  await page.mouse.wheel(0, 300);
-  await expect.poll(distance).toBeLessThan(close);
-  await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
-    /leaflet-zoom-anim/,
-  );
-  await page.mouse.move(800, 550);
-  await page.mouse.down();
-  await page.mouse.move(860, 580, { steps: 5 });
-  await page.mouse.up();
-  await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
-    /leaflet-pan-anim/,
-  );
-  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
-  await page.locator('#refresh').click();
-  await expect(page.locator('#available-count')).toHaveText('0');
-  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-    before,
-  );
-});
-
 test('duplicate suggestion labels retain the selected candidate coordinates', async ({
   page,
 }) => {
@@ -1015,4 +447,516 @@ test('duplicate suggestion labels retain the selected candidate coordinates', as
   await expect(query).toHaveValue('Centro');
   await expect(page.locator('#search-suggestions')).toBeHidden();
   expect(await markerHit(page)).toBe(true);
+});
+const address = {
+  country_code: 'ES',
+  postal_code: '01001',
+  province: 'Álava',
+  city: 'Vitoria',
+  street: 'Calle Mayor',
+  street_number: '2',
+};
+async function fillShipping(page: Page, manual = true) {
+  for (const [id, value] of [
+    ['length', '25.5'],
+    ['width', '15'],
+    ['height', '10'],
+    ['weight', '1.001'],
+  ])
+    await page.locator(`#parcel-${id}`).fill(value!);
+  await page.locator('#origin-postal').fill('28001');
+  if (manual) await page.locator('#destination-postal').fill('01001');
+}
+const quoteId = id(101);
+function quote(request: unknown, status = 'COMPLETED') {
+  return {
+    id: quoteId,
+    request,
+    status,
+    created_at: '2026-10-17T12:00:00Z',
+    finished_at: status === 'COMPLETED' ? '2026-10-17T12:00:02Z' : null,
+    process_error_code: null,
+    results:
+      status === 'COMPLETED'
+        ? [
+            {
+              provider_code: 'sim-economy',
+              status: 'QUOTED',
+              error_code: null,
+              offers: [
+                {
+                  service_code: 'economy',
+                  currency: 'EUR',
+                  price_cents: 1234,
+                  transit_days_min: 2,
+                  transit_days_max: 4,
+                },
+              ],
+            },
+            {
+              provider_code: 'sim-standard',
+              status: 'NOT_COVERED',
+              error_code: null,
+              offers: [],
+            },
+            {
+              provider_code: 'sim-express',
+              status: 'FAILED',
+              error_code: 'PROVIDER_TIMEOUT',
+              offers: [],
+            },
+          ]
+        : [],
+  };
+}
+test('real cross-origin FastAPI completes POST/preflight and polling without interception', async ({
+  page,
+  context,
+}) => {
+  await tiles(page);
+  const response = page.waitForResponse('http://127.0.0.1:8765/lockers');
+  await page.goto('/');
+  await expect(page.locator('#available-count')).toHaveText('1');
+  expect((await response).headers()['access-control-allow-origin']).toBe(
+    'http://127.0.0.1:4321',
+  );
+  await openPanel(page);
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page, false);
+  await expect(page.locator('#destination-postal')).toHaveValue('01001');
+  const post = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/quotations'),
+  );
+  await page.locator('#compare-shipping').click();
+  expect((await post).status()).toBe(202);
+  await expect(page.locator('#quotation-status')).toContainText('finalizada');
+  await expect(page.locator('#quotation-offers')).toContainText('12,34');
+  await expect(page.locator('#quotation-offers')).toContainText(
+    'Sin cobertura',
+  );
+  await expect(page.locator('#quotation-offers')).toContainText(
+    'tiempo de respuesta',
+  );
+  const denied = await context.newPage();
+  await tiles(denied);
+  await denied.goto('http://localhost:4321/');
+  await expect(denied.locator('#retry')).toBeVisible();
+  await expect(denied.locator('#status')).toContainText('conectar');
+});
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`destination form and simulated offers ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    let reads = 0;
+    let posts = 0;
+    let submitted: any;
+    let gets = 0;
+    await tiles(page);
+    await page.route('http://127.0.0.1:8765/lockers', (r) => {
+      reads++;
+      return r.fulfill({
+        json: [
+          { ...locker(1, 'Madrid'), address },
+          locker(2, 'Sin coordenadas', null),
+          locker(3, 'Madrid'),
+        ],
+      });
+    });
+    await page.route('http://127.0.0.1:8765/quotations', (r) => {
+      posts++;
+      submitted = r.request().postDataJSON();
+      return r.fulfill({
+        status: 202,
+        json: { id: quoteId, status: 'PENDING' },
+      });
+    });
+    await page.route(`http://127.0.0.1:8765/quotations/${quoteId}`, (r) => {
+      gets++;
+      return r.fulfill({
+        json: quote(submitted, gets === 1 ? 'PENDING' : 'COMPLETED'),
+      });
+    });
+    await page.goto('/');
+    await expect(page.locator('#available-count')).toHaveText('3');
+    await expect(page.locator('#results')).toBeHidden();
+    await expect(page.locator('#status')).toBeHidden();
+    await expect(
+      page.getByRole('button', { name: 'Ver lockers', exact: true }),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: `test-results/shipping-${viewport.name}-initial.png`,
+    });
+    await openPanel(page);
+    await expect(page.locator('#destination-locker')).toBeFocused();
+    await page.locator('#destination-locker').selectOption(id(2));
+    await expect(page.locator('#destination-position')).toBeVisible();
+    await expect(page.locator('#destination-postal-note')).toContainText(
+      'no registrado',
+    );
+    await fillShipping(page);
+    await page.screenshot({
+      path: `test-results/shipping-${viewport.name}-form.png`,
+    });
+    await page.locator('#compare-shipping').click();
+    await expect(page.locator('#quotation-status')).toContainText('finalizada');
+    expect(posts).toBe(1);
+    expect(reads).toBe(1);
+    expect(gets).toBe(2);
+    expect(submitted).toEqual({
+      origin_country_code: 'ES',
+      origin_postal_code: '28001',
+      destination_country_code: 'ES',
+      destination_postal_code: '01001',
+      weight_grams: 1001,
+      dimensions: { depth_mm: 255, width_mm: 150, height_mm: 100 },
+    });
+    await expect(page.locator('#quotation-offers')).toContainText('12,34');
+    await expect(page.locator('.demo-note')).toContainText('simulados');
+    await page.locator('.offer-card').first().scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/shipping-${viewport.name}-offers.png`,
+    });
+    await page.locator('#destination-locker').selectOption(id(1));
+    await expect(page.locator('#quotation-offers')).toBeEmpty();
+    await expect(page.locator('#destination-postal')).toHaveValue('01001');
+    await expect(page.locator('#destination-postal')).toHaveAttribute(
+      'readonly',
+      '',
+    );
+    await expect(page.locator('#origin-postal')).toHaveValue('28001');
+    const marker = page.locator('.locker-marker[title="Madrid · 1"]');
+    expect(
+      await marker.evaluate((node) => {
+        const r = node.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+            ?.closest('.locker-marker') === node
+        );
+      }),
+    ).toBe(true);
+    await page.locator('#destination-locker').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#results')).toBeHidden();
+    await expect(page.locator('#skip-results')).toBeFocused();
+  });
+}
+test('destination selector preserves duplicates and literal unsafe text without exposing identifiers', async ({
+  page,
+}) => {
+  await data(page, [
+    locker(1, '<img src=x onerror=alert(1)>'),
+    locker(2, 'Same', null),
+    locker(3, 'Same', null),
+  ]);
+  await expect(page.locator('#destination-locker')).toContainText(
+    '<img src=x onerror=alert(1)>',
+  );
+  await expect(page.locator('#destination-locker option')).toHaveCount(4);
+  await page.locator('#destination-locker').selectOption(id(3));
+  await expect(page.locator('#destination-locker option:checked')).toHaveText(
+    'Same · 2',
+  );
+  await expect(page.locator('#results img')).toHaveCount(0);
+  await expect(page.locator('#results')).not.toContainText(id(3));
+});
+test('invalid exact units focus field and prevent POST, destination change resets only manual postal', async ({
+  page,
+}) => {
+  let posts = 0;
+  await data(page, [locker(1), locker(2, null, null)]);
+  await page.route('**/quotations', (r) => {
+    posts++;
+    return r.abort();
+  });
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  await page.locator('#parcel-length').fill('1.01');
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#parcel-length')).toBeFocused();
+  await expect(page.locator('#parcel-length-error')).toContainText(
+    'milímetros',
+  );
+  expect(posts).toBe(0);
+  await page.locator('#destination-locker').selectOption(id(2));
+  await expect(page.locator('#destination-postal')).toHaveValue('');
+  await expect(page.locator('#origin-postal')).toHaveValue('28001');
+  await expect(page.locator('#parcel-length')).toHaveValue('1.01');
+});
+test('GET failure resumes same reference without duplicate POST', async ({
+  page,
+}) => {
+  let posts = 0;
+  let reads = 0;
+  let input: any;
+  await data(page, [locker(1)]);
+  await page.route('**/quotations', (r) => {
+    posts++;
+    input = r.request().postDataJSON();
+    return r.fulfill({ status: 202, json: { id: quoteId, status: 'PENDING' } });
+  });
+  await page.route(`**/quotations/${quoteId}`, (r) => {
+    reads++;
+    return reads === 1
+      ? r.fulfill({ status: 503, json: { detail: 'unavailable' } })
+      : r.fulfill({ json: quote(input) });
+  });
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-resume')).toBeVisible();
+  await page.locator('#quotation-resume').click();
+  await expect(page.locator('#quotation-status')).toContainText('finalizada');
+  expect(posts).toBe(1);
+  expect(reads).toBe(2);
+});
+test('late accepted POST cannot reopen closed panel or attach stale quotation after edit', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = (input, init) =>
+      String(input).endsWith('/quotations')
+        ? new Promise((resolve) =>
+            Reflect.set(window, 'finishPost', () =>
+              resolve(
+                new Response(
+                  JSON.stringify({
+                    id: '00000000-0000-4000-8000-000000000101',
+                    status: 'PENDING',
+                  }),
+                  { status: 202 },
+                ),
+              ),
+            ),
+          )
+        : original(input, init);
+  });
+  await data(page, [locker(1)]);
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-status')).toContainText('Creando');
+  await page.locator('#close-results').click();
+  await page.evaluate(() => Reflect.get(window, 'finishPost')());
+  await expect(page.locator('#results')).toBeHidden();
+  await openPanel(page);
+  await expect(page.locator('#quotation-status')).toContainText(
+    'creación no se ha podido confirmar',
+  );
+  await expect(page.locator('#quotation-reference')).toBeHidden();
+  await expect(page.locator('#quotation-offers')).toBeEmpty();
+});
+test('availability failure and tile warning are independent; retry clears stale data', async ({
+  page,
+}) => {
+  await tiles(page, true);
+  let count = 0;
+  await page.route('**/lockers', (r) => {
+    count++;
+    return count === 1
+      ? r.fulfill({ status: 500, json: {} })
+      : r.fulfill({ json: [locker(1)] });
+  });
+  await page.goto('/');
+  await expect(page.locator('#retry')).toBeVisible();
+  await expect(page.locator('#tile-warning')).toBeVisible();
+  await page.locator('#retry').click();
+  await expect(page.locator('#available-count')).toHaveText('1');
+  await expect(page.locator('#status')).toBeHidden();
+});
+test('wheel zoom stays isolated from the parcel menu', async ({ page }) => {
+  await data(page, [locker(1)], false);
+  const marker = page.locator('.locker-marker');
+  const initial = await marker.boundingBox();
+  await page.mouse.move(700, 500);
+  await page.mouse.wheel(0, -400);
+  await page.waitForTimeout(400);
+  expect(await marker.boundingBox()).not.toEqual(initial);
+  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
+  await page.locator('.parcel-panel').hover();
+  await page.mouse.wheel(0, 300);
+  await page.waitForTimeout(300);
+  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+    before,
+  );
+});
+test('retained POST blocks duplicates, edit discards its late acceptance', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    let count = 0;
+    window.fetch = (input, init) => {
+      if (String(input).endsWith('/quotations')) {
+        Reflect.set(window, 'postCount', ++count);
+        return new Promise((resolve) =>
+          Reflect.set(window, 'finishPost', () =>
+            resolve(
+              new Response(
+                JSON.stringify({
+                  id: '00000000-0000-4000-8000-000000000101',
+                  status: 'PENDING',
+                }),
+                { status: 202 },
+              ),
+            ),
+          ),
+        );
+      }
+      return original(input, init);
+    };
+  });
+  await data(page, [locker(1)]);
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#shipping-form').evaluate((node) => {
+    node.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    node.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(await page.evaluate(() => Reflect.get(window, 'postCount'))).toBe(1);
+  await page.locator('#origin-postal').fill('28002');
+  await page.evaluate(() => Reflect.get(window, 'finishPost')());
+  await expect(page.locator('#quotation-status')).toBeEmpty();
+  await expect(page.locator('#quotation-resume')).toBeHidden();
+  await expect(page.locator('#compare-shipping')).toBeEnabled();
+});
+test('late GET after editing or closing cannot restore offers; terminal reopen preserves final result', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = (input, init) => {
+      if (/\/quotations\/[a-f0-9-]+$/.test(String(input)))
+        return new Promise((resolve) =>
+          Reflect.set(window, 'finishRead', (payload: unknown) =>
+            resolve(new Response(JSON.stringify(payload))),
+          ),
+        );
+      return original(input, init);
+    };
+  });
+  let snapshot: any;
+  await data(page, [locker(1)]);
+  await page.route('**/quotations', (r) => {
+    snapshot = r.request().postDataJSON();
+    return r.fulfill({ status: 202, json: { id: quoteId, status: 'PENDING' } });
+  });
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  for (const action of ['edit', 'close', 'complete']) {
+    await page.locator('#compare-shipping').click();
+    await expect
+      .poll(() => page.evaluate(() => typeof Reflect.get(window, 'finishRead')))
+      .toBe('function');
+    if (action === 'edit') await page.locator('#parcel-weight').fill('2');
+    if (action === 'close') await page.locator('#close-results').click();
+    await page.evaluate((payload) => {
+      Reflect.get(window, 'finishRead')(payload);
+      Reflect.deleteProperty(window, 'finishRead');
+    }, quote(snapshot));
+    if (action !== 'complete') {
+      await expect(page.locator('#quotation-offers')).toBeEmpty();
+      if (action === 'close') await openPanel(page);
+    } else {
+      await expect(page.locator('#quotation-status')).toContainText(
+        'finalizada',
+      );
+      await page.locator('#close-results').click();
+      await openPanel(page);
+      await expect(page.locator('#quotation-status')).toContainText(
+        'finalizada',
+      );
+      await expect(page.locator('#quotation-resume')).toBeHidden();
+      await expect(page.locator('#quotation-offers')).toContainText('12,34');
+    }
+  }
+});
+test('keyboard marker opens public destination and close restores marker focus', async ({
+  page,
+}) => {
+  await data(page, [locker(1, 'Madrid')], false);
+  const marker = page.locator('.locker-marker');
+  await marker.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#destination-locker')).toBeFocused();
+  await expect(page.locator('#destination-locker')).toHaveValue(id(1));
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(marker).toBeFocused();
+});
+test('unknown provider and service identities remain distinct literal text', async ({
+  page,
+}) => {
+  let snapshot: any;
+  await data(page, [locker(1)]);
+  await page.route('**/quotations', (r) => {
+    snapshot = r.request().postDataJSON();
+    return r.fulfill({ status: 202, json: { id: quoteId, status: 'PENDING' } });
+  });
+  await page.route(`**/quotations/${quoteId}`, (r) => {
+    const payload = quote(snapshot);
+    payload.results = [
+      {
+        provider_code: '<img src=x onerror=alert(1)>',
+        status: 'QUOTED',
+        error_code: null,
+        offers: [
+          {
+            service_code: '<script>evil()</script>',
+            currency: 'EUR',
+            price_cents: 1234,
+            transit_days_min: 4,
+            transit_days_max: 4,
+          },
+        ],
+      },
+      {
+        provider_code: 'other-provider',
+        status: 'QUOTED',
+        error_code: null,
+        offers: [
+          {
+            service_code: 'other-service',
+            currency: 'EUR',
+            price_cents: 2000,
+            transit_days_min: 2,
+            transit_days_max: 2,
+          },
+        ],
+      },
+    ];
+    return r.fulfill({ json: payload });
+  });
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-offers')).toContainText(
+    '<img src=x onerror=alert(1)>',
+  );
+  await expect(page.locator('#quotation-offers')).toContainText(
+    '<script>evil()</script>',
+  );
+  await expect(page.locator('#quotation-offers')).toContainText(
+    'other-provider',
+  );
+  await expect(page.locator('#quotation-offers')).toContainText(
+    'other-service',
+  );
+  await expect(page.locator('#quotation-offers')).toContainText('4 días');
+  await expect(page.locator('#quotation-offers')).not.toContainText('4–4');
+  await expect(
+    page.locator('#quotation-offers img, #quotation-offers script'),
+  ).toHaveCount(0);
 });

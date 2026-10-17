@@ -25,7 +25,7 @@ describe('contract and availability', () => {
     ])
       expect(availableLockers([{ ...base, ...change }])).toEqual([]);
   });
-  it('uses alias, address then UUID, preserving postal text and literal markup', () => {
+  it('uses alias, address then neutral number, preserving postal text and literal markup', () => {
     const address = {
       country_code: 'ES',
       postal_code: '01001',
@@ -34,7 +34,7 @@ describe('contract and availability', () => {
       street: '<b>Calle</b>',
       street_number: '2',
     };
-    expect(availableLockers([base])[0]?.label).toBe(base.id);
+    expect(availableLockers([base])[0]?.label).toBe('Locker 1');
     expect(availableLockers([{ ...base, address }])[0]?.label).toContain(
       '01001',
     );
@@ -57,6 +57,54 @@ describe('contract and availability', () => {
     expect(availableLockers([{ ...base, coordinates }])).toMatchObject([
       { position: null, freeCount: 1 },
     ]);
+  });
+  it('retains only structured Spanish five-digit postal codes and distinguishes labels', () => {
+    const address = {
+      country_code: 'ES',
+      postal_code: '01001',
+      province: 'Álava',
+      city: 'Vitoria',
+      street: 'Calle',
+      street_number: '2',
+    };
+    for (const postal_code of ['01001', 'bad', null, undefined, 1001]) {
+      expect(
+        availableLockers([{ ...base, address: { ...address, postal_code } }])[0]
+          ?.postalCode,
+      ).toBe(postal_code === '01001' ? '01001' : null);
+    }
+    expect(
+      availableLockers([
+        { ...base, location_id: 'Same' },
+        {
+          ...base,
+          id: '00000000-0000-4000-8000-000000000002',
+          location_id: 'Same',
+        },
+      ]).map((l) => l.label),
+    ).toEqual(['Same · 1', 'Same · 2']);
+  });
+  it('avoids collisions between generated suffixes and original aliases', () => {
+    const labels = ['Same', 'Same', 'Same · 1', 'Same · 1', 'Same · 1 · 1'];
+    const lockers = availableLockers(
+      labels.map((location_id, index) => ({
+        ...base,
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        location_id,
+      })),
+    );
+    expect(new Set(lockers.map((locker) => locker.label)).size).toBe(
+      labels.length,
+    );
+    expect(lockers[0]?.label).toBe('Same · 2');
+    expect(lockers[1]?.label).toBe('Same · 3');
+    expect(lockers[4]?.label).toBe('Same · 1 · 1');
+    expect(lockers.map((locker) => locker.id)).toEqual(
+      labels.map(
+        (_, index) =>
+          `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      ),
+    );
   });
   it('keeps genuine coordinates even outside Spain', () => {
     expect(
