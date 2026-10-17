@@ -65,21 +65,25 @@ El sistema SHALL ofrecer perfiles PostgreSQL/RabbitMQ y Cloudflare/D1/Queues sel
 #### Scenario: Package the Cloudflare profile independently
 - **WHEN** se prepara el paquete Cloudflare desde un checkout limpio
 - **THEN** puede construir su runtime sin cargar SQLModel, asyncpg, Alembic o aio-pika y mantiene los mismos endpoints y reglas
-- **AND** incluye la API Cloudflare, su módulo consumidor y todos sus módulos compartidos, excluyendo las entradas API/RabbitMQ CPython
+- **AND** incluye los init de `entrypoints` y `entrypoints.cloudflare`, su API, consumidor, runtime y todos sus módulos compartidos, excluyendo `entrypoints.server`
 
 #### Scenario: Start the grouped CPython entrypoints
-- **WHEN** se ejecutan `uvicorn entrypoints.api:app` y `python -m entrypoints.rabbitmq_consumer` con la configuración PostgreSQL/RabbitMQ correspondiente
+- **WHEN** se ejecutan `uvicorn entrypoints.server.api:app` y `python -m entrypoints.server.consumer` con la configuración PostgreSQL/RabbitMQ correspondiente, dentro o fuera de Docker
 - **THEN** conservan la API, el procesamiento secuencial y la limpieza de recursos del perfil original
 
 #### Scenario: Import the entrypoint package without selecting a profile
-- **WHEN** se importa únicamente `entrypoints`
+- **WHEN** se importa únicamente `entrypoints`, `entrypoints.server` o `entrypoints.cloudflare`
 - **THEN** no se importan sus entradas ni se construyen aplicaciones, SDKs o recursos de ningún perfil
 
 #### Scenario: Delegate Cloudflare messages within the same deployment
-- **WHEN** la entrada `cloudflare_api.py` recibe eventos HTTP y de cola sucesivos
-- **THEN** `Default.fetch` sirve la API y `Default.queue` delega en `cloudflare_consumer.py`, reutilizando una aplicación y un procesador con el repositorio compartido
+- **WHEN** la entrada `entrypoints/cloudflare/api.py` recibe eventos HTTP y de cola sucesivos
+- **THEN** `Default.fetch` sirve la API y `Default.queue` delega en `entrypoints/cloudflare/consumer.py`, reutilizando una aplicación y un procesador con el repositorio compartido
 - **AND** el consumidor conserva reconocimiento previo, secuencia y limpieza del contexto del evento sin otro despliegue
 
 #### Scenario: Import the Cloudflare consumer independently
-- **WHEN** se importa `entrypoints.cloudflare_consumer` sin importar la API
-- **THEN** no se carga `cloudflare_api`, la composición HTTP ni sus routers, ni se construye una aplicación o consulta bindings
+- **WHEN** se importa `entrypoints.cloudflare.consumer` sin importar la API
+- **THEN** no se carga `entrypoints.cloudflare.api`, la composición HTTP ni sus routers, ni se construye una aplicación o consulta bindings
+
+#### Scenario: Keep event context within the Cloudflare entrypoints
+- **WHEN** las entradas Cloudflare resuelven los bindings de un evento mediante `entrypoints.cloudflare.runtime`
+- **THEN** conservan el aislamiento y la limpieza del contexto, y los adaptadores de base de datos y cola reciben sus proveedores sin importar `entrypoints`

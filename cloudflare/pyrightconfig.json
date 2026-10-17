@@ -3,8 +3,7 @@
     "runtime_spike",
     "tests",
     "../scripts/cloudflare",
-    "../backend/entrypoints/cloudflare_api.py",
-    "../backend/entrypoints/cloudflare_consumer.py"
+    "../backend/entrypoints/cloudflare"
   ],
   "typeCheckingMode": "strict",
   "pythonVersion": "3.13",
@@ -20,14 +19,7 @@
       ]
     },
     {
-      "root": "../backend/entrypoints/cloudflare_api.py",
-      "pythonVersion": "3.13",
-      "extraPaths": [
-        "../backend"
-      ]
-    },
-    {
-      "root": "../backend/entrypoints/cloudflare_consumer.py",
+      "root": "../backend/entrypoints/cloudflare",
       "pythonVersion": "3.13",
       "extraPaths": [
         "../backend"

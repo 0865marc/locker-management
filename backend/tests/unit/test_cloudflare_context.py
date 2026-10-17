@@ -14,16 +14,16 @@ from starlette.types import Message, Receive, Scope, Send
 from adapters.database.d1.bindings import D1BindingError, D1PreparedStatement, D1Value
 from adapters.database.d1.native import NativeDatabase
 from adapters.queue.cloudflare import NativeMessage, QueueMessage
-from adapters.runtime.cloudflare import (
+from application.persistence import PersistenceError
+from application.quotations.use_cases import QuotationProcessor
+from entrypoints.cloudflare.consumer import consume_batch
+from entrypoints.cloudflare.runtime import (
     EventBindings,
     event_scope,
     get_database,
     get_environment,
     get_queue,
 )
-from application.persistence import PersistenceError
-from application.quotations.use_cases import QuotationProcessor
-from entrypoints.cloudflare_consumer import consume_batch
 
 
 class Statement:
@@ -269,9 +269,9 @@ pyodide = types.ModuleType('pyodide')
 ffi = types.ModuleType('pyodide.ffi')
 ffi.JsException = type('JsException', (Exception,), {})
 sys.modules.update({'workers':workers,'pyodide':pyodide,'pyodide.ffi':ffi})
-import adapters.runtime.cloudflare as context
+import entrypoints.cloudflare.runtime as context
 with patch.object(context,'get_database', side_effect=AssertionError('import DB access')), patch.object(context,'get_queue', side_effect=AssertionError('import queue access')):
-    from entrypoints import cloudflare_api
+    from entrypoints.cloudflare import api as cloudflare_api
     application = cloudflare_api.app
     assert cloudflare_api.event_app.application is application
     assert application.state.quotation_service.repository is cloudflare_api.quotation_repository
@@ -289,7 +289,7 @@ async def check_delegate():
     assert cloudflare_api.app is application
     assert cloudflare_api.processor.repository is cloudflare_api.quotation_repository
 asyncio.run(check_delegate())
-for name in ('entrypoints.api','entrypoints.rabbitmq_consumer','sqlmodel','asyncpg','alembic','aio_pika'):
+for name in ('entrypoints.server.api','entrypoints.server.consumer','sqlmodel','asyncpg','alembic','aio_pika'):
     assert name not in sys.modules, name
 """
         result = subprocess.run(
@@ -306,14 +306,14 @@ import sys
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 from application.quotations.ports import QuotationRepository
-from entrypoints.cloudflare_consumer import create_processor
+from entrypoints.cloudflare.consumer import create_processor
 repository = AsyncMock(spec=QuotationRepository)
 clock = lambda: datetime.now(timezone.utc)
 processor = create_processor(repository, clock)
 assert processor.repository is repository
 assert processor.clock is clock
 assert repository.mock_calls == []
-for name in ('composition', 'entrypoints.cloudflare_api', 'entrypoints.api',
+for name in ('composition', 'entrypoints.cloudflare.api', 'entrypoints.server.api',
              'fastapi', 'workers', 'pyodide', 'sqlmodel', 'asyncpg', 'aio_pika'):
     assert name not in sys.modules, name
 """

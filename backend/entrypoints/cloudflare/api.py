@@ -11,14 +11,14 @@ from adapters.database.d1.native import NativeDatabase
 from adapters.database.d1.quotations import D1QuotationRepository
 from adapters.database.d1.returns import D1ReturnRepository
 from adapters.queue.cloudflare import CloudflareQuotationPublisher, QueueBatch
-from adapters.runtime.cloudflare import (
+from composition import create_application, utc_now
+from entrypoints.cloudflare.consumer import consume_batch, create_processor
+from entrypoints.cloudflare.runtime import (
     EventBindings,
     WorkerEnvironment,
     get_database,
     get_queue,
 )
-from composition import create_application, utc_now
-from entrypoints.cloudflare_consumer import consume_batch, create_processor
 
 
 def native_database() -> NativeDatabase:

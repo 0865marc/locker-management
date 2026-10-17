@@ -368,7 +368,7 @@ un timeout o cancelación del llamador si el proveedor simula no responder. Hay 
 tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
 sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
 el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
-La API de cotizaciones y su almacenamiento se componen en `entrypoints/api.py`; el worker
+La API de cotizaciones y su almacenamiento se componen en `entrypoints/server/api.py`; el worker
 ejecuta el comparador. No hay reserva ni contratación.
 
 ## Organización
@@ -377,10 +377,13 @@ ejecuta el comparador. No hay reserva ni contratación.
 locker-management-demo/
 ├── backend/
 │   ├── entrypoints/
-│   │   ├── api.py
-│   │   ├── rabbitmq_consumer.py
-│   │   ├── cloudflare_api.py
-│   │   └── cloudflare_consumer.py
+│   │   ├── server/
+│   │   │   ├── api.py
+│   │   │   └── consumer.py
+│   │   └── cloudflare/
+│   │       ├── api.py
+│   │       ├── consumer.py
+│   │       └── runtime.py
 │   ├── composition.py
 │   ├── domain/
 │   │   ├── deliveries.py
@@ -421,8 +424,6 @@ locker-management-demo/
 │   │   │   └── request_validation.py
 │   │   ├── queue/
 │   │   │   ├── rabbitmq.py
-│   │   │   └── cloudflare.py
-│   │   ├── runtime/
 │   │   │   └── cloudflare.py
 │   │   ├── providers/
 │   │   │   └── simulated_shipping.py
@@ -508,7 +509,7 @@ en `backend/adapters/database/d1/`. Alembic conserva su historial en
 `backend/adapters/database/migrations/`, y D1 usa `cloudflare/migrations/`.
 Las rutas y los modelos HTTP viven en `backend/adapters/http/`; las colas, en
 `backend/adapters/queue/`, y el contexto por evento de Workers, en
-`backend/adapters/runtime/cloudflare.py`. Los adaptadores son externos al núcleo
+`backend/entrypoints/cloudflare/runtime.py`. Los adaptadores son externos al núcleo
 y se componen dentro de cada perfil: no son microservicios.
 
 Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en este orden:
@@ -538,18 +539,20 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | `backend/adapters/database/sqlmodel/quotations.py` | Estado y resultados de cotizaciones en PostgreSQL. |
 | `backend/adapters/database/d1/` | Repositorios D1, conversión de filas, SQL y frontera tipada; `native.py` envuelve el binding del SDK. |
 | `backend/adapters/queue/cloudflare.py` | Publicación y consumo Queues, incluida la envoltura `NativeMessage`. |
-| `backend/adapters/runtime/cloudflare.py` | Contexto de bindings por evento y middleware ASGI de Workers. |
+| `backend/entrypoints/cloudflare/runtime.py` | Contexto de bindings por evento y middleware ASGI de Workers. |
 | `backend/adapters/providers/simulated_shipping.py` | Tres adaptadores de transporte simulados, sin servicios externos. |
 | `backend/composition.py` | Composición compartida de servicios, reloj, routers y manejadores HTTP a partir de puertos. |
-| `backend/entrypoints/api.py` y `backend/entrypoints/rabbitmq_consumer.py` | Entradas PostgreSQL/RabbitMQ para API y consumidor; gestionan sus recursos y ciclo de vida. |
-| `backend/entrypoints/cloudflare_api.py` | Entrada única Workers: `Default.fetch` sirve HTTP y `Default.queue` delega el lote al consumidor. |
-| `backend/entrypoints/cloudflare_consumer.py` | Fábrica del procesador y consumo secuencial de Queues con contexto por evento. |
+| `backend/entrypoints/server/api.py` y `backend/entrypoints/server/consumer.py` | Entradas PostgreSQL/RabbitMQ para API y consumidor; gestionan sus recursos y ciclo de vida. |
+| `backend/entrypoints/cloudflare/api.py` | Entrada única Workers: `Default.fetch` sirve HTTP y `Default.queue` delega el lote al consumidor. |
+| `backend/entrypoints/cloudflare/consumer.py` | Fábrica del procesador y consumo secuencial de Queues con contexto por evento. |
 | `backend/adapters/database/migrations/env.py` | Conecta Alembic con la base de datos y con `SQLModel.metadata`. |
 | `backend/adapters/database/migrations/versions/` | Historial de cambios del esquema, independiente del arranque de la API. |
 
-El paquete `entrypoints` tiene un `__init__.py` vacío: importarlo no selecciona
-un perfil ni carga sus aplicaciones o recursos. `composition.py` permanece en
-la raíz de `backend/`.
+Los paquetes `entrypoints`, `entrypoints.server` y `entrypoints.cloudflare`
+tienen un `__init__.py` vacío: importarlos no selecciona un perfil ni carga sus
+aplicaciones o recursos. `server` identifica los procesos CPython con
+PostgreSQL/RabbitMQ y puede ejecutarse dentro o fuera de Docker.
+`composition.py` permanece en la raíz de `backend/`.
 
 El recorrido de una petición es **HTTP → caso de uso → repositorio → PostgreSQL o D1**,
 según el perfil.
@@ -994,16 +997,16 @@ devuelve 404, uno mal formado 422, y persistencia no disponible 503.
 `use_cases.py` separan el estado persistido y los resultados, los contratos de
 salida, los errores compartidos, la comparación y los casos de uso. Los adaptadores
 son `adapters/database/sqlmodel/quotations.py`, `adapters/http/quotations/` y
-`adapters/queue/rabbitmq.py`; `entrypoints/api.py` compone API y
-`entrypoints/rabbitmq_consumer.py` el proceso de trabajo. API comparte servicios por instancia y cierra motor y broker incluso
+`adapters/queue/rabbitmq.py`; `entrypoints/server/api.py` compone API y
+`entrypoints/server/consumer.py` el proceso de trabajo. API comparte servicios por instancia y cierra motor y broker incluso
 si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
 
 `docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
 **un único worker**. API/worker esperan migraciones correctas y broker saludable;
 las migraciones esperan PostgreSQL saludable. Los volúmenes `postgres_data` y
 `rabbitmq_data` se conservan con `docker compose down` sin `-v`. Para arrancar
-por separado, ejecutar `alembic upgrade head`, `uvicorn entrypoints.api:app` y
-`python -m entrypoints.rabbitmq_consumer` desde backend, con DATABASE_URL y RABBITMQ_URL configurados.
+por separado, ejecutar `alembic upgrade head`, `uvicorn entrypoints.server.api:app` y
+`python -m entrypoints.server.consumer` desde backend, con DATABASE_URL y RABBITMQ_URL configurados.
 El valor local por defecto de RabbitMQ es `amqp://guest:guest@localhost/`.
 Ni API ni worker crean tablas ni ejecutan migraciones al arrancar.
 
@@ -1064,7 +1067,7 @@ uv run --extra dev python -m unittest discover -s tests/messaging -t . -v -f
 uv run --extra dev pyright --project .. --warnings
 ```
 
-Pyright incluye estrictamente `entrypoints/rabbitmq_consumer.py`, migración 0005 y el entorno Alembic,
+Pyright incluye estrictamente `entrypoints/server/consumer.py`, migración 0005 y el entorno Alembic,
 con las mismas reglas y exclusiones históricas. Las pruebas cubren ack antes de
 proveedores, publicación única, batch atómico, estados/errores, no requeue tras
 fallos de proveedor, simulación controlada y guardas de migración.
@@ -1073,7 +1076,7 @@ fallos de proveedor, simulación controlada y guardas de migración.
 
 `cloudflare/runtime_spike/` conserva el sondeo inicial. La implementación de
 producción está en `backend/adapters/database/d1`, `backend/adapters/queue/cloudflare.py`
-y `backend/entrypoints/{cloudflare_api,cloudflare_consumer}.py`; el estado
+y `backend/entrypoints/cloudflare/{api,consumer,runtime}.py`; el estado
 verificable se registra en
 [IMPLEMENTATION.md](cloudflare/IMPLEMENTATION.md). El runtime Python Workers y las
 mediciones Free de 1000/2000 celdas siguen pendientes: la resolución oficial de
@@ -1100,26 +1103,26 @@ campaña remota posterior autorizada y medidas de CPU/cuotas reales.
 
 ## Perfil Cloudflare: composición y operación
 
-`backend/entrypoints/cloudflare_api.py` es la entrada del único despliegue Workers:
+`backend/entrypoints/cloudflare/api.py` es la entrada del único despliegue Workers:
 `Default.fetch` sirve HTTP y `Default.queue` delega el lote y el entorno a
-`backend/entrypoints/cloudflare_consumer.py`. Este módulo contiene la fábrica del
+`backend/entrypoints/cloudflare/consumer.py`. Este módulo contiene la fábrica del
 procesador y el consumo secuencial. Recibe el repositorio de cotizaciones
 compartido y el reloj; no importa la API, la composición HTTP ni sus routers.
-`entrypoints.api:create_app` conserva PostgreSQL/RabbitMQ; la elección
+`entrypoints.server.api:create_app` conserva PostgreSQL/RabbitMQ; la elección
 se hace por entrypoint de despliegue. Ambos perfiles reutilizan `composition.py`,
 los casos de uso y los routers existentes. No hay selección por cabeceras HTTP,
 sincronización ni traslado de datos entre los dos almacenamientos.
 
 La aplicación y el procesador Workers se construyen una sola vez al componer el
 runtime. Sus proveedores
-resuelven DB/QUOTATIONS desde `adapters/runtime/cloudflare.py`; middleware HTTP y
+resuelven DB/QUOTATIONS desde `entrypoints/cloudflare/runtime.py`; middleware HTTP y
 handler de cola restauran ese contexto incluso ante errores. Importar no accede a bindings
 ni migra. Los fallos manejables de persistencia devuelven 503 sin detalles internos.
 Los simuladores se construyen sin argumentos y mantienen sus perfiles privados.
 
 El manifiesto predeterminado `cloudflare/wrangler.jsonc` es de producción, con
 alias explícito `wrangler.production.jsonc`. Ambos fijan
-`main = ".production/entrypoints/cloudflare_api.py"` y
+`main = ".production/entrypoints/cloudflare/api.py"` y
 `base_dir = ".production"`, para incluir los paquetes hermanos de `entrypoints`
 en la raíz de módulos. El experimento usa
 `wrangler.spike.jsonc`. Sus tablas de
@@ -1136,9 +1139,9 @@ python scripts/cloudflare/prepare.py --check
 ```
 
 El árbol ignorado `cloudflare/.production` se genera desde una lista cerrada:
-dominio/aplicación, HTTP, adaptadores D1/Queues/contexto, simuladores y
-`composition.py`. Del paquete `entrypoints` incluye solo el `__init__.py` vacío,
-`cloudflare_api.py` y `cloudflare_consumer.py`; excluye las entradas API/RabbitMQ,
+dominio/aplicación, HTTP, adaptadores D1/Queues, simuladores y `composition.py`.
+De `entrypoints` incluye el `__init__.py` vacío y el paquete `cloudflare` con su
+init vacío, API, consumidor y runtime; excluye `entrypoints/server`,
 SQLModel, Alembic, asyncpg, aio-pika, tests y secretos. El manifiesto SHA-256
 permite detectar código o archivos añadidos obsoletos; no se mantienen copias
 manuales de negocio. `--check` falla sin reparar el árbol automáticamente.

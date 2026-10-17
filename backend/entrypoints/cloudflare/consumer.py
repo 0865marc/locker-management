@@ -9,10 +9,10 @@ from adapters.providers.simulated_shipping import (
     SimulatedStandardProvider,
 )
 from adapters.queue.cloudflare import NativeMessage, QueueBatch, handle_message
-from adapters.runtime.cloudflare import WorkerEnvironment, event_scope
 from application.quotations.comparison import ShippingQuoteComparator
 from application.quotations.ports import QuotationRepository
 from application.quotations.use_cases import QuotationProcessor
+from entrypoints.cloudflare.runtime import WorkerEnvironment, event_scope
 
 
 def create_processor(

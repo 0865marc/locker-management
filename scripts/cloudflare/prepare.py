@@ -12,14 +12,12 @@ DIRECTORIES = (
     "domain",
     "application",
     "adapters/http",
-    "adapters/runtime",
+    "entrypoints/cloudflare",
     "adapters/database/d1",
 )
 FILES = (
     "composition.py",
     "entrypoints/__init__.py",
-    "entrypoints/cloudflare_api.py",
-    "entrypoints/cloudflare_consumer.py",
     "adapters/__init__.py",
     "adapters/database/__init__.py",
     "adapters/queue/__init__.py",

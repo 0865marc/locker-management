@@ -11,14 +11,14 @@ anterior permanece en `runtime_spike/` y su evidencia histórica en
 | Responsabilidad | Implementación |
 | --- | --- |
 | Composición de servicios y HTTP compartida | `backend/composition.py` |
-| Entrada PostgreSQL/RabbitMQ | `backend/entrypoints/api.py`, `backend/entrypoints/rabbitmq_consumer.py` |
-| Entrada única HTTP/Queues Workers | `backend/entrypoints/cloudflare_api.py` |
-| Composición del procesador y consumo secuencial Queues | `backend/entrypoints/cloudflare_consumer.py` |
+| Entrada PostgreSQL/RabbitMQ | `backend/entrypoints/server/api.py`, `backend/entrypoints/server/consumer.py` |
+| Entrada única HTTP/Queues Workers | `backend/entrypoints/cloudflare/api.py` |
+| Composición del procesador y consumo secuencial Queues | `backend/entrypoints/cloudflare/consumer.py` |
 | Conexión y repositorios PostgreSQL/SQLModel | `backend/adapters/database/sqlmodel/` |
 | Repositorios D1 de lockers, entregas, devoluciones y cotizaciones | `backend/adapters/database/d1/` |
 | Frontera nativa del SDK D1 | `backend/adapters/database/d1/native.py` |
 | Publicación y consumo Queues, incluida `NativeMessage` | `backend/adapters/queue/cloudflare.py` |
-| Contexto por evento y middleware ASGI Workers | `backend/adapters/runtime/cloudflare.py` |
+| Contexto por evento y middleware ASGI Workers | `backend/entrypoints/cloudflare/runtime.py` |
 | Esquema D1 inicial | `cloudflare/migrations/0001_initial.sql` |
 | Preparación de fuentes del Worker | `scripts/cloudflare/prepare.py` |
 
@@ -31,23 +31,27 @@ La conexión SQLModel y los repositorios de entregas, devoluciones, lockers y
 cotizaciones se importan desde `adapters.database.sqlmodel`. El binding D1 se
 envuelve en `adapters.database.d1.native`; `NativeMessage` vive junto al transporte
 de cola en `adapters.queue.cloudflare`, y el contexto compartido de DB/QUOTATIONS
-en `adapters.runtime.cloudflare`. Los cuatro módulos de API/consumo se agrupan en
-`backend/entrypoints/`, cuyo `__init__.py` vacío no selecciona ningún perfil al
-importarlo. `composition.py` permanece en la raíz de `backend/`. Desde ese
-directorio, la API arranca con `uvicorn entrypoints.api:app` y el consumidor
-con `python -m entrypoints.rabbitmq_consumer`. Alembic mantiene sus revisiones en
+en `entrypoints.cloudflare.runtime`. Las entradas se agrupan por perfil en
+`backend/entrypoints/server/` y `backend/entrypoints/cloudflare/`. `server` nombra
+los procesos CPython PostgreSQL/RabbitMQ, ejecutables dentro o fuera de Docker.
+Los tres paquetes de entradas tienen un `__init__.py` vacío: importarlos no carga
+ningún perfil. `composition.py` permanece en la raíz de `backend/`. Desde ese
+directorio, la API arranca con `uvicorn entrypoints.server.api:app` y el consumidor
+con `python -m entrypoints.server.consumer`. Alembic mantiene sus revisiones en
 `backend/adapters/database/migrations/versions/`, con el registro de modelos en
 `migrations/env.py`; el historial SQL D1 conserva su ubicación separada. La
 preparación Workers selecciona runtime, D1 y Queues desde esas rutas y excluye
-el paquete SQLModel y AMQP. De `entrypoints` solo incorpora el `__init__.py` vacío,
-`cloudflare_api.py` y `cloudflare_consumer.py`; excluye las entradas CPython.
-Ambos manifiestos Wrangler de producción usan `main = ".production/entrypoints/cloudflare_api.py"`
+el paquete SQLModel y AMQP. De `entrypoints` incorpora el init padre vacío y el
+paquete `cloudflare` con su init vacío, API, consumidor y runtime; excluye
+`entrypoints/server`. Los adaptadores reciben proveedores tipados sin importar
+las entradas.
+Ambos manifiestos Wrangler de producción usan `main = ".production/entrypoints/cloudflare/api.py"`
 y `base_dir = ".production"` para conservar los paquetes compartidos hermanos
 en el inventario de módulos.
 
-`cloudflare_api.py` conserva `Default.fetch` y un `Default.queue` que delega
+`entrypoints/cloudflare/api.py` conserva `Default.fetch` y un `Default.queue` que delega
 el lote y el entorno al consumidor dentro del mismo despliegue. La fábrica de
-`cloudflare_consumer.py` recibe el repositorio compartido y el reloj y compone
+`entrypoints/cloudflare/consumer.py` recibe el repositorio compartido y el reloj y compone
 el procesador una sola vez. Este módulo no importa la API, la composición HTTP
 ni routers. El consumidor instala y limpia el contexto del evento y procesa
 los mensajes secuencialmente, con reconocimiento antes de leer sus cuerpos.
@@ -229,3 +233,34 @@ construir el procesador. La API PostgreSQL, el consumidor RabbitMQ renombrado,
 `composition.py` y las seis migraciones conservan sus bytes. El smoke Docker
 empleó el ajuste temporal de CA/schedulers ya documentado. Esta verificación
 no sustituye Python/WASM, entrega nativa de Queues ni aceptación Free.
+
+## Verificación de las entradas agrupadas por perfil
+
+El 17 de octubre de 2026 se verificó la organización vigente en
+`entrypoints/server/{api,consumer}.py` y
+`entrypoints/cloudflare/{api,consumer,runtime}.py`. Las secciones anteriores
+conservan la evidencia de las disposiciones previas.
+
+| Comprobación sobre los paquetes por perfil | Resultado |
+| --- | --- |
+| Unidades | 100 pruebas correctas en 4.501 s |
+| PostgreSQL/Alembic | 50 pruebas correctas en 23.515 s |
+| `uv run --extra dev pyright --project .. --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| `uv run --extra dev pyright --project ../cloudflare --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| Ruff lint y formato | Correctos en 125 archivos |
+| Wheel nuevo instalado fuera del checkout, en `/tmp` | Tres init vacíos y cinco módulos de perfil presentes; módulos retirados ausentes; objetivo Uvicorn/OpenAPI e imports de API y consumidor server correctos |
+| Imports Cloudflare desde el wheel | Consumidor independiente sin SDK ni composición HTTP; API comprobada con dobles explícitos del SDK bajo CPython |
+| Preparación Workers | 58 fuentes; preparación fresca y determinista; staging obsoleto rechazado sin reparación automática |
+| Inventario real del build de fuentes Wrangler | Los 58 nombres y hashes coinciden exactamente con las fuentes seleccionadas; `server` y `adapters/runtime` excluidos; entrada principal emitida como `api.py` |
+| Docker desechable con API y consumidor | `GET /lockers` → 200, `[]`; un único proceso `python -m entrypoints.server.consumer` consume un mensaje inválido publicado con confirmación y termina con código 0 tras SIGTERM; recursos retirados |
+
+El build de fuentes mide 128.60 KiB, 23.66 KiB gzip. Las seis migraciones,
+`composition.py`, la API y el consumidor server y el runtime trasladado conservan
+sus bytes respecto a la disposición anterior. La revisión independiente del
+código no encontró hallazgos.
+
+Las pruebas complementarias D1 no se repitieron en esta reorganización: no
+cambió el código de persistencia D1 y su evidencia anterior permanece intacta.
+Los imports con dobles del SDK y el build de fuentes no prueban ejecución
+Python/WASM, entrega nativa de Queues ni cuotas Free; esas verificaciones
+siguen pendientes.
