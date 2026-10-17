@@ -6,6 +6,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS-http://localhost:4321,http://127.0.0.1:4321}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-locker_management_demo}:${POSTGRES_PASSWORD:-locker_management_demo}@db:5432/${POSTGRES_DB:-locker_management_demo}
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-locker_management_demo}:${RABBITMQ_DEFAULT_PASS:-locker_management_demo}@rabbitmq/
     depends_on:

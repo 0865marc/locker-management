@@ -4,7 +4,8 @@ Demo de backend para gestionar **lockers y puntos de entrega y recogida de paque
 con arquitectura hexagonal y FastAPI. **Delivery** registra un
 paquete recibido del transportista para que lo recoja el destinatario; **Return**
 registra uno depositado por el cliente para que lo retire el transportista.
-Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
+El [mapa de lockers](#mapa-de-lockers-frontend-estático) permite consultar su
+disponibilidad desde el navegador. Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
 usa **SQLModel asíncrono sobre PostgreSQL** y **Alembic** gestiona las migraciones.
 
 Ambas entidades contienen `tracking_number`, `carrier_code` y `received_at` UTC
@@ -21,6 +22,125 @@ Delivery empieza en `AWAITING_PICKUP` y permite una única salida: `COLLECTED` o
 a la recepción. El plazo de recogida admite una fecha con zona y es informativo:
 un paquete vencido sigue pendiente y se puede recoger. Seguimiento y transportista
 no son claves únicas; el UUID identifica el registro.
+
+## Mapa de lockers: frontend estático
+
+Necesitas **Node 24 LTS** y npm para desarrollo, build y pruebas. Arranca el
+backend con Compose como se explica en [Arrancar](#arrancar); en otra terminal:
+
+```bash
+cd frontend
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+Abre `http://localhost:4321`. El ejemplo configura explícitamente
+`PUBLIC_API_BASE_URL=http://127.0.0.1:8000`; es una URL pública incorporada al
+JavaScript, sin secretos. El navegador consulta directamente `GET /lockers`,
+sin credenciales, con una lectura nueva en cada actualización y un límite de
+cinco segundos. La API debe ser accesible desde el navegador: el nombre Docker
+`api` no sirve como dirección pública. Una URL ausente o inválida, o HTTP bajo
+una página HTTPS, produce un error visible sin recurrir a otra API.
+
+Para comprobar y generar la web (el build funciona con el backend apagado):
+
+```bash
+# Desde frontend/
+npm run check
+npm test
+npm run build
+npm run preview
+# Alternativa a preview: servir dist con un servidor HTTP estático genérico.
+python3 -m http.server 4321 --bind 127.0.0.1 --directory dist
+```
+
+Usa preview o el servidor genérico por separado; ambos ocupan el puerto 4321.
+`dist/` contiene HTML, CSS y JavaScript estáticos, sin instantáneas de lockers.
+No necesita Node en producción, SSR, Workers, funciones ni proxy frontend.
+Cambiar `PUBLIC_API_BASE_URL` requiere **un nuevo build** y volver a distribuir
+`dist`: las variables del host no cambian los archivos ya compilados.
+
+Las pruebas de navegador necesitan `python3` para servir los archivos estáticos
+y el entorno local `backend/.venv`, incluso si normalmente ejecutas la API con
+Docker. Prepáralo con uv y ejecuta desde la raíz:
+
+```bash
+cd backend
+uv sync --locked --extra dev
+cd ../frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+Como alternativa al Chromium de Playwright, puedes indicar un navegador instalado
+con `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e`.
+La suite levanta su servidor estático y FastAPI con middleware CORS real y dobles
+de persistencia; no necesita PostgreSQL ni RabbitMQ. Deja libres los puertos
+4321 y 8765 antes de ejecutarla.
+
+Se muestran lockers activos con al menos una celda habilitada y libre; el
+contador suma solo esas celdas. La disponibilidad corresponde a la última lectura
+correcta: no reserva espacio ni comprueba si cabe un paquete. «Actualizar» vuelve
+a consultar; un fallo elimina los resultados anteriores y ofrece reintento.
+Los disponibles sin coordenadas válidas permanecen en la lista, sin marcador ni
+ubicación inventada. Disponibles y posicionables tienen contadores distintos.
+
+El mapa depende de teselas externas de
+[OpenStreetMap, © sus colaboradores](https://www.openstreetmap.org/copyright),
+con atribución visible. Si fallan, aparece un aviso y la lista/detalles siguen
+utilizables. Las pruebas controlan las teselas; no demuestran conectividad con
+el proveedor real.
+
+### CORS local y de producción
+
+FastAPI lee `CORS_ALLOWED_ORIGINS` al arrancar: orígenes HTTP(S) exactos separados
+por comas, recortando espacios. Sin variable o con valor vacío no permite ningún
+origen de navegador. Rechaza comodines, credenciales, rutas (también `/` final),
+query, fragmentos y entradas inválidas. Permite preflight GET sin credenciales;
+CORS no es autenticación ni impide que un cliente HTTP use las rutas existentes.
+
+Compose configura solo en API los orígenes locales explícitos
+`http://localhost:4321,http://127.0.0.1:4321`. Para una API fuera de Compose,
+exporta la variable antes de arrancarla. Para sustituirlos en Compose, define
+`CORS_ALLOWED_ORIGINS` en el entorno o `.env` raíz y recrea el servicio API con
+su configuración actualizada. Un valor explícitamente vacío conserva la lista
+vacía. Revisa `docker compose config` antes de arrancar.
+
+### Preparar Cloudflare Pages
+
+Este repositorio prepara una web estática; no publica ni proporciona alojamiento
+para FastAPI, PostgreSQL o RabbitMQ. Antes de publicar necesitas una API **HTTPS**
+independiente y accesible públicamente, y configurar en esa API los orígenes
+concretos del frontend. Sustituye los placeholders siguientes por tus valores:
+
+| Ajuste de Pages | Valor |
+| --- | --- |
+| Directorio raíz | `frontend` |
+| Comando de build de Astro | `npm run build` |
+| Directorio de salida | `dist` |
+| Versión Node | `NODE_VERSION=24` |
+| Variable pública de build | `PUBLIC_API_BASE_URL=https://<api-publica>` |
+
+Para garantizar la instalación bloqueada con `npm ci`, configura también
+`SKIP_DEPENDENCY_INSTALL=1` y usa **`npm ci && npm run build`** como comando de
+build de Pages. Así se desactiva su instalación automática y se utiliza el
+lockfile del repositorio. La opción está documentada en la
+[imagen de build oficial de Pages](https://developers.cloudflare.com/pages/configuration/build-image/#skip-dependency-install).
+Configura las variables tanto para producción como para los previews que uses.
+
+En el backend, un ejemplo de allowlist de producción es:
+
+```dotenv
+CORS_ALLOWED_ORIGINS=https://<proyecto>.pages.dev,https://<dominio-propio>
+```
+
+Cada preview que deba leer la API necesita añadir su origen exacto, por ejemplo
+`https://<identificador-preview>.<proyecto>.pages.dev`; no se admite `*.pages.dev`.
+Los orígenes no llevan rutas ni `/` final. Si cambia la URL API, recompila y
+publica el nuevo `dist`; si cambia un origen frontend, actualiza la allowlist y
+reinicia la API. El alojamiento estático de Pages y el despliegue de la API son
+operaciones independientes y no se ejecutan como parte de esta preparación.
 
 ## Arrancar
 

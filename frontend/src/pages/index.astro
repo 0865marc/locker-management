@@ -1,0 +1,54 @@
+---
+import LockerExplorer from '../components/LockerExplorer.astro';
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Consulta lockers disponibles en España, su ubicación y sus celdas libres."
+    />
+    <title>Localizador de lockers</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#results">
+      Ir a los resultados
+    </a>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Lockers, inicio">
+        <span class="brand-icon" aria-hidden="true">
+          ▦
+        </span>{' '}
+        lockers<span class="brand-dot">.</span>
+      </a>
+      <span class="topbar-label">LOCALIZADOR · ESPAÑA</span>
+    </header>
+    <main>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">TU PRÓXIMO PUNTO DE ENTREGA</p>
+          <h1>Encuentra un locker disponible</h1>
+          <p class="intro">
+            Explora el mapa y consulta las celdas libres en la última lectura.
+          </p>
+        </div>
+        <span class="read-only">
+          <span></span> Consulta informativa
+        </span>
+      </div>
+      <LockerExplorer />
+      <p class="footnote">
+        La disponibilidad corresponde a la última consulta. No reserva celdas ni
+        garantiza que el tamaño sea adecuado para tu paquete.
+      </p>
+    </main>
+    <footer>
+      <span>Lockers · Localizador</span>
+      <span>Ubicaciones y capacidad, de un vistazo.</span>
+    </footer>
+  </body>
+</html>

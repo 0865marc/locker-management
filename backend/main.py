@@ -3,12 +3,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from adapters.database.connection import create_database, get_database_url
 from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
 from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
 from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.http.cors import get_cors_allowed_origins
 from adapters.http.routes import create_router
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
 from application.deliveries.use_cases import DeliveryService
@@ -26,6 +28,7 @@ def create_app(
     database_url: str | None = None, *, publisher: QuotationPublisher | None = None
 ) -> FastAPI:
     """Punto de composición: conecta adaptadores, servicios y recursos."""
+    cors_allowed_origins = get_cors_allowed_origins()
     engine, sessions = create_database(database_url or get_database_url())
     delivery_service = DeliveryService(SqlModelDeliveryRepository(sessions), utc_now)
     locker_service = LockerService(SqlModelLockerRepository(sessions))
@@ -53,6 +56,12 @@ def create_app(
                 await engine.dispose()
 
     app = FastAPI(title="Locker Management Demo", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_allowed_origins,
+        allow_methods=["GET"],
+        allow_credentials=False,
+    )
 
     app.state.quotation_service = quotation_service
     app.state.locker_service = locker_service

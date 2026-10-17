@@ -1,0 +1,83 @@
+<section class="explorer" aria-label="Mapa y listado de lockers">
+  <div class="toolbar">
+    <div class="metrics">
+      <span>
+        <strong id="available-count">—</strong>{' '}
+        <span id="available-label">disponibles</span>
+      </span>
+      <span>
+        <strong id="positioned-count">—</strong> en el mapa
+      </span>
+    </div>
+    <div class="toolbar-actions">
+      <span id="updated-at">Sin lectura todavía</span>
+      <button id="refresh" type="button">
+        <span aria-hidden="true">↻</span> Actualizar
+      </button>
+    </div>
+  </div>
+  <div class="workspace">
+    <section class="map-panel" aria-label="Ubicaciones en el mapa">
+      <div class="map-heading">
+        <span>
+          <span class="map-dot"></span> Mapa de ubicaciones
+        </span>
+        <button id="spain-view" type="button">
+          Ver España{' '}
+          <svg
+            aria-hidden="true"
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <path
+              d="M4 12 12 4M4 4h8v8"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+        </button>
+      </div>
+      <div id="map" aria-label="Mapa de España con lockers disponibles"></div>
+      <p id="tile-warning" class="tile-warning" role="status" hidden>
+        No se ha podido cargar el fondo del mapa. Puedes consultar todos los
+        lockers en el listado.
+      </p>
+      <div class="map-legend">
+        <span class="map-dot"></span> Locker con celdas libres{' '}
+        <span class="legend-note">
+          Selecciona una ubicación para ver su detalle
+        </span>
+      </div>
+    </section>
+    <section id="results" class="results-panel" aria-labelledby="results-title">
+      <div class="results-heading">
+        <p class="eyebrow">EXPLORA LA RED</p>
+        <h2 id="results-title">Lockers disponibles</h2>
+      </div>
+      <div id="status" role="status" aria-live="polite" aria-atomic="true">
+        Cargando lockers…
+      </div>
+      <button id="retry" type="button" hidden>
+        Reintentar consulta
+      </button>
+      <ul id="locker-list" aria-label="Lockers disponibles"></ul>
+      <section
+        id="locker-detail"
+        class="detail"
+        aria-label="Detalle del locker"
+        aria-live="polite"
+        hidden
+      ></section>
+    </section>
+  </div>
+</section>
+<noscript>
+  <p class="noscript">
+    Activa JavaScript para consultar la disponibilidad y utilizar el mapa.
+  </p>
+</noscript>
+<script>
+  import '../scripts/locker-map';
+</script>
