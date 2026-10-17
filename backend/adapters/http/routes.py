@@ -4,10 +4,10 @@ from adapters.http.deliveries.routes import create_delivery_router
 from adapters.http.lockers.routes import create_locker_router
 from adapters.http.quotations.routes import create_quotation_router
 from adapters.http.returns.routes import create_return_router
-from application.deliveries import DeliveryService
-from application.lockers import LockerService
-from application.quotations import QuotationService
-from application.returns import ReturnService
+from application.deliveries.use_cases import DeliveryService
+from application.lockers.use_cases import LockerService
+from application.quotations.use_cases import QuotationService
+from application.returns.use_cases import ReturnService
 
 
 def create_router(

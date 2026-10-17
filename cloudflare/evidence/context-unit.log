@@ -1,6 +1,6 @@
 test_same_task_cleanup_after_success_and_exception (test_event_context.ContextCleanupTests.test_same_task_cleanup_after_success_and_exception) ... ok
 
 ----------------------------------------------------------------------
-Ran 1 test in 0.002s
+Ran 1 test in 0.003s
 
 OK

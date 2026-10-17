@@ -12,8 +12,8 @@ import aio_pika
 from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractQueue
 from pamqp.commands import Basic
 
-from application.quotation_models import PublicationError
-from application.quotations import QuotationProcessor
+from application.quotations.errors import PublicationError
+from application.quotations.use_cases import QuotationProcessor
 
 QUEUE_NAME = "shipping.quotations"
 logger = logging.getLogger(__name__)
@@ -27,13 +27,15 @@ def get_rabbitmq_url() -> str:
     return os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
 
 
-class Delivery(Protocol):
+class MessageDelivery(Protocol):
     @property
     def body(self) -> bytes: ...
     async def ack(self) -> None: ...
 
 
-async def handle_delivery(message: Delivery, processor: QuotationProcessor) -> None:
+async def handle_delivery(
+    message: MessageDelivery, processor: QuotationProcessor
+) -> None:
     # Never execute work if acknowledgement fails. Malformed deliveries are also consumed.
     await message.ack()
     try:

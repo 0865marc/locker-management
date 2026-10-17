@@ -28,9 +28,9 @@ Se asumen una base D1 nueva, la demo sin autenticación ya existente, los tres t
 - `database-migrations`: mantener Alembic PostgreSQL e incorporar un historial D1 separado, preparado antes del runtime.
 - `asynchronous-shipping-quotations`: precisar publicación, consumo secuencial, duplicados y reconocimiento temprano para Queues sin introducir recuperación automática.
 - `test-execution`: añadir verificación D1/Workers independiente conservando las pruebas PostgreSQL y la ausencia de SQLite como sustituto de PostgreSQL.
-- `backend-ci`: conservar los cinco resultados actuales y añadir verificación Cloudflare local reproducible sin despliegue ni secretos.
+- `backend-ci`: conservar los cinco resultados actuales del backend y añadir verificación Cloudflare local reproducible sin despliegue ni secretos, manteniendo intacto el check independiente `OpenSpec closure`.
 
-Las dos últimas capacidades procedentes de cambios activos, `asynchronous-shipping-quotations` y `backend-ci`, se consideran existentes a efectos de esta evolución aunque aún no estén sincronizadas en `openspec/specs/`. Sus deltas completos son parte de la línea base; este cambio no las crea de nuevo ni sincroniza o archiva cambios ajenos.
+Las capacidades `asynchronous-shipping-quotations` y `backend-ci` ya están sincronizadas en `openspec/specs/`, y sus cambios de origen están archivados en `main`. Las especificaciones principales actuales son la línea base; este cambio no recrea esas capacidades ni modifica su historia.
 
 ## Impact
 
@@ -38,4 +38,4 @@ La implementación afectará `backend/main.py`, composición HTTP compartida, un
 
 No se modifica el contrato de éxito ni los límites públicos existentes, incluido crear hasta 1000 celdas por petición. Las listas sin paginación y el crecimiento acumulado impiden prometer capacidad ilimitada dentro de Free; la aceptación publicará un conjunto de datos y carga reproducible, incluirá esos extremos y fallará explícitamente si el contrato no cabe.
 
-Dependencias: partir del código y los deltas completos de `add-asynchronous-shipping-quotations` y `add-backend-ci`. Al integrar o sincronizar posteriormente, conservar sus requisitos y los de identidad del runtime; no sobrescribirlos con una versión anterior de la especificación principal.
+Dependencias: partir del `main` integrado, con aplicación organizada por funcionalidad y simuladores autónomos de perfil fijo. Conservar los contratos actuales de cotizaciones, CI, identidad y runtime. El cambio Cloudflare permanece activo e incompleto: la sincronización de la rama no lo archiva ni elude la política `OpenSpec closure`.

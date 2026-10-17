@@ -13,9 +13,9 @@ from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
 from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
 from adapters.database.sqlmodel_returns import SqlModelReturnRepository
 from adapters.http.routes import create_router
-from application.deliveries import DeliveryService
-from application.lockers import LockerService
-from application.returns import ReturnService
+from application.deliveries.use_cases import DeliveryService
+from application.lockers.use_cases import LockerService
+from application.returns.use_cases import ReturnService
 from domain.deliveries import Delivery
 from domain.returns import Return
 from tests.integration.support import PostgresTestCase, save_parcel

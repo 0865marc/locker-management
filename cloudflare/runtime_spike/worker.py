@@ -35,9 +35,11 @@ from event_context import (
 
 # Import the actual shared use cases, without the PostgreSQL composition roots.
 for _module in (
-    "application.deliveries",
-    "application.returns",
-    "application.lockers",
+    "application.deliveries.use_cases",
+    "application.returns.use_cases",
+    "application.lockers.use_cases",
+    "application.quotations.use_cases",
+    "application.quotations.comparison",
 ):
     importlib.import_module(_module)
 

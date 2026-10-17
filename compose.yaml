@@ -20,10 +20,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-locker_management_demo}:${POSTGRES_PASSWORD:-locker_management_demo}@db:5432/${POSTGRES_DB:-locker_management_demo}
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER:-locker_management_demo}:${RABBITMQ_DEFAULT_PASS:-locker_management_demo}@rabbitmq/
-      SHIPPING_DELAY_MIN_SECONDS: ${SHIPPING_DELAY_MIN_SECONDS:-0.05}
-      SHIPPING_DELAY_MAX_SECONDS: ${SHIPPING_DELAY_MAX_SECONDS:-0.5}
-      SHIPPING_NO_RESPONSE_PROBABILITY: ${SHIPPING_NO_RESPONSE_PROBABILITY:-0.05}
-      SHIPPING_ERROR_PROBABILITY: ${SHIPPING_ERROR_PROBABILITY:-0.10}
     depends_on:
       migrate:
         condition: service_completed_successfully

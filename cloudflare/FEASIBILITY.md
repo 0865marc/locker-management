@@ -34,6 +34,26 @@ El harness termina con código no cero antes de migrar/iniciar el runtime cuando
 falla el sync. El build de fuentes separado está en `evidence/build.log`: su
 resultado no prueba que FastAPI/Pydantic puedan cargarse en WASM.
 
+## Actualización al integrar main
+
+La integración de `origin/main` en `6a5db11` reorganiza aplicación por módulos
+`application.<feature>.use_cases`, con puertos dentro de cada feature y
+cotizaciones en `application.quotations`. El spike importa ahora estos módulos
+concretos, incluido el comparador, en lugar de los `__init__.py` vacíos. El
+preparador recursivo incluye las nuevas rutas sin copias manuales adicionales.
+
+Se repitieron imports de cinco módulos de casos de uso/comparación y los cuatro
+esquemas reales desde el árbol preparado bajo CPython, sin cargar infraestructura
+PostgreSQL/AMQP. La preparación produce 42 fuentes, con 43 archivos idénticos en
+dos ejecuciones, incluido el manifiesto. Pasan de nuevo la unidad de contexto,
+Ruff y ambos Pyright (cero errores/advertencias); el build actual **solo de
+fuentes** mide 81.65 KiB / gzip 15.75 KiB. Ver `evidence/quality.txt`.
+
+`build.log` y `context-unit.log` contienen resultados refrescados de las fuentes
+integradas. `harness.log`, `sync.log` y la prueba de mutación conservan su evidencia
+histórica. No se reintentó el sync Pyodide ni se ejecutaron contratos nativos;
+el gate y la aceptación Free siguen pendientes.
+
 ## Versiones instaladas y compatibilidad provisional
 
 - CPython local 3.13.5; uv 0.12.23; Node 24.19.0.

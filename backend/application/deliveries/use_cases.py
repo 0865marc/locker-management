@@ -2,9 +2,9 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from application.deliveries.ports import DeliveryRepository
 from domain.deliveries import Delivery, DeliveryConflictError
 from domain.lockers import Dimensions, validate_reception
-from domain.ports import DeliveryRepository
 
 
 class DeliveryNotFoundError(LookupError):

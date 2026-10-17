@@ -1,4 +1,5 @@
-2026-10-17 final source checks (native runtime still blocked):
+2026-10-17 initial source checks, before origin/main 6a5db11 integration
+(historical; refreshed merged-source results follow below):
 
 From backend:
 UV_CACHE_DIR=/tmp/locker-uv-cache uv run --extra dev pyright --project .. --warnings
@@ -32,3 +33,54 @@ Manual mutation: a disposable copy of event_context.py had only
 current_environment.reset(token) replaced with pass. The same unit failed with
 AssertionError at the same-task restoration check. Original sources were never
 mutated. See context-mutation.log. This is not native runtime evidence.
+
+
+2026-10-17 refreshed checks with origin/main 6a5db11 merged, before merge commit:
+
+Only integration code correction: runtime_spike/worker.py imports concrete
+application.<feature>.use_cases modules, plus quotations.comparison, rather than
+the now-empty feature package __init__.py files. The recursive preparation
+script already includes the reorganized sources and their outbound ports.
+
+python scripts/cloudflare/prepare_spike.py
+Prepared 42 Python sources. Repeated preparation verified identical SHA-256
+contents/relative paths for 43 files, including manifest.json. Existing source
+imports were verified to resolve inside cloudflare/.prepared using CPython:
+application.deliveries.use_cases
+application.returns.use_cases
+application.lockers.use_cases
+application.quotations.use_cases
+application.quotations.comparison
+adapters.http.deliveries.schemas
+adapters.http.returns.schemas
+adapters.http.lockers.schemas
+adapters.http.quotations.schemas
+No main, worker, sqlmodel, asyncpg, alembic or aio_pika modules were imported.
+This verifies shared Python imports only, not execution of Workers SDK/WASM.
+
+PYTHONPATH=cloudflare/runtime_spike UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project cloudflare --locked python -m unittest discover -s cloudflare/tests -p test_event_context.py -v
+1 test passed; see refreshed context-unit.log.
+
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev pyright --project cloudflare --warnings
+0 errors, 0 warnings, 0 informations
+From backend:
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --extra dev pyright --project .. --warnings
+0 errors, 0 warnings, 0 informations
+
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare cloudflare/typings
+All checks passed!
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff format --check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare cloudflare/typings
+11 files already formatted
+
+From cloudflare:
+XDG_CONFIG_HOME=/workspace/locker-management/cloudflare/.wrangler/config XDG_CACHE_HOME=/workspace/locker-management/cloudflare/.wrangler/cache WRANGLER_SEND_METRICS=false node node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir .wrangler/build
+exit 0; source-only build 81.65 KiB / gzip 15.75 KiB; see refreshed build.log.
+The Pyodide sync was NOT retried. harness.log and sync.log remain historical
+records of the network policy denial; no native runtime or Free quota evidence
+is claimed for this merge.
+
+Additional merged-state baseline verification run by the coordinator:
+From backend:
+env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL UV_CACHE_DIR=/tmp/locker-uv-cache uv run --extra dev python -m unittest discover -s tests/unit -t . -v
+77 tests passed in 3.741 seconds. This baseline result does not verify native
+Cloudflare contracts or the remaining feasibility tasks.

@@ -13,25 +13,24 @@ from fastapi import FastAPI
 
 from adapters.http.quotations.routes import create_quotation_router
 from adapters.queue.rabbitmq import RabbitMQ, handle_delivery
-from application.quotation_models import (
-    ProcessErrorCode,
+from application.quotations.comparison import ShippingQuoteComparator
+from application.quotations.errors import (
     PublicationError,
-    Quotation,
-    QuotationStatus,
     QuotationStorageError,
     SubmissionError,
 )
-from application.quotation_ports import QuotationPublisher, QuotationRepository
-from application.quotations import QuotationProcessor, QuotationService
-from application.shipping_quotes import (
+from application.quotations.models import (
+    ProcessErrorCode,
     ProviderErrorCode,
     ProviderResult,
     ProviderStatus,
-    ShippingQuoteService,
+    Quotation,
+    QuotationStatus,
 )
+from application.quotations.ports import QuotationPublisher, QuotationRepository
+from application.quotations.use_cases import QuotationProcessor, QuotationService
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
-from worker import simulation_profile
 
 NOW = datetime(2026, 10, 16, tzinfo=timezone.utc)
 REQUEST = ShippingQuoteRequest(
@@ -95,7 +94,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_process_compares_once_and_completes_even_all_failed(self):
-        comparator = AsyncMock(spec=ShippingQuoteService)
+        comparator = AsyncMock(spec=ShippingQuoteComparator)
         results = (
             ProviderResult(
                 "a",
@@ -116,7 +115,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         self.repository.fail.assert_not_awaited()
 
     async def test_not_pending_is_ignored_and_unexpected_failure_is_not_retried(self):
-        comparator = AsyncMock(spec=ShippingQuoteService)
+        comparator = AsyncMock(spec=ShippingQuoteComparator)
         processor = QuotationProcessor(self.repository, comparator, lambda: NOW)
         self.repository.start.return_value = None
         await processor.process(self.quotation.id)
@@ -257,22 +256,16 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PublicationError):
             await broker.publish(uuid4())
 
-    def test_worker_profile_defaults_overrides_and_validation(self):
+    async def test_worker_constructs_providers_without_arguments_despite_old_environment(
+        self,
+    ):
         from unittest.mock import patch
 
-        with patch.dict("os.environ", {}, clear=True):
-            profile = simulation_profile()
-        self.assertEqual(
-            (
-                profile.delay_min_seconds,
-                profile.delay_max_seconds,
-                profile.no_response_probability,
-                profile.error_probability,
-            ),
-            (0.05, 0.5, 0.05, 0.10),
-        )
-        values = {
-            name: "0"
+        from worker import run_worker
+
+        engine, broker = AsyncMock(), AsyncMock()
+        old_settings = {
+            name: "invalid"
             for name in (
                 "SHIPPING_DELAY_MIN_SECONDS",
                 "SHIPPING_DELAY_MAX_SECONDS",
@@ -280,14 +273,24 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
                 "SHIPPING_ERROR_PROBABILITY",
             )
         }
-        with patch.dict("os.environ", values, clear=True):
-            self.assertEqual(simulation_profile().error_probability, 0)
-        for value in ("nan", "-1", "bad"):
-            with patch.dict(
-                "os.environ", {"SHIPPING_ERROR_PROBABILITY": value}, clear=True
-            ):
-                with self.assertRaises(ValueError):
-                    simulation_profile()
+        with (
+            patch.dict("os.environ", old_settings),
+            patch("worker.create_database", return_value=(engine, object())),
+            patch("worker.RabbitMQ", return_value=broker),
+            patch("worker.SimulatedEconomyProvider") as economy,
+            patch("worker.SimulatedStandardProvider") as standard,
+            patch("worker.SimulatedExpressProvider") as express,
+            patch("worker.ShippingQuoteComparator") as comparator,
+        ):
+            await run_worker()
+        for factory in (economy, standard, express):
+            factory.assert_called_once_with()
+        comparator.assert_called_once_with(
+            (economy.return_value, standard.return_value, express.return_value)
+        )
+        broker.consume.assert_awaited_once()
+        broker.close.assert_awaited_once()
+        engine.dispose.assert_awaited_once()
 
     async def test_worker_shutdown_cancels_provider_work_and_closes_resources(self):
         from unittest.mock import patch
@@ -321,8 +324,8 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
             patch("worker.RabbitMQ", return_value=broker),
             patch("worker.SqlModelQuotationRepository", return_value=repository),
             patch(
-                "worker.ShippingQuoteService",
-                return_value=ShippingQuoteService([WaitingProvider()]),
+                "worker.ShippingQuoteComparator",
+                return_value=ShippingQuoteComparator([WaitingProvider()]),
             ),
         ):
             task = asyncio.create_task(run_worker())

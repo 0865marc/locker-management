@@ -313,13 +313,13 @@ from adapters.providers.simulated_shipping import (
     SimulatedStandardProvider,
     SimulatedExpressProvider,
 )
-from application.shipping_quotes import ShippingQuoteService
+from application.quotations.comparison import ShippingQuoteComparator
 from domain.lockers import Dimensions
 from domain.shipping_quotes import ShippingQuoteRequest
 
 
 async def main() -> None:
-    comparator = ShippingQuoteService([
+    comparator = ShippingQuoteComparator([
         SimulatedEconomyProvider(),
         SimulatedStandardProvider(),
         SimulatedExpressProvider(),
@@ -339,6 +339,8 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+Un resultado posible cuando los tres proveedores responden con éxito:
+
 ```text
 sim-economy QUOTED economy 330 EUR 3 3
 sim-express QUOTED express 830 EUR 1 1
@@ -348,7 +350,7 @@ sim-standard QUOTED standard 520 EUR 2 2
 La colección inyectada es obligatoria, no vacía y tiene códigos abiertos,
 recortados y únicos. `compare` devuelve una tupla de `ProviderResult` ordenada
 por proveedor, con ofertas ordenadas por servicio. El resultado y sus estados
-pertenecen a `application.shipping_quotes`; las solicitudes, ofertas y
+pertenecen a `application.quotations.models`; las solicitudes, ofertas y
 `NoCoverage` pertenecen a `domain.shipping_quotes`. Cada proveedor puede ofrecer
 varios servicios (`QuoteOffers`), rechazar cobertura (`NoCoverage`) o fallar de
 forma aislada. Los estados son `QUOTED`, `NOT_COVERED` y `FAILED`; los errores
@@ -358,7 +360,9 @@ La entrada exige países `ES`, códigos postales de cinco dígitos ASCII, peso e
 entre 1 y 30000 gramos y dimensiones entre 1 y 2000 mm. Los precios son céntimos
 enteros EUR y los plazos intervalos de días naturales desde la futura expedición.
 Los simuladores usan tarifas deterministas por peso real/volumétrico y prefijo
-postal. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
+postal, con demoras y fallos estocásticos en cada llamada, también en uso directo.
+Sus constructores no aceptan argumentos. Las llamadas directas a `quote` necesitan
+un timeout o cancelación del llamador si el proveedor simula no responder. Hay como máximo tres llamadas concurrentes y dos segundos por llamada
 tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
 sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
 el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
@@ -376,16 +380,23 @@ locker-management-demo/
 │   │   ├── deliveries.py
 │   │   ├── returns.py
 │   │   ├── lockers.py
-│   │   ├── shipping_quotes.py
-│   │   └── ports.py
+│   │   └── shipping_quotes.py
 │   ├── application/
-│   │   ├── deliveries.py
-│   │   ├── returns.py
-│   │   ├── lockers.py
-│   │   ├── shipping_quotes.py
-│   │   ├── quotation_models.py
-│   │   ├── quotation_ports.py
-│   │   └── quotations.py
+│   │   ├── deliveries/
+│   │   │   ├── ports.py
+│   │   │   └── use_cases.py
+│   │   ├── returns/
+│   │   │   ├── ports.py
+│   │   │   └── use_cases.py
+│   │   ├── lockers/
+│   │   │   ├── ports.py
+│   │   │   └── use_cases.py
+│   │   └── quotations/
+│   │       ├── models.py
+│   │       ├── ports.py
+│   │       ├── errors.py
+│   │       ├── comparison.py
+│   │       └── use_cases.py
 │   ├── adapters/
 │   │   ├── http/
 │   │   │   ├── deliveries/
@@ -447,11 +458,13 @@ locker-management-demo/
 ```
 
 Se omiten los archivos `__init__.py`. La organización prioriza las capas:
-Delivery y Return tienen archivos propios para sus entidades, casos de uso y
-adaptadores. Las reglas compartidas de asignación y capacidad permanecen en Locker.
-Cada flujo conserva sus validadores y errores de dominio; sus servicios declaran
-el error de registro inexistente. HTTP agrupa rutas y esquemas en paquetes por
-área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
+Delivery, Return, Locker y Quotation tienen paquetes propios en aplicación.
+Cada área agrupa sus casos de uso en `use_cases.py` y los puertos de salida que
+consume en `ports.py`. Las entidades y reglas permanecen en dominio, incluidas
+las reglas compartidas de asignación y capacidad de Locker. Cada flujo conserva
+sus validadores y errores de dominio; los servicios de entregas y devoluciones
+declaran el error de registro inexistente junto a sus casos de uso. HTTP agrupa
+rutas y esquemas en paquetes por área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
 los repositorios y las migraciones se agrupan en `backend/adapters/database/`; las rutas
 y los modelos HTTP, en `backend/adapters/http/`. Ambos adaptadores son externos al núcleo,
 pero se ejecutan en el mismo proceso: no son microservicios.
@@ -464,10 +477,14 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | `backend/domain/returns.py` | Entidad `Return`, estado `ReturnStatus`, validación y `ReturnConflictError`. Solo Python. |
 | `backend/domain/lockers.py` | Dimensiones, celdas, lockers y reglas de asignación/recepción, sin infraestructura. |
 | `backend/domain/shipping_quotes.py` | Solicitud de transporte, ofertas y respuesta de falta de cobertura (`NoCoverage`), inmutables y validadas. |
-| `backend/domain/ports.py` | Puertos de repositorios y `ShippingProvider`: contratos de salida de la aplicación. |
-| `backend/application/deliveries.py` y `returns.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas con reloj explícito y puertos de persistencia. Declaran `DeliveryNotFoundError` y `ReturnNotFoundError`. |
-| `backend/application/lockers.py` | Casos de uso de configuración y disponibilidad de lockers. |
-| `backend/application/shipping_quotes.py` | `ShippingQuoteService` compara proveedores inyectados; `ProviderResult`, `ProviderStatus` y `ProviderErrorCode` expresan sus resultados. |
+| `backend/application/deliveries/use_cases.py` y `backend/application/returns/use_cases.py` | Servicios `DeliveryService` y `ReturnService`; crean, listan y registran salidas con reloj explícito y puertos de persistencia. Declaran `DeliveryNotFoundError` y `ReturnNotFoundError`. |
+| `backend/application/lockers/use_cases.py` | Casos de uso de configuración y disponibilidad de lockers. |
+| `backend/application/{deliveries,returns,lockers}/ports.py` | Protocolos de repositorio propiedad del área de aplicación que los consume. |
+| `backend/application/quotations/models.py` | `Quotation`, sus estados y errores de proceso, y `ProviderResult`, `ProviderStatus` y `ProviderErrorCode`; independientes del comparador. |
+| `backend/application/quotations/ports.py` | Contratos de salida `ShippingProvider`, `QuotationRepository` y `QuotationPublisher`. |
+| `backend/application/quotations/errors.py` | Errores compartidos de persistencia, publicación, envío y fallo técnico de proveedor. |
+| `backend/application/quotations/comparison.py` | `ShippingQuoteComparator` compara proveedores inyectados y normaliza sus resultados. |
+| `backend/application/quotations/use_cases.py` | `QuotationService` envía y consulta solicitudes; `QuotationProcessor` ejecuta la comparación y guarda resultados. |
 | `backend/adapters/http/deliveries/routes.py` y `schemas.py` | Router de Delivery y sus contratos HTTP. |
 | `backend/adapters/http/returns/routes.py` y `schemas.py` | Router de Return y sus contratos HTTP. |
 | `backend/adapters/http/lockers/routes.py` y `schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
@@ -487,8 +504,16 @@ entrada: expresan las operaciones disponibles sin una interfaz adicional.
 El adaptador HTTP depende directamente de estos servicios y de las entidades
 del dominio; los servicios siguen sin conocer FastAPI ni SQLModel.
 
-Los puertos de salida de `backend/domain/ports.py` sí usan `Protocol`: permiten a los casos
-de uso trabajar con repositorios sin depender de su implementación concreta.
+Los puertos de salida usan `Protocol` y pertenecen al paquete de aplicación que
+los consume: `deliveries/ports.py`, `returns/ports.py`, `lockers/ports.py` y
+`quotations/ports.py`. Permiten trabajar con repositorios, proveedores y publicación
+sin depender de implementaciones concretas. El dominio conserva datos, entidades
+y reglas y no depende de aplicación. Los modelos de cotización dependen solo de
+la biblioteca estándar y del dominio; los adaptadores importan esos modelos desde
+`application.quotations.models` y los errores desde `application.quotations.errors`.
+Los paquetes tienen `__init__.py` vacíos: cada consumidor importa desde el módulo
+propietario, sin reexports ni wrappers de compatibilidad. Los consumidores Python
+deben actualizar las rutas anteriores y usar `ShippingQuoteComparator`.
 
 ### Componer los servicios
 
@@ -738,6 +763,39 @@ migrado. En caso de fallo muestra estado y logs, devuelve un código no cero y
 limpia solo contenedores, red y volúmenes de ese proyecto temporal, conservando
 los datos de desarrollo. No requiere URLs ni credenciales externas.
 
+## Cierre de cambios OpenSpec
+
+Antes de integrar en `main`, no debe quedar ningún directorio activo directamente
+en `openspec/changes`, salvo `archive`. Las propuestas, los cambios sin tareas y
+los que tienen todas sus tareas completadas siguen activos hasta archivarse;
+también cuentan los directorios ocultos y los enlaces a directorios. Los archivos
+auxiliares y el contenido de `archive` no afectan a esta comprobación.
+
+Desde la raíz del repositorio, ejecuta el mismo comando que CI:
+
+```bash
+scripts/ci/check-openspec-closed.sh
+```
+
+El comando lista todos los cambios activos y falla si encuentra alguno o no puede
+inspeccionar el directorio. No necesita OpenSpec ni servicios y no modifica el
+checkout. Antes del merge, completa y verifica la implementación, valida el cambio
+con `openspec validate NOMBRE --strict`, sincroniza sus deltas con las specs
+principales y valida el resultado con `openspec validate --specs --strict`.
+Después archiva localmente el cambio, preservando sus tareas y evidencia, y repite
+la comprobación. Marcar tareas como completas no sustituye sincronizar y archivar.
+
+El workflow `OpenSpec CI` publica el check independiente **OpenSpec closure** para
+todas las PR dirigidas a `main`, sin filtros por rutas, al abrirlas, reabrirlas o
+actualizarlas. Un push a una rama con una PR abierta hacia `main` vuelve a ejecutar
+el check mediante el evento `pull_request` de tipo `synchronize`. Los commits
+locales y los pushes sin PR, incluidos los de ramas nuevas y los pushes directos
+a `main`, no ejecutan este workflow. Para bloquear merges que incumplan esta
+política, configura **OpenSpec closure** como
+check requerido en las reglas de protección de `main`; el workflow no configura
+esas reglas ni archiva cambios automáticamente. Los cinco checks del backend
+conservan su funcionamiento.
+
 ## Tipos: Pyright y Pylance
 
 El extra `dev` incluye Pyright, fijado en `uv.lock`. Desde `backend/`:
@@ -875,12 +933,13 @@ resultados ni fecha final; COMPLETED expone el lote entero, incluso cuando todos
 los proveedores fallan. FAILED conserva un error de proceso. Un UUID desconocido
 devuelve 404, uno mal formado 422, y persistencia no disponible 503.
 
-`application/quotation_models.py`, `quotation_ports.py` y `quotations.py` definen
-el estado persistido, los puertos y los casos de uso. Los adaptadores son
-`adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
+`application/quotations/models.py`, `ports.py`, `errors.py`, `comparison.py` y
+`use_cases.py` separan el estado persistido y los resultados, los contratos de
+salida, los errores compartidos, la comparación y los casos de uso. Los adaptadores
+son `adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
 `adapters/queue/rabbitmq.py`; `main.py` compone API y `worker.py` el proceso de
 trabajo. API comparte servicios por instancia y cierra motor y broker incluso
-si falla el arranque. Solo el worker llama a `ShippingQuoteService.compare`.
+si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
 
 `docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
 **un único worker**. API/worker esperan migraciones correctas y broker saludable;
@@ -908,22 +967,23 @@ indefinidamente. No se garantiza ejecución exactamente una vez ni que un fallo
 de infraestructura permita registrar un error final. El apagado cancela y espera
 las llamadas activas y cierra los recursos; no reejecuta trabajo pendiente.
 
-El worker valida antes de trabajar estas variables (valores por defecto):
+Cada simulador declara su propio perfil privado e inmutable. El worker y los
+consumidores directos construyen `SimulatedEconomyProvider()`,
+`SimulatedStandardProvider()` y `SimulatedExpressProvider()` sin argumentos:
 
-| Variable | Default |
-| --- | --- |
-| `SHIPPING_DELAY_MIN_SECONDS` | `0.05` |
-| `SHIPPING_DELAY_MAX_SECONDS` | `0.5` |
-| `SHIPPING_NO_RESPONSE_PROBABILITY` | `0.05` |
-| `SHIPPING_ERROR_PROBABILITY` | `0.10` |
+| Proveedor | Demora uniforme (s) | Sin respuesta | Error |
+| --- | --- | --- | --- |
+| Economy | 0.2–0.8 | 0.10 | 0.15 |
+| Standard | 0.1–0.5 | 0.05 | 0.10 |
+| Express | 0.05–0.2 | 0.02 | 0.05 |
 
-Demoras finitas y ordenadas, probabilidades entre 0 y 1 y suma ≤ 1. Un sorteo
-elige categorías excluyentes; tras la demora uniforme, el proveedor responde,
-falla o espera cancelablemente hasta el timeout existente. Poner las cuatro
-variables a cero produce comportamiento determinista. La construcción directa
-sin perfil mantiene demora/probabilidades cero y las tarifas actuales; puede
-inyectarse `SimulationProfile` con RNG y espera controlados. No se guardan
-perfiles: se usa la configuración vigente al ejecutar.
+Un sorteo elige categorías excluyentes; tras la demora uniforme, el proveedor
+responde, falla o espera cancelablemente hasta el timeout del comparador. Las
+tarifas de respuestas exitosas permanecen iguales. Estos perfiles no se
+configuran por constructor, variables de entorno ni almacenamiento; se retira
+la configuración pública de perfil/RNG/espera. El worker solo configura sus
+conexiones. Las pruebas controlan funciones privadas de azar y espera al ejecutar,
+sin semillas ni dependencia del orden concurrente.
 
 El head actual es **0005**: añade únicamente `shipping_quotations`,
 `shipping_provider_results` y `shipping_offers`, con FK y unicidad por

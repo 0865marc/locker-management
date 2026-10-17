@@ -4,7 +4,7 @@
 
 ### Requirement: Report five independent CI checks
 
-GitHub Actions SHALL conservar cinco checks independientes para PR a main y pushes a main: Ruff, Pyright, unidades, integración PostgreSQL/migraciones y Docker/API. SHALL añadir Cloudflare local como sexto resultado independiente. Cada fallo SHALL fallar su check, con ejecución acotada, permisos de lectura y sin credenciales de despliegue. Nuevas actualizaciones de una PR SHALL cancelar su ejecución obsoleta sin cancelar otras PR.
+GitHub Actions SHALL conservar cinco checks del backend para PR a main y pushes a main: Ruff, Pyright, unidades, PostgreSQL/migraciones y Docker/API. SHALL añadir Cloudflare local como sexto resultado del backend, sin alterar el check separado OpenSpec closure. Cada fallo SHALL fallar su check, con ejecución acotada, permisos de lectura y sin credenciales de despliegue. Nuevas actualizaciones de una PR SHALL cancelar su ejecución obsoleta sin cancelar otras PR.
 
 #### Scenario: Verify a pull request and its merge
 - **WHEN** se abre/actualiza una PR a main o llega un commit a main

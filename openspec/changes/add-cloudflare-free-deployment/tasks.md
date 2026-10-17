@@ -1,6 +1,6 @@
 # Tasks
 
-El usuario ha aprobado la implementación de este plan. Partir del código y los deltas completos de `add-asynchronous-shipping-quotations` y `add-backend-ci`, sin modificar ni cerrar esos cambios. Marcar las casillas únicamente después de verificar todos sus criterios.
+El usuario ha aprobado la implementación de este plan. Partir del `main` integrado y sus especificaciones principales: cotizaciones/CI ya están sincronizados y archivados, y la aplicación usa paquetes por funcionalidad y simuladores autónomos. Conservar esa línea base sin modificar cambios archivados. Marcar las casillas únicamente después de verificar todos sus criterios.
 
 Dependencias: 1.1–1.3 preceden a la implementación dependiente; después, 2 y 3 pueden avanzar con propiedad de archivos separada; 4 depende de ambas; 5 depende de 4.4; 6 integra 2–5; 7–8 cierran preparación y aceptación. Un fallo demostrado de viabilidad bloquea tareas dependientes. Si solo faltan cuenta/credenciales para 1.4, continuar trabajo local independiente y mantener 1.4/8.3 pendientes; no confundir esa ausencia con fallo ni con aceptación Free.
 
@@ -15,7 +15,7 @@ Estado de ejecución (2026-10-17): 1.1–1.3 iniciadas, todavía sin completar. 
 
 ## 2. Separar composición y distribuciones sin romper PostgreSQL
 
-- [ ] 2.1 Extraer `backend/composition.py` y adaptar `main.py` preservando `create_app`, URL precedence, app global CPython y lifecycle; añadir unidades de composición y ejecutar las existentes de main/HTTP, documentando los dos perfiles y su selección por entrypoint.
+- [ ] 2.1 Extraer `backend/composition.py` y adaptar `main.py` usando los puertos y `use_cases.py` de cada paquete de aplicación, preservando `create_app`, URL precedence, app global CPython y lifecycle; añadir unidades de composición y ejecutar las existentes de main/HTTP, documentando los dos perfiles y su selección por entrypoint.
 - [ ] 2.2 Incorporar `backend/cloudflare_worker.py`, contexto por evento y proveedores tipados de bindings; comprobar con tests concurrentes de dos entornos y excepciones que no se mezclan recursos, no hay I/O al importar ni tareas desprendidas y las rutas actuales siguen utilizándose.
 - [ ] 2.3 Actualizar `backend/pyproject.toml` (`py-modules`) y `backend/Dockerfile` para incluir la composición compartida; construir e instalar el wheel fuera del árbol fuente y comprobar sus imports, después ejecutar el smoke Docker/PostgreSQL existente para detectar módulos omitidos.
 - [ ] 2.4 Implementar `scripts/cloudflare/prepare.py` con lista explícita de fuentes y árbol generado ignorado; verificar preparación determinista y fresca, ausencia de secretos/infraestructura CPython y build desde checkout limpio. Documentar el procedimiento y actualizar `.gitignore` y la excepción acotada de raíces de composición en `AGENTS.md`.
@@ -37,13 +37,13 @@ Estado de ejecución (2026-10-17): 1.1–1.3 iniciadas, todavía sin completar. 
 ## 5. Conectar Queues y el flujo completo de cotizaciones
 
 - [ ] 5.1 Implementar el publicador Cloudflare que espera send confirmado y el handler que solicita ack antes de procesar; comprobar publicación única, 202/Location, fallo inicial sin publish, 503/PUBLISH_ERROR, ack fallido sin ejecución y mensaje inválido con unidades y smoke nativo. Documentar la diferencia entre ack síncrono Queues y confirmación AMQP.
-- [ ] 5.2 Configurar lote uno, concurrencia uno, cero retries y retención Free, reutilizando comparador y simuladores actuales; verificar procesamiento secuencial, duplicados ignorados, timeout de proveedor sin retry y ausencia de requeue/recuperación tras fallo reconocido. Registrar la configuración efectiva y las limitaciones ante caída/retención.
+- [ ] 5.2 Configurar lote uno, concurrencia uno, cero retries y retención Free, reutilizando `ShippingQuoteComparator` y los simuladores de construcción sin argumentos/perfiles privados fijos; verificar procesamiento secuencial, duplicados ignorados, timeout sin retry, ausencia de requeue/recuperación y que las antiguas variables `SHIPPING_*` no alteran proveedores. Registrar la configuración de cola y las limitaciones ante caída/retención.
 - [ ] 5.3 Ejecutar recorrido HTTP/Queues/D1 completo con éxito, resultados mixtos y fallos de publicación/procesamiento; verificar lectura desde otra instancia y ningún resultado parcial. Mantener y ejecutar el smoke RabbitMQ existente para demostrar compatibilidad del otro perfil.
 
 ## 6. Integrar verificación reproducible de los dos perfiles
 
 - [ ] 6.1 Consolidar harness aislado `cloudflare/tests/` y comando `scripts/cloudflare/check.sh` para preparación, build, migraciones locales y contratos nativos, con cleanup y fallos claros; ejecutarlo desde checkout limpio y documentar su diferencia respecto de las suites PostgreSQL/RabbitMQ y la medición remota.
-- [ ] 6.2 Añadir el check independiente `Cloudflare local` conservando los cinco checks CI actuales, permisos de lectura, cancelación y límites; verificar su ejecución sin secretos/cuenta, la instalación bloqueada, detección de staging obsoleto y ausencia de operaciones remotas. Documentar comandos locales equivalentes.
+- [ ] 6.2 Añadir el check independiente `Cloudflare local` conservando los cinco checks del backend, permisos de lectura, cancelación y límites, sin alterar el workflow separado `OpenSpec closure`; verificar su ejecución sin secretos/cuenta, la instalación bloqueada, detección de staging obsoleto y ausencia de operaciones remotas. Documentar comandos locales equivalentes.
 - [ ] 6.3 Ampliar análisis estricto a fuentes nuevas, con entorno 3.13 solo donde proceda y tipos precisos del SDK verificados contra el runtime; ejecutar desde backend `uv run --extra dev pyright --project .. --warnings` con cero errores/advertencias y Ruff lint/formato para todas las fuentes nuevas, sin relajar reglas ni ampliar exclusiones de producción.
 
 ## 7. Preparar despliegue y operación verificables
@@ -61,5 +61,5 @@ Estado de ejecución (2026-10-17): 1.1–1.3 iniciadas, todavía sin completar. 
 ## Workflow follow-up
 
 - Presentar al usuario el resultado como planificación lista; no iniciar estas tareas durante el turno de propuesta.
-- El coordinador gestiona cualquier sincronización/archivo posterior solo cuando corresponda y esté autorizado. Respetar primero los deltas de cotizaciones/CI y conservar los requisitos de identidad/runtime existentes; este cambio no los sincroniza ni archiva por sí mismo.
+- El coordinador gestiona cualquier sincronización/archivo posterior solo cuando corresponda y esté autorizado. Cotizaciones/CI ya están sincronizados y archivados; conservar sus requisitos principales y los de identidad/runtime existentes. La actualización de la rama no cierra este cambio incompleto: `OpenSpec closure` seguirá fallando en una PR a main mientras permanezca activo, sin excepciones ni bypass.
 - Diferenciar implementación local verificada, despliegue remoto y aceptación Free. La falta de evidencia remota impide afirmar el último estado, aunque el trabajo local esté terminado.

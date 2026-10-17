@@ -2,9 +2,9 @@
 
 ## Context
 
-Ver la motivación en `proposal.md`. La línea base incluye los cambios completos aún activos `add-asynchronous-shipping-quotations` y `add-backend-ci`; sus deltas prevalecen sobre las especificaciones principales todavía anteriores a cotizaciones/CI. La futura integración debe respetar ese orden, sin sincronizar ni archivar esos cambios durante esta planificación.
+Ver la motivación en `proposal.md`. La línea base es el `main` integrado: `add-asynchronous-shipping-quotations` y `add-backend-ci` ya están sincronizados y archivados. Las especificaciones principales actuales incorporan cotizaciones, CI, simuladores autónomos y la política de cierre OpenSpec; sus contratos se conservan al incorporar Cloudflare.
 
-`backend/main.py` compone SQLModel y RabbitMQ y construye `app` al importar; `worker.py` mantiene un bucle AMQP. Los puertos en `domain/ports.py` y `application/quotation_ports.py` son asíncronos e independientes de infraestructura. Los repositorios PostgreSQL usan transacciones, `FOR UPDATE`, checks específicos y un índice único parcial para ocupación. La selección de celda se hace en Python con volumen entero exacto y UUID. El contrato admite 1000 celdas nuevas por petición, crecimiento acumulado sin máximo y listas sin paginación.
+`backend/main.py` compone SQLModel y RabbitMQ y construye `app` al importar; `worker.py` mantiene un bucle AMQP. Los puertos en `application/{deliveries,returns,lockers,quotations}/ports.py` son asíncronos e independientes de infraestructura; los servicios viven en `use_cases.py` de cada funcionalidad. Cotizaciones concentra modelos/errores y `ShippingQuoteComparator` en `application/quotations/{models,errors,comparison}.py`. Los repositorios PostgreSQL usan transacciones, `FOR UPDATE`, checks específicos y un índice único parcial para ocupación. La selección de celda se hace en Python con volumen entero exacto y UUID. El contrato admite 1000 celdas nuevas por petición, crecimiento acumulado sin máximo y listas sin paginación.
 
 ## Goals / Non-Goals
 
@@ -72,7 +72,7 @@ El publicador serializa únicamente `quotation_id` y espera `send()` antes de pe
 
 Configurar consumidor con `max_batch_size=1`, `max_concurrency=1`, `max_retries=0`, retención Free de 24 horas y sin dead-letter/reconciliador. El handler solicita `message.ack()` **antes** de leer D1/procesar; en la API Python actual es síncrono, no un await con confirmación AMQP. Si esa llamada falla, no empieza el trabajo. La documentación promete que un mensaje explícitamente reconocido no se vuelve a entregar aunque el handler falle después; no se extrapola esa propiedad a un proceso que muere antes de registrar el ack.
 
-Queues puede duplicar entregas: cada copia se reconoce y `start` condicional deja que solo PENDING pase una vez a PROCESSING. Los estados inexistente/PROCESSING/COMPLETED/FAILED y mensajes inválidos se ignoran. Una caída puede dejar PENDING/PROCESSING indefinidamente; no se reabre el estado ni se promete exactamente una vez. No hay reintento de comparación/proveedores. Los defaults de simulación y timeout de dos segundos se preservan.
+Queues puede duplicar entregas: cada copia se reconoce y `start` condicional deja que solo PENDING pase una vez a PROCESSING. Los estados inexistente/PROCESSING/COMPLETED/FAILED y mensajes inválidos se ignoran. Una caída puede dejar PENDING/PROCESSING indefinidamente; no se reabre el estado ni se promete exactamente una vez. No hay reintento de comparación/proveedores. Se reutiliza `ShippingQuoteComparator` con timeout de dos segundos y los tres simuladores construidos sin argumentos: conservan sus perfiles privados fijos y tarifas actuales. Workers, igual que el worker PostgreSQL, no configura demoras/probabilidades ni lee las antiguas variables `SHIPPING_*`; los tests controlan azar/esperas en ejecución sin convertir esos controles en configuración de producción.
 
 ### 7. Historial D1 y excepción explícita a instrucciones del repositorio
 
@@ -97,7 +97,7 @@ Fuentes: [Python Workers y paquetes](https://developers.cloudflare.com/workers/l
 
 ### 9. Verificación y aceptación de gratuidad
 
-Conservar los escenarios de dominio/HTTP/SQL y las suites PostgreSQL y RabbitMQ. Añadir contratos compartidos donde sea útil sin convertir PostgreSQL en un fallback D1. Las pruebas Cloudflare corren con la herramienta oficial sobre Workers/D1/Queues local; SQLite de CPython o dobles no demuestran semántica D1. CI añade un resultado estable `Cloudflare local`, sin cuenta ni secretos; la medición remota es evidencia separada.
+Conservar los escenarios de dominio/HTTP/SQL y las suites PostgreSQL y RabbitMQ. Añadir contratos compartidos donde sea útil sin convertir PostgreSQL en un fallback D1. Las pruebas Cloudflare corren con la herramienta oficial sobre Workers/D1/Queues local; SQLite de CPython o dobles no demuestran semántica D1. El workflow de backend añade un sexto resultado estable `Cloudflare local`, sin cuenta ni secretos; la medición remota es evidencia separada. El workflow independiente `OpenSpec closure` permanece intacto: exige cierre antes de integrar una PR a main y falla mientras este cambio siga activo, sin que eso autorice archivarlo incompleto o desactivar el check.
 
 Fixtures mínimas de aceptación remota: diez lockers (uno pasa de 1000 a 2000 celdas en dos peticiones; los otros nueve tienen diez cada uno), cien entregas y cien devoluciones entre pendientes/finalizadas y asignadas/no asignadas, y treinta cotizaciones con resultados mixtos. Ejercitar todos los endpoints, `/docs`/`openapi.json`, alta/ampliación de 1000 celdas, listas completas, disponibilidad y carreras controladas; añadir casos de ejes máximos/volúmenes casi iguales y UTC con microsegundos. La prueba inicial puede usar una muestra equivalente de serialización; la final requiere operaciones reales.
 

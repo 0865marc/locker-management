@@ -38,7 +38,7 @@ Cada perfil SHALL componer y reutilizar los servicios de entregas, devoluciones,
 
 ### Requirement: Run one worker with simple runtime configuration
 
-El consumidor SHALL procesar cotizaciones secuencialmente, validar la simulación antes de trabajar y no migrar, reintentar ni recuperar trabajo consumido. PostgreSQL SHALL conservar DATABASE_URL/RABBITMQ_URL y cerrar recursos y cancelar/esperar llamadas al apagarse. Cloudflare SHALL usar su entorno de evento y limitar el procesamiento simultáneo a una cotización por consumidor, completando o cancelando sus tareas dentro del evento.
+El consumidor SHALL procesar cotizaciones secuencialmente con los tres simuladores autónomos construidos sin argumentos, sin migrar, reintentar ni recuperar trabajo consumido. PostgreSQL SHALL conservar DATABASE_URL/RABBITMQ_URL y cerrar recursos y cancelar/esperar llamadas al apagarse. Cloudflare SHALL usar su entorno de evento y limitar el procesamiento simultáneo a una cotización por consumidor, completando o cancelando sus tareas dentro del evento.
 
 #### Scenario: Start and stop the worker
 - **WHEN** el worker PostgreSQL arranca con configuración válida y después se detiene
@@ -46,7 +46,11 @@ El consumidor SHALL procesar cotizaciones secuencialmente, validar la simulació
 
 #### Scenario: Handle Cloudflare queue events
 - **WHEN** hay varias cotizaciones en la cola Cloudflare
-- **THEN** el consumidor las procesa secuencialmente con la simulación configurada y no inicia un bucle AMQP ni deja tareas desprendidas del evento
+- **THEN** el consumidor las procesa secuencialmente con los perfiles internos fijos de los proveedores y no inicia un bucle AMQP ni deja tareas desprendidas del evento
+
+#### Scenario: Ignore legacy simulation settings in both profiles
+- **WHEN** cualquiera de los consumidores arranca con antiguas variables de simulación SHIPPING_* presentes
+- **THEN** construye los proveedores sin argumentos y sus perfiles privados y tarifas permanecen iguales a los del uso directo
 
 ## ADDED Requirements
 

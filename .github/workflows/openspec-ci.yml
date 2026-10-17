@@ -1,0 +1,22 @@
+name: OpenSpec CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openspec-closure:
+    name: OpenSpec closure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Check that all OpenSpec changes are archived
+        run: scripts/ci/check-openspec-closed.sh

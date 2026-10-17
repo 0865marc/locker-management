@@ -1,0 +1,42 @@
+from typing import Protocol
+from uuid import UUID
+
+from domain.lockers import (
+    Address,
+    Availability,
+    Compartment,
+    CompartmentBatch,
+    Coordinates,
+    Dimensions,
+    Locker,
+    LockerPatch,
+)
+
+
+class LockerRepository(Protocol):
+    async def create(
+        self,
+        location_id: str | None,
+        batches: list[CompartmentBatch],
+        active: bool = True,
+        address: Address | None = None,
+        coordinates: Coordinates | None = None,
+    ) -> Locker: ...
+    async def list_all(self, location_id: str | None = None) -> list[Locker]: ...
+    async def get_by_id(self, identifier: UUID) -> Locker | None: ...
+    async def set_active(self, identifier: UUID, active: bool) -> Locker: ...
+    async def update(self, identifier: UUID, patch: LockerPatch) -> Locker: ...
+    async def add_compartments(
+        self, identifier: UUID, batches: list[CompartmentBatch]
+    ) -> Locker: ...
+    async def update_compartment(
+        self,
+        identifier: UUID,
+        cell_id: UUID,
+        dimensions: Dimensions | None = None,
+        enabled: bool | None = None,
+    ) -> Compartment: ...
+    async def retire_compartment(self, identifier: UUID, cell_id: UUID) -> None: ...
+    async def availability(
+        self, location_id: str, dimensions: Dimensions
+    ) -> Availability: ...

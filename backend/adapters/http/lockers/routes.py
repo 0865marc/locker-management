@@ -15,7 +15,7 @@ from adapters.http.lockers.schemas import (
     UpdateCompartment,
     UpdateLocker,
 )
-from application.lockers import LockerService
+from application.lockers.use_cases import LockerService
 from domain.lockers import (
     Availability,
     CapacityConflictError,

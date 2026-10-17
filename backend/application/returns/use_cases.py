@@ -2,8 +2,8 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from application.returns.ports import ReturnRepository
 from domain.lockers import Dimensions, validate_reception
-from domain.ports import ReturnRepository
 from domain.returns import Return, ReturnConflictError
 
 
