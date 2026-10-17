@@ -84,3 +84,54 @@ From backend:
 env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL UV_CACHE_DIR=/tmp/locker-uv-cache uv run --extra dev python -m unittest discover -s tests/unit -t . -v
 77 tests passed in 3.741 seconds. This baseline result does not verify native
 Cloudflare contracts or the remaining feasibility tasks.
+
+
+2026-10-17 audit corrections within the incomplete phase 1 gate:
+
+Default.queue now calls process_spike_message. Queue orchestration tests observe
+ack -> body -> prepare -> bind -> write; ack failure permits no body or DB access.
+Invalid messages, a DB error and intentional processing failure after ack are
+also checked. The native ack_sync marker alone is not treated as ordering proof.
+
+The same verify_d1_batch helper is called by /d1-check. It requires a successful
+three-statement positive control (count 3 / sum 6), then the named intentional CHECK
+from the negative batch's second statement and count 0, before json_each 1000.
+Prepare errors occur outside the expected-error catch. Initial errors, unrelated
+constraints, transport errors, missing expected failures and partial writes are
+all rejected by orchestration/fault tests. These doubles are not native D1 proof.
+
+PYTHONPATH=cloudflare/runtime_spike UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project cloudflare --locked python -m unittest discover -s cloudflare/tests -p test_probe_units.py -v
+12 tests passed; see probe-units.txt.
+PYTHONPATH=cloudflare/runtime_spike UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project cloudflare --locked python -m unittest discover -s cloudflare/tests -p test_event_context.py -v
+1 test passed; see context-unit.log.
+
+Disposable-copy mutation checks, all detected by failing tests:
+- Replace result = message.ack() with result = None.
+- Replace the initial ack and call message.ack() only after the database write.
+- Replace the unexpected-D1-error re-raise with pass.
+See probe-mutations.txt. Original source files were not mutated.
+
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare cloudflare/typings
+All checks passed!
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff format --check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare cloudflare/typings
+14 files already formatted
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev pyright --project cloudflare --warnings
+0 errors, 0 warnings, 0 informations
+From backend:
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --extra dev pyright --project .. --warnings
+0 errors, 0 warnings, 0 informations
+
+python scripts/cloudflare/prepare_spike.py
+44 Python sources; two preparations have identical paths and SHA-256 contents
+for 45 files, including manifest.json. Two new helpers are staged explicitly.
+From cloudflare:
+XDG_CONFIG_HOME=/workspace/locker-management/cloudflare/.wrangler/config XDG_CACHE_HOME=/workspace/locker-management/cloudflare/.wrangler/cache WRANGLER_SEND_METRICS=false node node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir .wrangler/build
+exit 0; source-only build 82.82 KiB / gzip 16.20 KiB; refreshed build.log.
+No Pyodide sync retry, native runtime test or remote deployment was performed.
+
+Additional coordinator-run evidence (not rerun by builder): 50 PostgreSQL/Alembic
+tests passed in 20.452 s on disposable PostgreSQL 17, removed afterwards. Also 25
+existing domain/application/lockers contracts and 9 HTTP contracts passed using
+the staged modules under CPython 3.13.5 / FastAPI 0.135.3 / Pydantic 2.12.5. These 34
+shared contracts do not establish Workers/WASM compatibility. The HTTP checks
+used transient httpx 0.28.1 without modifying pyproject or locks.

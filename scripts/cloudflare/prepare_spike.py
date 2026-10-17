@@ -16,6 +16,8 @@ FILES = (
     "backend/adapters/__init__.py",
     "cloudflare/runtime_spike/worker.py",
     "cloudflare/runtime_spike/bindings.py",
+    "cloudflare/runtime_spike/d1_probe.py",
+    "cloudflare/runtime_spike/queue_probe.py",
     "cloudflare/runtime_spike/event_context.py",
     "cloudflare/runtime_spike/bootstrap.py",
     "cloudflare/runtime_spike/import_clock.py",

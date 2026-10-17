@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS spike_cells (
     id TEXT PRIMARY KEY,
-    value INTEGER NOT NULL CHECK(value >= 0)
+    value INTEGER NOT NULL CONSTRAINT spike_value_nonnegative CHECK(value >= 0)
 );
 CREATE TABLE IF NOT EXISTS spike_events (
     id INTEGER PRIMARY KEY,

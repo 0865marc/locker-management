@@ -2,7 +2,6 @@
 
 import asyncio
 import importlib
-import inspect
 import json
 import sys
 from time import perf_counter
@@ -25,6 +24,8 @@ from adapters.http.lockers.schemas import (
 from adapters.http.quotations.schemas import QuotationResponse
 from adapters.http.returns.schemas import ReturnResponse
 from bindings import Environment, MessageBatch, NativeResponse
+from d1_probe import verify_d1_batch
+from queue_probe import process_spike_message
 from import_clock import STARTED
 from event_context import (
     EventContext,
@@ -122,40 +123,7 @@ async def context_check() -> dict[str, object]:
 
 @app.post("/d1-check")
 async def d1_check() -> dict[str, object]:
-    database = current_environment.get().DB
-    await database.prepare("DELETE FROM spike_cells").run()
-    failure = False
-    try:
-        await database.batch(
-            [
-                database.prepare(
-                    "INSERT INTO spike_cells (id, value) VALUES (?, ?)"
-                ).bind("rollback-first", 1),
-                database.prepare(
-                    "INSERT INTO spike_cells (id, value) VALUES (?, ?)"
-                ).bind("rollback-fail", -1),
-                database.prepare(
-                    "INSERT INTO spike_cells (id, value) VALUES (?, ?)"
-                ).bind("rollback-last", 1),
-            ]
-        )
-    except Exception:
-        failure = True
-    row = await database.prepare("SELECT COUNT(*) AS n FROM spike_cells").first()
-    assert failure and row is not None and row["n"] == 0
-    payload = json.dumps([{"id": f"cell-{n}", "value": n} for n in range(1000)])
-    await database.batch(
-        [
-            database.prepare(
-                "INSERT INTO spike_cells (id, value) "
-                "SELECT json_extract(value, '$.id'), json_extract(value, '$.value') "
-                "FROM json_each(?)"
-            ).bind(payload),
-        ]
-    )
-    row = await database.prepare("SELECT COUNT(*) AS n FROM spike_cells").first()
-    assert row is not None and row["n"] == 1000
-    return {"rollback": True, "json_each_count": row["n"], "json_bytes": len(payload)}
+    return await verify_d1_batch(current_environment.get().DB)
 
 
 @app.post("/publish/{marker}")
@@ -255,21 +223,6 @@ class Default(WorkerEntrypoint):
         token = current_environment.set(environment)
         try:
             for message in batch.messages:
-                result = message.ack()
-                assert not inspect.isawaitable(result)
-                # This write is reached only after synchronous ack returns.
-                body = message.body
-                assert isinstance(body, dict)
-                marker = cast(dict[str, object], body).get("marker")
-                assert isinstance(marker, str)
-                await (
-                    environment.DB.prepare(
-                        "INSERT INTO spike_events (marker, ack_sync) VALUES (?, 1)"
-                    )
-                    .bind(marker)
-                    .run()
-                )
-                if marker.startswith("fail-"):
-                    raise RuntimeError("intentional failure after ack")
+                await process_spike_message(message, environment.DB)
         finally:
             current_environment.reset(token)

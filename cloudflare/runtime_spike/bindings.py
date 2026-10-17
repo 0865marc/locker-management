@@ -35,8 +35,10 @@ class Environment(Protocol):
 
 
 class Message(Protocol):
-    body: object
     id: str
+
+    @property
+    def body(self) -> object: ...
 
     def ack(self) -> None: ...
 

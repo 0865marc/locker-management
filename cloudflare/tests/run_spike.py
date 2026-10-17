@@ -71,6 +71,21 @@ def main() -> None:
         "context-unit.log",
         context_environment,
     )
+    run(
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_probe_units.py",
+            "-v",
+        ],
+        "probe-units.txt",
+        context_environment,
+    )
     run(["npm", "ci", "--ignore-scripts"], "npm-install.log")
     run(["uv", "run", "--locked", "pywrangler", "sync"], "sync.log")
     run(WRANGLER + ["deploy", "--dry-run", "--outdir", ".wrangler/build"], "build.log")

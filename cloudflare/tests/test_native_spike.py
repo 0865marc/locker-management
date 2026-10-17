@@ -67,6 +67,8 @@ class NativeSpikeTests(unittest.TestCase):
     def test_native_d1_rollback_and_json_each(self) -> None:
         status, result = request("/d1-check", {})
         self.assertEqual(status, 200)
+        self.assertEqual(result["positive_batch_count"], 3)
+        self.assertEqual(result["expected_check"], "spike_value_nonnegative")
         self.assertTrue(result["rollback"])
         self.assertEqual(result["json_each_count"], 1000)
 
@@ -82,6 +84,8 @@ class NativeSpikeTests(unittest.TestCase):
                     break
                 self.assertLess(time.monotonic(), deadline, result)
                 time.sleep(0.05)
+            # This persisted marker is native smoke evidence only. Observable
+            # ack-before-I/O and ack-failure checks live in test_probe_units.
             self.assertEqual(result["ack_sync"], 1)
         time.sleep(1)
         for marker in markers:

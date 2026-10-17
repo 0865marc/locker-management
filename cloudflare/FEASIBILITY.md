@@ -15,6 +15,7 @@ terminada de la aplicación ni un manifiesto de despliegue de producción.
 | Wrangler `deploy --dry-run` | Pasa para el árbol de fuentes; **sin dependencias Pyodide todavía** |
 | `uv run --locked pywrangler sync` | Falla: política de salida impide `index.pyodide.org/0.28.3/pydantic/` |
 | ContextVar misma tarea (CPython) | Pasa; éxito/excepción, con valor previo y sin valor; mutación sin reset falla |
+| Orquestación de cola/batch (CPython) | Pasan 12 tests de orden/fallos; tres mutaciones deliberadas hacen fallar la suite |
 | Runtime Python/ASGI/D1/Queues | No ejecutado; no hay resultado de los contratos nativos |
 | Imports/snapshot, 1000/2000 celdas | Mediciones nativas pendientes; no se publican tiempos CPython como sustituto |
 | Pyright raíz obligatorio | Pasa: cero errores y cero advertencias |
@@ -46,13 +47,47 @@ Se repitieron imports de cinco módulos de casos de uso/comparación y los cuatr
 esquemas reales desde el árbol preparado bajo CPython, sin cargar infraestructura
 PostgreSQL/AMQP. La preparación produce 42 fuentes, con 43 archivos idénticos en
 dos ejecuciones, incluido el manifiesto. Pasan de nuevo la unidad de contexto,
-Ruff y ambos Pyright (cero errores/advertencias); el build actual **solo de
+Ruff y ambos Pyright (cero errores/advertencias); el build de esa integración **solo de
 fuentes** mide 81.65 KiB / gzip 15.75 KiB. Ver `evidence/quality.txt`.
 
 `build.log` y `context-unit.log` contienen resultados refrescados de las fuentes
 integradas. `harness.log`, `sync.log` y la prueba de mutación conservan su evidencia
 histórica. No se reintentó el sync Pyodide ni se ejecutaron contratos nativos;
 el gate y la aceptación Free siguen pendientes.
+
+## Correcciones de auditoría de los sondeos
+
+Se corrigieron dos falsos positivos posibles sin cerrar ninguna tarea del gate:
+
+- La marca persistida `ack_sync=1` y `max_retries=0` no prueban por sí solas el
+  orden del reconocimiento. `Default.queue` llama ahora al helper compartido
+  `process_spike_message`; cinco unidades observan directamente `ack`, lectura
+  de cuerpo, `prepare`, `bind` y escritura. Un ack que lanza impide incluso leer
+  el cuerpo y no alcanza D1. Se comprueban mensajes inválidos, error de escritura
+  y fallo posterior al ack sin una segunda escritura. El smoke nativo conserva
+  sus marcadores, pero su resultado no se presenta como prueba independiente
+  del orden ack→I/O ni como garantía de exactamente una vez.
+- El sondeo de rollback usa primero un control positivo de tres sentencias con
+  el mismo `prepare/bind/batch`, y exige tres filas con suma de valores seis.
+  Después prepara otro lote con el valor negativo solo en la segunda sentencia.
+  Únicamente acepta el CHECK nombrado `spike_value_nonnegative`; un error de
+  preparación, del control positivo, de transporte u otra constraint se propaga.
+  La ausencia del fallo esperado también falla, y se exige cero filas tras él.
+  Solo entonces se prueba `json_each` con 1000 filas. El esquema local del
+  harness aislado declara ese nombre de constraint explícitamente.
+
+Pasan 12 unidades CPython de orquestación/inyección de fallos y la unidad de
+contexto existente. Tres copias temporales mutadas —ack eliminado, ack movido
+tras la escritura y aceptación indiscriminada de excepciones del batch— producen
+fallos observables de tests. Ver `evidence/probe-units.txt` y
+`evidence/probe-mutations.txt`. Los dobles no simulan ni demuestran la atomicidad
+real de D1: se mantiene pendiente ejecutar el mismo helper en WASM/D1 oficial.
+
+La preparación actual produce 44 fuentes/45 archivos idénticos entre ejecuciones;
+Ruff comprueba 14 archivos y ambos Pyright terminan con cero errores/advertencias.
+El build **solo de fuentes** mide 82.82 KiB / gzip 16.20 KiB. No se ha reintentado
+Pyodide ni desplegado nada. El bloqueo histórico y la aceptación Free pendiente
+siguen vigentes.
 
 ## Versiones instaladas y compatibilidad provisional
 
@@ -84,7 +119,8 @@ uv run --locked python tests/run_spike.py
 ```
 
 El harness instala herramientas bloqueadas, prepara las fuentes actuales,
-ejecuta `pywrangler sync`, construye sin publicar, crea únicamente las dos tablas
+ejecuta las unidades CPython de contexto/orquestación y `pywrangler sync`,
+construye sin publicar, crea únicamente las dos tablas
 de prueba en D1 local aislado e inicia `pywrangler dev --local`. Usa un puerto
 local libre; espera como máximo 90 segundos para arrancar, ejecuta cinco pruebas
 y guarda logs/mediciones. Cancela su grupo de procesos y elimina exclusivamente
@@ -132,9 +168,11 @@ node node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir .wrangler/b
   temporal mutada eliminando `reset(token)` provoca el fallo esperado
   (`evidence/context-mutation.log`). También se invoca dentro del runtime
   nativo cuando pueda arrancar; la unidad CPython no acredita ASGI/D1/Queues.
-- D1 nativo ejecuta `prepare/bind/batch`: falla una sentencia intermedia por
-  CHECK y se exige que no persista ninguna fila; luego `json_each(?)` inserta
-  1000 filas en una sentencia con un parámetro JSON.
+- D1 nativo ejecutará el helper `verify_d1_batch`: control positivo de tres
+  sentencias, fallo de CHECK nombrado deliberado en la segunda sentencia del
+  control negativo y cero filas tras el rollback; luego `json_each(?)` insertará
+  1000 filas en una sentencia con un parámetro JSON. Las unidades de orquestación
+  ya pasan, pero ninguno de estos resultados nativos se ha observado todavía.
 - Python publica con `await send`. El consumidor llama a `message.ack()` de forma
   síncrona antes de escribir D1; confirma que el resultado no es awaitable.
   Un caso falla después del ack; la prueba observa una sola escritura durante
@@ -166,6 +204,7 @@ no se ha modificado la configuración raíz en esta fase.
 ```sh
 # Desde la raíz:
 PYTHONPATH=cloudflare/runtime_spike uv run --project cloudflare --locked python -m unittest discover -s cloudflare/tests -p test_event_context.py -v
+PYTHONPATH=cloudflare/runtime_spike uv run --project cloudflare --locked python -m unittest discover -s cloudflare/tests -p test_probe_units.py -v
 uv run --project backend --extra dev pyright --project cloudflare --warnings
 uv run --project backend --extra dev ruff check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare
 uv run --project backend --extra dev ruff format --check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare
