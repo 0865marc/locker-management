@@ -12,18 +12,63 @@ const list = element('locker-list');
 const detail = element('locker-detail');
 const refresh = element<HTMLButtonElement>('refresh');
 const retry = element<HTMLButtonElement>('retry');
+const results = element('results');
+const openResults = element<HTMLButtonElement>('open-results');
+const closeResults = element<HTMLButtonElement>('close-results');
+function setResultsOpen(open: boolean, focus = true): void {
+  results.hidden = !open;
+  element('explorer').dataset.resultsOpen = String(open);
+  openResults.setAttribute('aria-expanded', String(open));
+  if (focus) (open ? closeResults : openResults).focus({ preventScroll: true });
+}
+openResults.addEventListener('click', () => setResultsOpen(results.hidden));
+closeResults.addEventListener('click', () => setResultsOpen(false));
+results.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    setResultsOpen(false);
+  }
+});
+element('skip-results').addEventListener('click', (event) => {
+  event.preventDefault();
+  setResultsOpen(true);
+});
+const parcelForm = element<HTMLFormElement>('parcel-form');
+parcelForm.addEventListener('submit', (event) => event.preventDefault());
+for (const input of parcelForm.querySelectorAll('input')) {
+  input.addEventListener('input', () => {
+    const invalid =
+      input.validity.badInput ||
+      (input.value !== '' &&
+        (!Number.isFinite(input.valueAsNumber) || input.valueAsNumber <= 0));
+    input.setCustomValidity(
+      invalid ? 'Introduce un número mayor que cero.' : '',
+    );
+    input.setAttribute('aria-invalid', String(invalid));
+    element(`${input.id}-error`).hidden = !invalid;
+  });
+}
+for (const panel of [element('map-panels'), results]) {
+  L.DomEvent.disableClickPropagation(panel);
+  L.DomEvent.disableScrollPropagation(panel);
+  panel.addEventListener('keydown', (event) => event.stopPropagation());
+}
 const spainBounds: L.LatLngBoundsExpression = [
   [27.5, -18.5],
   [44, 4.5],
 ];
-const map = L.map('map', { scrollWheelZoom: false }).fitBounds(spainBounds, {
+const map = L.map('map', {
+  scrollWheelZoom: false,
+  zoomControl: false,
+}).fitBounds(spainBounds, {
   padding: [15, 15],
 });
-map.zoomControl
+const zoom = L.control.zoom({ position: 'topright' }).addTo(map);
+zoom
   .getContainer()
   ?.querySelector('.leaflet-control-zoom-in')
   ?.setAttribute('aria-label', 'Acercar mapa');
-map.zoomControl
+zoom
   .getContainer()
   ?.querySelector('.leaflet-control-zoom-out')
   ?.setAttribute('aria-label', 'Alejar mapa');
@@ -62,9 +107,31 @@ function arrow(): SVGSVGElement {
   svg.append(path);
   return svg;
 }
-function select(id: string, center = true): void {
+// Pan to the space between overlays; the stored marker coordinates stay unchanged.
+function revealPosition(position: [number, number]): boolean {
+  const menu = element('map-panels').getBoundingClientRect();
+  const panel = results.getBoundingClientRect();
+  const size = map.getSize();
+  const left = menu.right + 12;
+  let right = panel.left - 12;
+  let top = 24;
+  let bottom = size.y - 24;
+  if (right - left < 40) {
+    // On mobile the list is below the menu, leaving a narrow strip on its right.
+    right = size.x - 12;
+    top = (zoom.getContainer()?.getBoundingClientRect().bottom ?? 80) + 48;
+    bottom = panel.top - 12;
+  }
+  const target = L.point((left + right) / 2, (top + bottom) / 2);
+  map.panBy(map.latLngToContainerPoint(position).subtract(target), {
+    animate: false,
+  });
+  return right - left >= 280;
+}
+function select(id: string, center = true, reveal = true): void {
   const locker = lockers.find((item) => item.id === id);
   if (!locker) return;
+  if (reveal) setResultsOpen(true, false);
   selectedId = id;
   for (const button of list.querySelectorAll('button'))
     button.setAttribute('aria-pressed', String(button.dataset.id === id));
@@ -86,13 +153,16 @@ function select(id: string, center = true): void {
     (button) => button.dataset.id === id,
   );
   selectedButton?.closest('li')?.append(detail);
-  detail.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (!results.hidden)
+    detail.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   const marker = markers.get(id);
   if (marker && locker.position) {
     for (const item of markers.values()) item.setZIndexOffset(0);
     marker.setZIndexOffset(1000);
-    if (center) map.setView(locker.position, 14);
-    marker.openPopup();
+    if (center) map.setView(locker.position, 14, { animate: false });
+    const popupFits = reveal && revealPosition(locker.position);
+    if (popupFits) marker.openPopup();
+    else map.closePopup();
   } else map.closePopup();
 }
 function clear(): void {
@@ -157,17 +227,18 @@ function render(): void {
           html: '<span aria-hidden="true">▦</span>',
           iconSize: [34, 40],
           iconAnchor: [17, 40],
+          popupAnchor: [0, -35],
         }),
       })
         .addTo(map)
-        .bindPopup(popup);
+        .bindPopup(popup, { autoPan: false });
       marker.on('click', () => select(locker.id, false));
       markers.set(locker.id, marker);
     }
   });
   if (!markers.size) map.fitBounds(spainBounds, { padding: [15, 15] });
   if (selectedId && lockers.some((item) => item.id === selectedId))
-    select(selectedId, false);
+    select(selectedId, false, false);
   else {
     selectedId = null;
     map.closePopup();

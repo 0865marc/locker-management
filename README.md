@@ -115,6 +115,17 @@ La suite levanta su servidor estático y FastAPI con middleware CORS real y dobl
 de persistencia; no necesita PostgreSQL ni RabbitMQ. Deja libres los puertos
 4321 y 8765 antes de ejecutarla.
 
+El mapa ocupa toda la pantalla. Arriba a la izquierda, «Tu paquete» permite
+anotar largo, ancho y alto en centímetros y peso en kilogramos. Los campos
+empiezan vacíos, admiten decimales positivos y se pueden vaciar. Son datos locales
+de la página: no se guardan, envían, filtran lockers ni calculan cotizaciones.
+Actualizar la disponibilidad o abrir/cerrar el listado conserva las medidas.
+
+«Ver lockers» abre el listado y sus detalles en un panel independiente, cerrado
+al entrar; también se abre al seleccionar un marcador. Puedes cerrarlo con su
+botón o Escape y seguir consultando el mapa. Actualizar, reintentar y ver España
+siguen accesibles con el listado cerrado.
+
 Se muestran lockers activos con al menos una celda habilitada y libre; el
 contador suma solo esas celdas. La disponibilidad corresponde a la última lectura
 correcta: no reserva espacio ni comprueba si cabe un paquete. «Actualizar» vuelve

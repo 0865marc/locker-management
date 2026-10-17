@@ -1,6 +1,6 @@
 # Tasks
 
-Plan revisado aprobado por el usuario. Las tareas 1–5 registran la implementación inicial completada; la ampliación Nginx aprobada de las tareas 6 también está implementada y verificada. La exclusión inicial del servicio frontend en 3.2 queda sustituida por esta ampliación. Publicación, sincronización y archivo quedan fuera de su alcance.
+Las tareas 1–6 registran alcances anteriores aprobados, implementados y verificados. El usuario ha aprobado explícitamente el plan de pantalla completa y formulario de las tareas 7; su implementación, verificación y revisión independiente están completadas. La exclusión inicial del servicio frontend en 3.2 quedó sustituida por la ampliación 6. Publicación, sincronización y archivo quedan fuera de este alcance.
 
 ## 1. Astro estático y preparación de publicación
 
@@ -16,7 +16,7 @@ Plan revisado aprobado por el usuario. Las tareas 1–5 registran la implementac
 ## 3. CORS del backend y uso local
 
 - [x] 3.1 Configurar CORS en composición/adaptador HTTP mediante `CORS_ALLOWED_ORIGINS`, orígenes exactos, GET preflight y sin credenciales ni comodines. Añadir pruebas con la aplicación y fakes para allow/deny, preflight GET/escritura, lista vacía/inválida y solicitudes sin Origin; verificar preservación de rutas y contratos existentes.
-- [x] 3.2 Pasar la variable CORS al servicio API en `compose.yaml` con orígenes locales explícitos y documentar sustitución por Pages/dominio propio y previews concretos. Verificar configuración Compose y ejemplos locales; no añadir servicio frontend ni cambiar `compose.ci.yaml` o volúmenes.
+- [x] 3.2 Pasar la variable CORS al servicio API en `compose.yaml` con orígenes locales explícitos y documentar sustitución por Pages/dominio propio y previews concretos. Verificar configuración Compose y ejemplos locales. En esta fase inicial se excluyeron el servicio frontend y cambios en `compose.ci.yaml`; la fase 6 incorporó ambos preservando volúmenes.
 
 ## 4. Mapa, listado y estados
 
@@ -38,6 +38,13 @@ Plan revisado aprobado por el usuario. Las tareas 1–5 registran la implementac
 - [x] 6.2 Añadir servicio `frontend` en `compose.yaml` con puerto `127.0.0.1:4321:80` y argumento de build por defecto `http://127.0.0.1:8000`; resetear sus puertos en `compose.ci.yaml`. Actualizar README para arranque completo con Compose, desarrollo npm opcional, configuración/rebuild y exclusividad del puerto 4321. Verificar `docker compose config` normal/CI, URL personalizada y preservación del flujo Pages y de servicios/volúmenes existentes.
 - [x] 6.3 Ejecutar smoke manual en stack Compose desechable: página y assets de Nginx accesibles, lectura real del navegador a FastAPI con CORS y estado vacío `[]` sin interceptar la API. Ejecutar `scripts/ci/smoke.sh` y limpiar únicamente recursos temporales; registrar evidencia y limitación de teselas sin ampliar workflows o funcionalidad UI.
 - [x] 6.4 Ejecutar desde `backend/` `uv run --extra dev pyright --project .. --warnings` con cero errores y cero advertencias; validar `openspec validate add-astro-locker-map --strict` y obtener revisión independiente de la ampliación. Resolver hallazgos y registrar resultados antes de marcar las tareas nuevas completas.
+
+## 7. Mapa a pantalla completa y entrada local de paquete
+
+- [x] 7.1 Adaptar página, componente y estilos existentes para mapa a todo el viewport y panel compacto «Tu paquete» arriba a la izquierda, con largo/ancho/alto (cm) y peso (kg) vacíos. Añadir comprobaciones E2E de geometría, ubicación, etiquetas y accesibilidad de controles/atribución en escritorio y 375 px; verificar que no hay cabecera, pie o márgenes que resten área al mapa.
+- [x] 7.2 Incorporar entrada numérica decimal positiva con validación mínima y valores locales, sin submit, persistencia, filtros o cotizaciones. Verificar edición, vaciado, valores no positivos, tabulación y scroll del panel sin navegación del mapa ni peticiones nuevas; conservar valores al actualizar disponibilidad o abrir/cerrar la lista.
+- [x] 7.3 Convertir resultados en panel plegable independiente, cerrado inicialmente y accesible mediante «Ver lockers», conservando detalles y estados/acciones visibles con panel cerrado. Ajustar E2E para apertura/cierre/foco, selección por marcador, lista larga, coordenadas ausentes/coincidentes y error/reintento; actualizar README para explicar el formulario local y el acceso al listado.
+- [x] 7.4 Ejecutar `npm run check`, `npm run build` y E2E afectados; inspeccionar escritorio/móvil y comprobar que el flujo GET existente se conserva. Ejecutar desde `backend/` `uv run --extra dev pyright --project .. --warnings` con cero errores y advertencias, validar OpenSpec y obtener revisión independiente antes de completar las cuatro tareas nuevas.
 
 ## Evidencia de verificación — 2026-10-17
 
@@ -61,3 +68,13 @@ Plan revisado aprobado por el usuario. Las tareas 1–5 registran la implementac
 - `scripts/ci/smoke.sh`: correcto, `GET /lockers` HTTP 200 con `[]`. Ambos proyectos y sus volúmenes temporales se eliminaron tras verificar; se conservaron los datos existentes.
 - Desde `backend/`, `uv run --extra dev pyright --project .. --warnings`: cero errores y advertencias, comprobado también por el revisor. `openspec validate add-astro-locker-map --strict` y `git diff --check`: correctos.
 - Revisión independiente de `sdd_reviewer` de la ampliación: sin hallazgos pendientes. No se han sincronizado ni archivado las especificaciones.
+
+
+## Evidencia de pantalla completa y formulario — 2026-10-17
+
+- Mapa del tamaño exacto del viewport y panel de paquete arriba a la izquierda comprobados en 1280×800, 375×667 y 375×480. Capturas inspeccionadas con listado cerrado, abierto y selección; controles de zoom y atribución accesibles sin solaparse con paneles.
+- Campos inicialmente vacíos, decimales positivos y validación de cero/negativos: correctos. Editar, tabular, arrastrar o desplazar el panel no mueve el mapa ni añade peticiones. Los valores sobreviven a actualización y apertura/cierre del listado; no se persisten.
+- Listado plegable, enlace de salto, Escape, retorno de foco, detalles, lockers sin coordenadas y coincidentes, carga/error/reintento y CORS real comprobados. La selección conserva las coordenadas y encuadra el marcador entre paneles; el hit-test demuestra que se puede pulsar también en móvil. El detalle completo permanece en la lista cuando no hay espacio para un popup.
+- `npm run check`: cero errores, advertencias y hints. `npm test`: 37 pruebas correctas. `npm run test:e2e`: 15 pruebas correctas en Chromium. `npm run build`: salida estática correcta. Las teselas están controladas en pruebas; no se ha comprobado acceso real al proveedor OSM.
+- Desde `backend/`, `uv run --extra dev pyright --project .. --warnings`: cero errores y cero advertencias. Se conservan configuración y alcance de tipos, dependencias, backend, Compose y despliegue estático.
+- Revisión independiente de `sdd_reviewer`: sin hallazgos pendientes. Se corrigió y revalidó el marcador oculto por paneles en móvil con tres hit-tests por tamaño de pantalla. OpenSpec estricto y `git diff --check` correctos; sin sincronización ni archivo.

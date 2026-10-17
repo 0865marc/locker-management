@@ -28,12 +28,16 @@ async function tiles(page: Page, fail = false) {
         }),
   );
 }
-async function data(page: Page, payload: unknown) {
+async function data(page: Page, payload: unknown, open = true) {
   await tiles(page);
   await page.route('http://127.0.0.1:8765/lockers', (route) =>
     route.fulfill({ json: payload }),
   );
   await page.goto('/');
+  if (open)
+    await page
+      .getByRole('button', { name: 'Ver lockers', exact: true })
+      .click();
 }
 test('real cross-origin FastAPI middleware allows exact origin and denies another', async ({
   page,
@@ -110,6 +114,7 @@ test('Spain view includes territories, keeps positions and permits shared-coordi
     await expect(page.locator('.leaflet-popup')).toContainText(id(i + 1));
     await page.getByRole('button', { name: 'Ver España' }).click();
   }
+  await page.getByRole('button', { name: 'Cerrar listado de lockers' }).click();
   await page.locator('.locker-marker').nth(1).click();
   await expect(page.locator('#locker-detail')).toContainText(id(2));
 });
@@ -187,6 +192,7 @@ test('loading, refresh failure, retry and capacity changes replace stale availab
   });
   await page.goto('/');
   await expect(page.locator('#status')).toContainText('Consultando');
+  await page.getByRole('button', { name: 'Ver lockers', exact: true }).click();
   await expect(page.locator('#locker-list button')).toHaveCount(1);
   await page.locator('#locker-list button').click();
   await page.getByRole('button', { name: 'Actualizar' }).click();
@@ -214,6 +220,7 @@ test('tile failure preserves keyboard details and 375px layout', async ({
   );
   await page.goto('/');
   await expect(page.locator('#tile-warning')).toBeVisible();
+  await page.getByRole('button', { name: 'Ver lockers', exact: true }).click();
   const button = page.locator('#locker-list button');
   await button.focus();
   await page.keyboard.press('Enter');
@@ -227,17 +234,6 @@ test('tile failure preserves keyboard details and 375px layout', async ({
   await expect(page.getByRole('link', { name: 'OpenStreetMap' })).toBeVisible();
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
 });
-test('desktop visual inspection', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await data(page, [
-    locker(1, 'Madrid · Atocha'),
-    locker(2, 'Palma · Centro', { latitude: 39.57, longitude: 2.65 }),
-    locker(3, 'Tenerife · La Laguna', { latitude: 28.46, longitude: -16.25 }),
-  ]);
-  await expect(page.locator('#available-count')).toHaveText('3');
-  await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
-});
-
 test('malformed data and network failures remain errors with retry', async ({
   page,
 }) => {
@@ -303,4 +299,246 @@ test('keyboard selection reveals unmapped details inside a long scrollable list'
       Math.min(geometry.panelBottom, geometry.viewportHeight) + 1,
     );
   }
+});
+
+async function fullViewport(page: Page, width: number, height: number) {
+  const box = await page.locator('#map').boundingBox();
+  expect(box).toEqual({ x: 0, y: 0, width, height });
+  expect(
+    await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    })),
+  ).toEqual({ width, height });
+  await expect(page.locator('header, footer')).toHaveCount(0);
+}
+function overlaps(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 667, name: 'mobile' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`full viewport, compact parcel menu and independent list geometry ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await data(
+      page,
+      [
+        locker(1, 'Madrid · Atocha'),
+        locker(2, 'Palma · Centro', { latitude: 39.57, longitude: 2.65 }),
+        locker(3, 'Sin coordenadas', null),
+      ],
+      false,
+    );
+    await expect(page.locator('#available-count')).toHaveText('3');
+    await expect(page.locator('#results')).toBeHidden();
+    await fullViewport(page, viewport.width, viewport.height);
+    const parcel = await page.locator('.parcel-panel').boundingBox();
+    expect(parcel!.x).toBeLessThan(35);
+    expect(parcel!.y).toBeLessThan(35);
+    for (const label of [
+      'Largo (cm)',
+      'Ancho (cm)',
+      'Alto (cm)',
+      'Peso (kg)',
+    ]) {
+      const input = page.getByRole('spinbutton', { name: label, exact: true });
+      await expect(input).toHaveValue('');
+      await expect(input).toBeVisible();
+    }
+    const zoom = await page.locator('.leaflet-control-zoom').boundingBox();
+    expect(overlaps(parcel!, zoom!)).toBe(false);
+    await expect(
+      page.getByRole('button', { name: 'Acercar mapa' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'OpenStreetMap' }),
+    ).toBeVisible();
+    await page.screenshot({ path: `test-results/${viewport.name}-closed.png` });
+    await page
+      .getByRole('button', { name: 'Ver lockers', exact: true })
+      .click();
+    await expect(page.locator('#close-results')).toBeFocused();
+    await expect(page.locator('#open-results')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    await fullViewport(page, viewport.width, viewport.height);
+    const resultBox = await page.locator('#results').boundingBox();
+    const leftBox = await page.locator('#map-panels').boundingBox();
+    const attribution = await page
+      .locator('.leaflet-control-attribution')
+      .boundingBox();
+    const openZoom = await page.locator('.leaflet-control-zoom').boundingBox();
+    expect(overlaps(resultBox!, leftBox!)).toBe(false);
+    expect(overlaps(resultBox!, attribution!)).toBe(false);
+    expect(overlaps(resultBox!, openZoom!)).toBe(false);
+    await page.screenshot({ path: `test-results/${viewport.name}-open.png` });
+    await page.locator(`[data-id="${id(1)}"]`).click();
+    const selectedMarker = page.locator(
+      '.locker-marker[title="Madrid · Atocha"]',
+    );
+    expect(
+      await selectedMarker.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+            ?.closest('.locker-marker') === node
+        );
+      }),
+    ).toBe(true);
+    await expect(page.locator('#locker-detail')).toContainText(id(1));
+    await page.screenshot({
+      path: `test-results/${viewport.name}-selected.png`,
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#results')).toBeHidden();
+    await expect(page.locator('#open-results')).toBeFocused();
+    await page.locator('#skip-results').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#results')).toBeVisible();
+  });
+}
+
+test('parcel fields accept local positive decimals without changing map, availability or requests', async ({
+  page,
+}) => {
+  await data(page, [locker(1)], false);
+  await expect(page.locator('#available-count')).toHaveText('1');
+  let extraRequests = 0;
+  page.on('request', (request) => {
+    if (!request.url().startsWith('https://tile.openstreetmap.org/'))
+      extraRequests++;
+  });
+  const markerBefore = await page.locator('.locker-marker').boundingBox();
+  const mapPaneBefore = await page
+    .locator('.leaflet-map-pane')
+    .getAttribute('style');
+  const inputs = page.locator('#parcel-form input');
+  for (const [i, value] of ['25.5', '15', '10', '2.5'].entries()) {
+    await inputs.nth(i).fill(value);
+    expect(
+      await inputs
+        .nth(i)
+        .evaluate((node: HTMLInputElement) => node.checkValidity()),
+    ).toBe(true);
+  }
+  await inputs.nth(0).focus();
+  await page.keyboard.press('Tab');
+  await expect(inputs.nth(1)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await inputs.nth(2).fill('0');
+  await expect(inputs.nth(2)).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#parcel-height-error')).toBeVisible();
+  await inputs.nth(2).fill('-1.5');
+  expect(
+    await inputs
+      .nth(2)
+      .evaluate((node: HTMLInputElement) => node.checkValidity()),
+  ).toBe(false);
+  await inputs.nth(2).fill('');
+  await expect(inputs.nth(2)).toHaveAttribute('aria-invalid', 'false');
+  await inputs.nth(2).fill('0.005');
+  expect(
+    await inputs
+      .nth(2)
+      .evaluate((node: HTMLInputElement) => node.checkValidity()),
+  ).toBe(true);
+  await page.locator('.parcel-heading').hover();
+  await page.mouse.wheel(0, 180);
+  const heading = await page.locator('.parcel-heading').boundingBox();
+  await page.mouse.move(heading!.x + 20, heading!.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(heading!.x + 100, heading!.y + 45);
+  await page.mouse.up();
+  await expect(page.locator('#available-count')).toHaveText('1');
+  expect(await page.locator('.locker-marker').boundingBox()).toEqual(
+    markerBefore,
+  );
+  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+    mapPaneBefore,
+  );
+  expect(extraRequests).toBe(0);
+  await page.getByRole('button', { name: 'Ver lockers', exact: true }).click();
+  await page.locator('#close-results').click();
+  await page.locator('#refresh').click();
+  await expect(page.locator('#available-count')).toHaveText('1');
+  await expect(inputs.nth(0)).toHaveValue('25.5');
+  await expect(inputs.nth(3)).toHaveValue('2.5');
+  expect(extraRequests).toBe(1);
+  expect(
+    await page.evaluate(() => ({
+      local: localStorage.length,
+      session: sessionStorage.length,
+    })),
+  ).toEqual({ local: 0, session: 0 });
+});
+
+test('marker selection opens details; refreshing a closed selected list keeps it closed', async ({
+  page,
+}) => {
+  await data(page, [locker(1, 'Madrid')], false);
+  await page.locator('.locker-marker').click();
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#locker-detail')).toContainText(id(1));
+  await page.locator('#close-results').click();
+  await page.locator('#refresh').click();
+  await expect(page.locator('#available-count')).toHaveText('1');
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#open-results')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+});
+
+test('short mobile panels scroll internally without moving the map or losing local input', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 480 });
+  await data(page, [locker(1)], false);
+  await expect(page.locator('#available-count')).toHaveText('1');
+  await page.getByRole('spinbutton', { name: 'Largo (cm)' }).fill('25.5');
+  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
+  const markerBefore = await page.locator('.locker-marker').boundingBox();
+  let requests = 0;
+  page.on('request', (request) => {
+    if (!request.url().startsWith('https://tile.openstreetmap.org/'))
+      requests++;
+  });
+  await page.locator('.parcel-heading').hover();
+  await page.mouse.wheel(0, 250);
+  await expect
+    .poll(() => page.locator('#map-panels').evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(page.locator('#refresh')).toBeInViewport();
+  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+    before,
+  );
+  expect(await page.locator('.locker-marker').boundingBox()).toEqual(
+    markerBefore,
+  );
+  await page.getByRole('spinbutton', { name: 'Largo (cm)' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(
+    page.getByRole('spinbutton', { name: 'Ancho (cm)' }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole('spinbutton', { name: 'Largo (cm)' }),
+  ).toHaveValue('25.5');
+  expect(requests).toBe(0);
 });

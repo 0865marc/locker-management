@@ -2,13 +2,13 @@
 
 ## Context
 
-Ver la motivación en `proposal.md`. El backend FastAPI expone `GET /lockers` con UUID, `active`, celdas no retiradas y geografía nullable. El frontend estático y CORS ya están implementados y verificados. El usuario ha aprobado añadir Nginx a Compose para arrancar también la web, conservando toda consulta e interacción en el navegador y la compatibilidad con Cloudflare Pages.
+Ver la motivación en `proposal.md`. El frontend estático, CORS y Nginx en Compose ya están implementados y verificados. La página actual tiene cabecera, introducción, pie y un área compartida por mapa/lista. La ampliación propuesta ocupa todo el viewport con el mapa y añade entrada local de dimensiones y peso, conservando consulta e interacción en el navegador y compatibilidad con Cloudflare Pages.
 
 ## Goals / Non-Goals
 
-**Goals:** archivos estáticos independientes del backend durante el build, lectura directa de la API y acceso CORS explícito, conservando la experiencia de mapa/lista definida en `specs/locker-map/spec.md`.
+**Goals:** archivos estáticos independientes del backend durante el build, lectura directa de la API y acceso CORS explícito; mapa a toda pantalla con entrada local de paquete y acceso plegable a la consulta/lista definida en `specs/locker-map/spec.md`.
 
-**Non-Goals:** servidor de aplicación frontend, funciones de Cloudflare, nueva autenticación o cambios de dominio, capacidad o persistencia. Nginx solo sirve archivos estáticos; este cambio no publica en Cloudflare ni proporciona alojamiento para FastAPI/PostgreSQL/RabbitMQ.
+**Non-Goals:** servidor de aplicación frontend, funciones de Cloudflare, nueva autenticación o cambios de dominio, capacidad o persistencia. Los datos del paquete no disparan filtros, cotizaciones, reservas o envíos. Nginx solo sirve archivos estáticos; este cambio no publica en Cloudflare ni proporciona alojamiento para FastAPI/PostgreSQL/RabbitMQ.
 
 ## Decisions
 
@@ -44,11 +44,17 @@ Validar en el cliente los campos usados a partir de `unknown`: lista, UUID, acti
 
 Leaflet usa `https://tile.openstreetmap.org/{z}/{x}/{y}.png` con atribución y enlace visibles. Vista inicial y «Ver España»: límites aproximados `[27.5, -18.5]` a `[44, 4.5]`, incluyendo península, Baleares, Canarias, Ceuta y Melilla. No inferir coordenadas ni aplicar geocerca. La lista puede seleccionar cualquier posición válida almacenada, incluso fuera del encuadre inicial.
 
-Seleccionar fila centra y abre el marcador correspondiente; seleccionar marcador muestra el mismo detalle. Dos lockers coincidentes conservan sus coordenadas y filas independientes, y la selección trae al frente su marcador. Mostrar disponibles y posicionables, con «Sin coordenadas válidas» cuando corresponda. Sin resultados, el mapa conserva la vista de España.
+Seleccionar una fila o un marcador encuadra su posición en el área visible entre paneles sin cambiar coordenadas ni tamaño del mapa y muestra el popup cuando el espacio libre permita mostrarlo sin cubrir paneles o marcador; si no cabe, el detalle completo permanece en la lista. Dos lockers coincidentes conservan sus coordenadas y filas independientes, y la selección trae al frente su marcador. Mostrar disponibles y posicionables, con «Sin coordenadas válidas» cuando corresponda. Sin resultados, el mapa conserva la vista de España.
 
 Carga inicial, actualizar y reintentar comparten flujo; impedir intentos simultáneos. Tras fallo se eliminan resultados/posiciones que podrían confundirse con disponibilidad vigente. Cada éxito reemplaza resultados y limpia una selección desaparecida. Los errores de teselas generan aviso independiente y conservan la lista utilizable. No precargar mapas ni incluir teselas de prueba en producción; respetar atribución, caché HTTP y Referer del proveedor.
 
-Mapa/lista se adaptan a escritorio y móvil de 375 px sin desbordamiento horizontal. Controles nativos, foco visible y estados anunciados permiten consultar detalles por teclado. La interfaz describe disponibilidad como última lectura, sin reserva ni garantía de tamaño; una hora visible representa actualización del cliente, no un timestamp inventado del backend.
+El mapa ocupa todo el viewport: contenedor de ancho completo y altura `100dvh` con fallback `100vh`, sin cabecera/pie visibles ni márgenes exteriores que reduzcan el mapa. Conservar un título accesible y navegación por teclado. Los elementos flotan sobre el mapa; abrirlos no cambia sus dimensiones. El `ResizeObserver` existente ajusta Leaflet al viewport.
+
+Arriba a la izquierda, panel compacto «Tu paquete» con cuatro campos etiquetados: Largo (cm), Ancho (cm), Alto (cm) y Peso (kg), vacíos al entrar. Usar controles numéricos nativos con entrada decimal y validación mínima de valores positivos; se permite vaciar campos sin obligación de completarlos. Mantener valores solo en la página actual, sin persistencia, submit o llamadas de red; editar no cambia marcadores, disponibilidad ni el encuadre. No reutilizar restricciones de APIs de cotización ni añadir un validador de negocio. El marcado puede vivir en `LockerExplorer.astro` y la pequeña lógica en el script existente; no hace falta un framework o módulo nuevo.
+
+Conservar listado y detalles en un panel independiente cerrado inicialmente, abierto con «Ver lockers» fuera del formulario. Se superpone a la derecha en escritorio o en la zona inferior en móvil, con scroll interno y cierre accesible. Seleccionar un marcador abre el panel para mostrar su detalle; cerrar devuelve el foco al control de apertura cuando proceda. Un enlace de salto al listado también debe abrirlo. Así siguen accesibles los lockers sin coordenadas y los coincidentes, sin restar espacio permanente al mapa.
+
+Los controles de actualizar, reintentar y ver España y los estados de carga/error siguen accesibles aunque el listado esté cerrado, en controles o avisos compactos ajenos al formulario. Reubicar zoom y otros controles Leaflet para evitar el menú y mantener visible la atribución. Evitar propagación de clic, arrastre, rueda y teclado de los paneles hacia el mapa sin impedir edición, tabulación o scroll interno. En 375 px, limitar ancho/altura de paneles y conservar mapa, controles y campos accesibles sin desbordamiento de la página. La interfaz sigue describiendo la disponibilidad general como última consulta, sin relacionarla con las medidas introducidas.
 
 ### 6. Nginx estático y arranque completo con Compose
 
@@ -76,6 +82,8 @@ Documentar raíz del proyecto `frontend`, build `npm run build`, directorio de s
 
 Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas conservando lockfile y `.env.example`. La ampliación de Compose no cambia código de interfaz, contratos API, migraciones ni workflows.
 
+La ampliación de pantalla completa se limita a `frontend/src/pages/index.astro`, `frontend/src/components/LockerExplorer.astro`, `frontend/src/styles/global.css`, `frontend/src/scripts/locker-map.ts`, `frontend/tests/e2e/explorer.spec.ts` y una nota de uso en `README.md`. No modifica configuración de despliegue, dependencias ni backend.
+
 ### 8. Verificación
 
 - `npm ci`, check y build con API apagada; inspeccionar salida y servir `dist` mediante HTTP estático genérico. Comprobar que solo el navegador pide lockers y que cambiar la URL requiere nuevo build.
@@ -87,6 +95,8 @@ Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas c
 
 La ampliación Nginx conserva la evidencia anterior y añade comprobaciones proporcionadas: construir la imagen sin API, inspeccionar que solo sirve archivos estáticos sin Node, resolver Compose normal/CI y comprobar el argumento de URL personalizado. En un stack temporal real, abrir la página de Nginx y verificar lectura directa a FastAPI con CORS sin interceptar la API; las teselas pueden seguir controladas. Repetir smoke backend y Pyright obligatorio, validar OpenSpec y realizar revisión independiente de los archivos afectados. No ampliar la suite CI ni repetir pruebas funcionales ajenas a estos cambios.
 
+Para pantalla completa y formulario: comprobar geometría del mapa contra el viewport y ubicación del menú en escritorio/móvil; etiquetas, campos vacíos y decimales positivos; edición/tabulación/scroll sin mover el mapa ni añadir peticiones; apertura/cierre de lista y selección de detalles, incluidos lockers sin coordenadas y coincidentes; errores/reintento visibles con panel cerrado. Ejecutar check, build y E2E afectados, inspección visual, Pyright obligatorio con cero errores/advertencias, validación OpenSpec y revisión independiente. La evidencia anterior no sustituye estas verificaciones nuevas.
+
 ## Risks / Trade-offs
 
 - API pública o CORS todavía sin configurar -> placeholders y requisitos explícitos; un build local no demuestra que la futura URL pública funcione.
@@ -96,4 +106,4 @@ La ampliación Nginx conserva la evidencia anterior y añade comprobaciones prop
 
 ## Migration Plan
 
-No hay migraciones. Incorporar la ampliación Nginx aprobada, verificar Compose y documentar el arranque completo. Retirar el servicio estático y sus archivos revierte esta ampliación sin tocar datos ni revisiones Alembic. Preparar posteriormente una API HTTPS y los orígenes exactos antes de publicar en Pages. Publicación efectiva, sincronización y archivo no forman parte de esta actualización de planificación.
+No hay migraciones. La ampliación de pantalla completa y entrada local de paquete requiere aprobación del plan antes de implementar. Después, modificar la interfaz, verificar y actualizar la explicación de uso. Revertir esa ampliación solo cambia presentación, sin tocar datos ni despliegue. Publicación efectiva, sincronización y archivo no forman parte de esta actualización de planificación.

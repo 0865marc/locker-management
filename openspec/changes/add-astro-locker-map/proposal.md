@@ -6,7 +6,8 @@ La API ya conoce la ubicación y la capacidad de los lockers, pero no existe una
 
 ## What Changes
 
-- Añadir una página en español con mapa interactivo, listado y detalle de lockers, adaptable a móvil y escritorio.
+- Añadir una página en español con mapa interactivo a toda pantalla, adaptable a móvil y escritorio, y listado/detalle de lockers en un panel plegable superpuesto.
+- Situar arriba a la izquierda un menú compacto «Tu paquete», con largo, ancho y alto en centímetros y peso en kilogramos. Los campos empiezan vacíos y solo permiten introducir datos locales; no filtran, cotizan ni envían solicitudes.
 - Mostrar como disponibles los lockers activos con al menos una celda habilitada y libre. La consulta será informativa, sin comprobar tamaños de paquetes ni reservar capacidad.
 - Representar las coordenadas guardadas, cubriendo península, Baleares, Canarias, Ceuta y Melilla. Conservar en el listado los disponibles sin coordenadas, identificándolos explícitamente.
 - Resolver carga, ausencia de resultados, errores, actualización manual y recuperación; mantener el listado utilizable si falla la cartografía externa.
@@ -34,3 +35,4 @@ Quedan fuera administración, autenticación, reservas, geocodificación, búsqu
 - Se conserva el contrato de lockers, dominio, aplicación Python, persistencia y migraciones. Node se utiliza solo como herramienta de desarrollo, build y pruebas.
 - Cloudflare Pages alojará archivos estáticos; la API de producción debe estar accesible por HTTPS desde el navegador. No se presupone ni incluye alojamiento gratuito de FastAPI/PostgreSQL/RabbitMQ.
 - Las pruebas de interfaz interceptarán las teselas de OSM, bloqueadas por la red actual; la integración CORS se comprobará con peticiones reales entre orígenes locales distintos.
+- La ampliación de pantalla completa y formulario afecta únicamente a la página/componente, estilos y script existentes, pruebas E2E y una explicación breve en README. Conserva backend, disponibilidad, configuración estática, Compose y Cloudflare sin cambios.

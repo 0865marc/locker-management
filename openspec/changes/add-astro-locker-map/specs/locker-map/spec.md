@@ -6,6 +6,41 @@ Let people locate available lockers across Spain and inspect their current free 
 
 ## ADDED Requirements
 
+### Requirement: Fill the viewport with the map
+
+The map SHALL fill the visible viewport without surrounding page margins, header or footer reducing its area. A compact parcel-entry panel SHALL appear over its upper-left area. Other controls and panels SHALL overlay the map without resizing it. At desktop and 375-pixel mobile widths, inputs, map controls and attribution SHALL remain accessible without page-level horizontal overflow or overlapping controls.
+
+#### Scenario: Full-screen initial view and resizing
+- **WHEN** the page opens on desktop or a 375-pixel-wide mobile viewport, or the viewport changes size
+- **THEN** the map fills that viewport, the parcel panel remains in its upper-left area and the zoom controls and attribution remain accessible
+
+### Requirement: Enter parcel measurements locally
+
+The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled length, width and height fields in centimetres and weight in kilograms. Fields SHALL start empty, permit empty values and accept positive decimal numbers. Nonpositive values SHALL be invalid. Editing SHALL remain local to the current page without submitting data, persisting values, filtering lockers or requesting quotations. It SHALL NOT move or zoom the map.
+
+#### Scenario: Edit dimensions and weight
+- **WHEN** a user enters 25.5, 15, 10 and 2.5 into the four labelled fields and navigates between them by keyboard
+- **THEN** the values remain editable, the map view and available lockers stay unchanged, and no request is triggered by those edits
+- **AND** clearing a field is allowed, while zero or a negative value is identified as invalid without making a request
+
+#### Scenario: Interact with the overlay
+- **WHEN** a user clicks, types, drags or scrolls inside the parcel panel
+- **THEN** those interactions operate on the panel without being interpreted as map navigation
+- **AND** toggling the locker list or manually refreshing availability preserves entered values
+
+### Requirement: Keep locker results in a separate collapsible overlay
+
+The locker list SHALL initially be collapsed and open through a keyboard-accessible "Ver lockers" control outside the parcel form. Its overlay SHALL retain all list and detail functionality with internal scrolling and an accessible close control. Selecting a map marker SHALL reveal that locker's details. Loading, empty, error, retry and refresh controls SHALL remain accessible while the list is closed.
+
+#### Scenario: Inspect lockers without permanently reducing the map
+- **WHEN** a user opens the list, selects an unmapped locker or one sharing coordinates, then closes it
+- **THEN** the correct individual detail is accessible, closing restores focus to the list-opening control when appropriate, and the map retains its full viewport dimensions
+
+#### Scenario: Recover from failure with the list closed
+- **WHEN** the initial locker read fails while the list is collapsed
+- **THEN** the page displays the failure and an accessible retry action outside the hidden list
+- **AND** the existing read-only recovery flow remains usable without entering parcel data
+
 ### Requirement: Read live lockers in the browser
 
 The browser SHALL load lockers directly from the configured API using GET without credentials or custom request headers. Each load SHALL bypass the browser response cache and cancel after five seconds without completion. Response validation, availability filtering and map interaction SHALL execute client-side. Missing or invalid essential data SHALL produce a visible data error, while unusable coordinates alone SHALL retain the locker without a map position.
