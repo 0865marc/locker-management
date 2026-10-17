@@ -39,13 +39,20 @@ acercar o alejar, o sus controles de zoom; «Ver España» encuadra también Bal
 Canarias, Ceuta y Melilla. Las cargas vacías y actualizaciones conservan tu
 encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
 
-Encima de las dimensiones, escribe una **dirección o código postal** y pulsa
-Enter o «Buscar». No se consulta mientras escribes. Un código de cinco dígitos
-se conserva como texto, incluidos ceros iniciales como `01001`. Una coincidencia
-se sitúa directamente; con varias, elige uno de hasta cinco resultados. El punto
-azul señala la ubicación buscada en el área libre del mapa, con el listado
-abierto o cerrado. Buscar no filtra lockers, cambia su disponibilidad ni utiliza
-las medidas del paquete; tampoco geocodifica lockers sin coordenadas.
+Un único panel reúne buscador, medidas del paquete, controles y los contadores
+vivos de disponibles/en mapa al final. Escribe una **dirección o código postal**:
+con al menos tres caracteres aparecen sugerencias después de 350 ms sin cambios.
+No hay botón de envío; Enter no duplica la consulta. Los códigos de cinco dígitos
+se conservan como texto, incluidos ceros iniciales como `01001`.
+
+Elige uno de hasta cinco resultados, incluso si solo hay uno. La elección rellena
+el campo, sitúa el punto azul en el área libre del mapa y cierra las sugerencias
+sin otra petición. Puedes usar Tab o las flechas y Enter/Espacio; Escape cierra
+y devuelve el foco al campo. Salir del buscador también cierra y cancela trabajo
+pendiente. La apertura/cierre se anima brevemente, respetando la preferencia de
+movimiento reducido. El listado general de lockers conserva su control
+independiente «Ver lockers». Buscar no filtra lockers, cambia su disponibilidad
+ni utiliza las medidas del paquete; tampoco geocodifica lockers sin coordenadas.
 
 La consulta se envía directamente desde tu navegador al servicio público
 [Photon](https://photon.komoot.io/), basado en datos de OpenStreetMap, con país

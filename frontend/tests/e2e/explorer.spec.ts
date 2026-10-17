@@ -571,11 +571,12 @@ async function markerHit(page: Page) {
     );
   });
 }
+
 for (const viewport of [
   { width: 1280, height: 800, name: 'desktop' },
   { width: 375, height: 480, name: 'mobile-short' },
 ]) {
-  test(`explicit postal and address search preserves lockers and reveals its location ${viewport.name}`, async ({
+  test(`one compact menu and selectable autocomplete ${viewport.name}`, async ({
     page,
   }) => {
     await page.setViewportSize({
@@ -599,24 +600,71 @@ for (const viewport of [
     });
     await page.goto('/');
     await expect(page.locator('#available-count')).toHaveText('1');
+    await expect(page.locator('#map-panels .panel')).toHaveCount(1);
+    expect(
+      await page
+        .locator('.parcel-panel')
+        .evaluate((node) =>
+          node.lastElementChild?.classList.contains('metrics'),
+        ),
+    ).toBe(true);
+    await expect(
+      page.getByRole('button', { name: 'Buscar', exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator('#search-provider, #parcel-note')).toHaveCount(0);
+    expect(
+      await page.locator('[aria-describedby]').evaluateAll((nodes) =>
+        nodes.every((node) =>
+          node
+            .getAttribute('aria-describedby')!
+            .split(/\s+/)
+            .every((id) => document.getElementById(id)),
+        ),
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/${viewport.name}-menu-closed.png`,
+    });
     await page.getByRole('spinbutton', { name: 'Largo (cm)' }).fill('25.5');
-    const query = page.getByRole('searchbox', {
+    const query = page.getByRole('combobox', {
       name: 'Dirección o código postal',
     });
+    const before = await page
+      .locator('.leaflet-map-pane')
+      .getAttribute('style');
     await query.fill(' 01001 ');
     expect(geoReads).toBe(0);
-    await query.press('Enter');
-    await expect(page.locator('#search-status')).toContainText(
-      'Ubicación localizada',
+    await expect(page.locator('#search-results button')).toHaveCount(1);
+    await expect(page.locator('.search-location')).toHaveCount(0);
+    expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+      before,
     );
     expect(queryUrl!.pathname).toBe('/structured');
     expect(queryUrl!.searchParams.get('postcode')).toBe('01001');
     expect(queryUrl!.searchParams.get('countrycode')).toBe('ES');
     expect(queryUrl!.searchParams.get('limit')).toBe('5');
+    await expect(query).toHaveAttribute('aria-expanded', 'true');
+    await page.screenshot({
+      path: `test-results/${viewport.name}-menu-suggestions.png`,
+    });
+    await query.press('ArrowDown');
+    await expect(page.locator('#search-results button').first()).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(query).toHaveValue('01001 Vitoria');
+    await expect(query).toBeFocused();
+    await expect(query).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      await page
+        .locator('#search-suggestions')
+        .evaluate((node: HTMLElement) => node.inert),
+    ).toBe(true);
+    await expect(page.locator('#search-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await expect(page.locator('#results')).toBeHidden();
+    await page.waitForTimeout(400);
+    expect(geoReads).toBe(1);
     await page.screenshot({
-      path: `test-results/${viewport.name}-search-closed.png`,
+      path: `test-results/${viewport.name}-menu-selected.png`,
     });
     await page
       .getByRole('button', { name: 'Ver lockers', exact: true })
@@ -627,48 +675,64 @@ for (const viewport of [
       queryUrl = new URL(route.request().url());
       return route.fulfill({
         json: places(
-          place('<img src=x onerror="window.pwned=1"> Plaza', -3.7, 40.4),
-          place('Palma', 2.65, 39.57),
-          ...Array.from({ length: 5 }, (_, i) => place(`Otro ${i}`)),
+          place('Plaza de España, Madrid'),
+          place('Plaza Mayor, Madrid'),
+          ...Array.from({ length: 5 }, (_, i) => place(`Plaza ${i}`)),
         ),
       });
     });
-    const mapBefore = await page
-      .locator('.leaflet-map-pane')
-      .getAttribute('style');
     await query.fill('Plaza');
-    await page.getByRole('button', { name: 'Buscar', exact: true }).click();
     await expect(page.locator('#search-results button')).toHaveCount(5);
-    expect(queryUrl!.pathname).toBe('/api/');
-    expect(queryUrl!.searchParams.get('q')).toBe('Plaza');
-    expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-      mapBefore,
-    );
-    const candidate = page.locator('#search-results button').first();
-    await candidate.focus();
-    await page.keyboard.press('Enter');
-    await expect(page.locator('#search-status')).toContainText('<img src=x');
+    await page.locator('#search-results button').nth(1).click();
+    await expect(query).toHaveValue('Plaza Mayor, Madrid');
+    await expect(page.locator('#search-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await expect(page.locator('#results')).toBeVisible();
-    await expect(page.locator('#search-results img')).toHaveCount(0);
-    expect(await page.evaluate(() => 'pwned' in window)).toBe(false);
-    await expect(page.locator('#available-count')).toHaveText('1');
     await expect(
       page.getByRole('spinbutton', { name: 'Largo (cm)' }),
     ).toHaveValue('25.5');
     expect(lockerReads).toBe(1);
     expect(geoReads).toBe(2);
     await page.screenshot({
-      path: `test-results/${viewport.name}-search-open.png`,
+      path: `test-results/${viewport.name}-menu-selected-list-open.png`,
     });
-    await query.fill(' ');
-    await query.press('Enter');
-    expect(geoReads).toBe(2);
-    await expect(page.locator('#search-status')).toContainText('Escribe');
   });
 }
 
-test('geographic errors, timeout, empty and retry stay independent of lockers', async ({
+test('autocomplete debounces edits, ignores short text and never duplicates Enter', async ({
+  page,
+}) => {
+  await data(page, [locker(1)], false);
+  let requests = 0;
+  await page.route(photon, (route) => {
+    requests++;
+    return route.fulfill({ json: places(place('Madrid')) });
+  });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 100));
+  const query = page.getByRole('combobox', {
+    name: 'Dirección o código postal',
+  });
+  await query.fill('  ab ');
+  await page.clock.fastForward(500);
+  expect(requests).toBe(0);
+  await query.fill('Mad');
+  await page.clock.fastForward(200);
+  await query.fill('Madrid');
+  await query.press('Enter');
+  await page.clock.fastForward(349);
+  expect(requests).toBe(0);
+  await page.clock.fastForward(1);
+  await expect.poll(() => requests).toBe(1);
+  await expect(page.locator('#search-results button')).toHaveCount(1);
+  await query.press('Enter');
+  await page.clock.fastForward(700);
+  expect(requests).toBe(1);
+  await expect(page.locator('.search-location')).toHaveCount(0);
+  await page.clock.resume();
+});
+
+test('geographic errors, empty, malformed and timeout retain independent retry', async ({
   page,
 }) => {
   await data(page, [locker(1)], false);
@@ -679,31 +743,32 @@ test('geographic errors, timeout, empty and retry stay independent of lockers', 
     if (call === 2)
       return route.fulfill({ json: places(place('France', 2, 48, 'FR')) });
     if (call === 3) return route.fulfill({ json: { invalid: true } });
-    return route.fulfill({ json: places(place()) });
+    return route.fulfill({ json: places(place('Madrid')) });
   });
-  const query = page.getByRole('searchbox', {
+  const query = page.getByRole('combobox', {
     name: 'Dirección o código postal',
   });
   await query.fill('Madrid');
-  await query.press('Enter');
   await expect(page.locator('#search-status')).toContainText('HTTP 503');
   await expect(page.locator('#status')).toContainText('1 locker disponible');
   await page.getByRole('button', { name: 'Reintentar búsqueda' }).click();
   await expect(page.locator('#search-status')).toContainText(
     'No se han encontrado',
   );
-  await query.press('Enter');
+  await query.fill('Madrid centro');
   await expect(page.locator('#search-status')).toContainText(
     'respuesta no válida',
   );
-  await page.getByRole('button', { name: 'Reintentar búsqueda' }).click();
-  await expect(page.locator('#search-status')).toContainText(
-    'Ubicación localizada',
-  );
+  await page.getByRole('button', { name: 'Reintentar búsqueda' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('combobox', { name: 'Dirección o código postal' }),
+  ).toBeFocused();
+  await expect(page.locator('#search-results button')).toHaveCount(1);
+  await page.locator('#search-results button').click();
   await page.unroute(photon);
   await page.route(photon, () => {});
   await query.fill('Tardará');
-  await query.press('Enter');
   await expect(page.locator('#search-status')).toContainText('cinco segundos', {
     timeout: 7000,
   });
@@ -712,7 +777,7 @@ test('geographic errors, timeout, empty and retry stay independent of lockers', 
   await expect(page.locator('#retry')).toBeHidden();
 });
 
-test('editing cancels pending geographic requests and stale transports cannot change the map', async ({
+test('Escape, blur and later edits discard even a transport that ignores cancellation', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -720,8 +785,8 @@ test('editing cancels pending geographic requests and stale transports cannot ch
     window.fetch = (input, init) => {
       if (
         String(input).includes('photon.komoot.io') &&
-        new URL(String(input)).searchParams.get('q') === 'Anterior'
-      )
+        new URL(String(input)).searchParams.get('q')?.startsWith('Anterior')
+      ) {
         return new Promise((resolve) => {
           Reflect.set(window, 'completeOldSearch', () =>
             resolve(
@@ -740,33 +805,133 @@ test('editing cancels pending geographic requests and stale transports cannot ch
             ),
           );
         });
+      }
       return original(input, init);
     };
   });
   await data(page, [locker(1)], false);
   await page.route(photon, (route) =>
-    route.fulfill({ json: places(place('Última')) }),
+    route.fulfill({ json: places(place('Última ubicación')) }),
   );
-  const query = page.getByRole('searchbox', {
+  const query = page.getByRole('combobox', {
     name: 'Dirección o código postal',
   });
-  await query.fill('Anterior');
-  await query.press('Enter');
-  await expect(page.locator('#search-status')).toContainText('Buscando');
-  await query.fill('Última');
-  await expect(page.locator('#search-status')).toBeHidden();
-  await query.press('Enter');
-  await expect(page.locator('#search-status')).toContainText('Última');
   const before = await page.locator('.leaflet-map-pane').getAttribute('style');
+  for (const [index, close] of ['escape', 'blur'].entries()) {
+    await query.fill(`Anterior ${index}`);
+    await expect(page.locator('#location-search')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    if (close === 'escape') await query.press('Escape');
+    else await page.getByRole('spinbutton', { name: 'Largo (cm)' }).focus();
+    await page.evaluate(() => Reflect.get(window, 'completeOldSearch')());
+    await expect(page.locator('#search-suggestions')).toBeHidden();
+    await expect(query).toHaveAttribute('aria-expanded', 'false');
+    expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+      before,
+    );
+  }
+  await query.fill('Anterior otra');
+  await expect(page.locator('#location-search')).toHaveAttribute(
+    'aria-busy',
+    'true',
+  );
+  await query.fill('Última');
+  await expect(page.locator('#search-results button')).toHaveText(
+    'Última ubicación',
+  );
   await page.evaluate(() => Reflect.get(window, 'completeOldSearch')());
-  await expect(page.locator('#search-status')).toContainText('Última');
-  await expect(page.locator('.search-location')).toHaveAttribute(
-    'title',
-    'Ubicación buscada: Última',
+  await expect(page.locator('#search-results button')).toHaveText(
+    'Última ubicación',
   );
-  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-    before,
+  await expect(page.locator('.search-location')).toHaveCount(0);
+});
+
+test('suggestion animation can be interrupted and closed options immediately lose focus access', async ({
+  page,
+}) => {
+  await data(page, [locker(1)], false);
+  await page.route(photon, (route) =>
+    route.fulfill({
+      json: places(place('Madrid centro'), place('Madrid norte')),
+    }),
   );
+  const query = page.getByRole('combobox', {
+    name: 'Dirección o código postal',
+  });
+  await query.fill('Madrid');
+  await expect(page.locator('#search-results button')).toHaveCount(2);
+  await query.press('ArrowDown');
+  await expect(page.locator('#search-results button').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(query).toBeFocused();
+  expect(
+    await page
+      .locator('#search-suggestions')
+      .evaluate((node: HTMLElement) => node.inert),
+  ).toBe(true);
+  await page
+    .locator('#search-results button')
+    .first()
+    .evaluate((node) => node.focus());
+  await expect(query).toBeFocused();
+  await query.press('Tab');
+  await expect(
+    page.getByRole('spinbutton', { name: 'Largo (cm)' }),
+  ).toBeFocused();
+  await query.fill('Madrid nuevo');
+  await expect(page.locator('#search-results button')).toHaveCount(2);
+  await expect(query).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#search-suggestions')).toHaveCSS('opacity', '1');
+  await expect(page.locator('#search-suggestions')).not.toHaveAttribute(
+    'hidden',
+  );
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.locator('#search-suggestions')).toHaveCSS(
+    'transition-duration',
+    '0s',
+  );
+  await query.press('Escape');
+  expect(
+    await page
+      .locator('#search-suggestions')
+      .evaluate((node: HTMLElement) => node.hidden && node.inert),
+  ).toBe(true);
+});
+
+test('touching a suggestion selects before blur and does not trigger another search', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: 'http://127.0.0.1:4321',
+    viewport: { width: 375, height: 480 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  try {
+    await data(page, [locker(1)], false);
+    let requests = 0;
+    await page.route(photon, (route) => {
+      requests++;
+      return route.fulfill({ json: places(place('Gran Vía, Madrid')) });
+    });
+    const query = page.getByRole('combobox', {
+      name: 'Dirección o código postal',
+    });
+    await query.fill('Gran Vía');
+    await expect(page.locator('#search-results button')).toHaveCount(1);
+    await page.locator('#search-results button').tap();
+    await expect(query).toHaveValue('Gran Vía, Madrid');
+    await expect(query).toBeFocused();
+    await expect(page.locator('#search-suggestions')).toBeHidden();
+    expect(await markerHit(page)).toBe(true);
+    await page.waitForTimeout(400);
+    expect(requests).toBe(1);
+  } finally {
+    await context.close();
+  }
 });
 
 test('wheel zoom works in both directions, Spain is wider and empty refresh preserves navigation', async ({
@@ -832,7 +997,7 @@ test('wheel zoom works in both directions, Spain is wider and empty refresh pres
   );
 });
 
-test('duplicate geographic labels select only the chosen candidate', async ({
+test('duplicate suggestion labels retain the selected candidate coordinates', async ({
   page,
 }) => {
   await data(page, [locker(1)], false);
@@ -841,18 +1006,13 @@ test('duplicate geographic labels select only the chosen candidate', async ({
       json: places(place('Centro', -3.7, 40.4), place('Centro', 2.65, 39.57)),
     }),
   );
-  const query = page.getByRole('searchbox', {
+  const query = page.getByRole('combobox', {
     name: 'Dirección o código postal',
   });
   await query.fill('Centro');
-  await query.press('Enter');
-  const buttons = page.locator('#search-results button');
-  await expect(buttons).toHaveCount(2);
-  for (const i of [0, 1]) {
-    await buttons.nth(i).click();
-    await expect(
-      page.locator('#search-results button[aria-pressed="true"]'),
-    ).toHaveCount(1);
-    await expect(buttons.nth(i)).toHaveAttribute('aria-pressed', 'true');
-  }
+  await expect(page.locator('#search-results button')).toHaveCount(2);
+  await page.locator('#search-results button').nth(1).click();
+  await expect(query).toHaveValue('Centro');
+  await expect(page.locator('#search-suggestions')).toBeHidden();
+  expect(await markerHit(page)).toBe(true);
 });

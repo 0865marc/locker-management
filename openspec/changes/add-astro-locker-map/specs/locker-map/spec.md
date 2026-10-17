@@ -14,6 +14,15 @@ The map SHALL fill the visible viewport without surrounding page margins, header
 - **WHEN** the page opens on desktop or a 375-pixel-wide mobile viewport, or the viewport changes size
 - **THEN** the map fills that viewport, the parcel panel remains in its upper-left area and the zoom controls and attribution remain accessible
 
+### Requirement: Combine search and availability in one upper-left panel
+
+One upper-left panel SHALL contain geographic search, parcel fields, compact actions/status and live available/mapped counts at its bottom. It SHALL retain refresh, retry, "Ver España" and "Ver lockers" without a second availability card. The UI SHALL omit the search button, visible Photon paragraph, location-success sentence and parcel explanatory note while preserving labels, necessary status and map attribution.
+
+#### Scenario: Unified controls and current counts
+- **WHEN** locker data loads or changes and the general locker list is closed
+- **THEN** one upper-left panel shows controls and current counts at its bottom on desktop and a 375×480 viewport
+- **AND** all actions remain accessible, removed text has no dangling accessibility references, and map attribution remains visible
+
 ### Requirement: Enter parcel measurements locally
 
 The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled length, width and height fields in centimetres and weight in kilograms. Fields SHALL start empty, permit empty values and accept positive decimal numbers. Nonpositive values SHALL be invalid. Editing SHALL remain local to the current page without submitting data, persisting values, filtering lockers or requesting quotations. It SHALL NOT move or zoom the map.
@@ -24,23 +33,32 @@ The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled lengt
 - **AND** clearing a field is allowed, while zero or a negative value is identified as invalid without making a request
 
 #### Scenario: Interact with the overlay
-- **WHEN** a user clicks, types, drags or scrolls inside the parcel panel
+- **WHEN** a user clicks, types or drags within the dimension or weight controls, or scrolls the panel
 - **THEN** those interactions operate on the panel without being interpreted as map navigation
 - **AND** toggling the locker list or manually refreshing availability preserves entered values
 
 ### Requirement: Locate a Spanish address or postal code
 
-A labelled "Dirección o código postal" field SHALL appear above the parcel dimensions. A nonempty query SHALL search Spanish locations only after Enter or an explicit search action, never on each keystroke. Five-digit postal codes SHALL remain strings, including leading zeroes. One valid result SHALL be located directly; multiple results SHALL offer at most five keyboard-selectable labels. Choosing a location SHALL zoom to its position in the visible map area.
+A labelled "Dirección o código postal" field SHALL appear above parcel dimensions. After 350 ms without edits, queries of at least three trimmed characters SHALL search Spanish locations automatically. Five-digit postal codes SHALL preserve leading zeroes. One to five candidates SHALL appear below the field for selection; typing and receiving results SHALL NOT move the map. Selection SHALL fill the field, reveal the chosen position and close suggestions without another request.
 
-#### Scenario: Explicit address or postal-code search
-- **WHEN** the user types an address or "01001" and submits it
-- **THEN** one geographic request is issued for Spain, preserving postal text, and a single valid result is brought into view
-- **AND** merely typing or submitting blank text issues no geographic request
+#### Scenario: Debounced address or postal-code search
+- **WHEN** the user types an address or "01001" with less than 350 ms between edits, then pauses for 350 ms
+- **THEN** one request is issued for the latest text in Spain, preserving postal text, without an Enter or search-button action
+- **AND** blank text or fewer than three trimmed characters issues no request and clears obsolete suggestions
 
-#### Scenario: Resolve an ambiguous location
-- **WHEN** the provider returns multiple valid Spanish locations
-- **THEN** up to five labels are displayed as literal text for selection, without moving the map until one is selected
-- **AND** selection changes only the map view, preserves parcel values and locker availability/selection, and does not force the locker list open
+#### Scenario: Select a single or ambiguous location
+- **WHEN** the provider returns one or more valid Spanish locations and the user chooses a displayed candidate
+- **THEN** up to five literal labels require selection even for a single match; choosing one fills the field, reveals its map marker and closes suggestions without another request
+- **AND** parcel values and locker availability/selection are preserved, the general locker list is not forced open, and no visible "Ubicación localizada" sentence appears
+
+### Requirement: Animate and dismiss geographic suggestions accessibly
+
+Suggestions SHALL open and close with a brief animation below the search field and respect reduced-motion preferences. Their controls SHALL support keyboard selection and visible focus. Escape SHALL close suggestions and return focus to the field; leaving the search controls SHALL close without triggering a search. Closed suggestions SHALL immediately become noninteractive and unfocusable. Superseded requests or animations SHALL NOT reopen a dismissed list or hide a newer one.
+
+#### Scenario: Select or dismiss with keyboard and pointer
+- **WHEN** a user selects a suggestion by click or keyboard, presses Escape, or moves focus outside the search controls
+- **THEN** suggestions close without another request, selection remains possible before focus leaves, and hidden controls cannot receive focus
+- **AND** rapid closing/reopening stays consistent, scroll does not navigate the map, and reduced-motion settings suppress the movement
 
 ### Requirement: Isolate geographic-search failures and stale responses
 
@@ -48,11 +66,11 @@ Geographic search SHALL have independent loading, no-results and error states, w
 
 #### Scenario: No result or unavailable provider
 - **WHEN** geographic search returns no valid Spanish result, fails, times out or yields malformed data
-- **THEN** its own status communicates no results or failure and permits another explicit attempt without replacing locker results or their status
+- **THEN** its own status communicates no results or failure and permits explicit retry or a new debounced query without replacing locker results or their status
 
 #### Scenario: A later query supersedes an earlier request
 - **WHEN** a user edits or replaces a pending query and its earlier response subsequently arrives
-- **THEN** the earlier response is ignored, and only the latest submitted query can update search results or map position
+- **THEN** the earlier response is ignored, and only the latest eligible query can update suggestions; the map moves only after selection
 
 ### Requirement: Keep locker results in a separate collapsible overlay
 

@@ -236,16 +236,16 @@ input[aria-invalid='true'] {
   display: block;
   margin-top: 6px;
 }
-#parcel-note {
-  font-size: 10px;
-  line-height: 1.6;
-  color: var(--muted);
-  margin: 14px 0 0;
-}
+
 .availability-panel {
-  padding: 16px;
+  padding: 12px 0 0;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
 }
 .metrics {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -580,7 +580,7 @@ input[aria-invalid='true'] {
     top: 13px;
   }
   .availability-panel {
-    padding: 13px;
+    padding: 10px 0 0;
   }
   .primary-actions button {
     font-size: 10px;
@@ -623,11 +623,11 @@ input[aria-invalid='true'] {
   }
 }
 
-/* Geographic search is independent of parcel measurements and locker results. */
+/* Suggestions animate visually; closed content becomes inert immediately. */
 .location-search {
   border-bottom: 1px solid var(--line);
-  padding-bottom: 16px;
-  margin-bottom: 17px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
 }
 .location-search > label {
   display: block;
@@ -635,36 +635,41 @@ input[aria-invalid='true'] {
   font-weight: 650;
   margin-bottom: 8px;
 }
-.search-input-row {
-  display: flex;
-  gap: 7px;
-}
 .search-input-row input {
   width: 100%;
   min-width: 0;
-  padding: 10px;
+  padding: 11px 10px;
   border: 1px solid #d7e1e7;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: #17384d;
   background: #fafcfd;
 }
 .search-input-row input::placeholder {
   color: #8494a0;
-  font-size: 10px;
-}
-.search-input-row button {
   font-size: 11px;
-  padding: 9px;
 }
-#search-provider {
-  font-size: 9px;
-  color: var(--muted);
-  line-height: 1.5;
-  margin: 8px 0 0;
+.search-suggestions {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    grid-template-rows 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease;
 }
-#search-provider a {
-  text-underline-offset: 2px;
+.search-suggestions.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+}
+.search-suggestions[aria-hidden='true'] {
+  pointer-events: none;
+}
+.suggestions-content {
+  min-height: 0;
+  overflow: hidden;
 }
 #search-status {
   font-size: 10px;
@@ -680,28 +685,38 @@ input[aria-invalid='true'] {
 #search-results {
   list-style: none;
   padding: 0;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   max-height: 150px;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
+#search-results:empty {
+  margin: 0;
+}
 #search-results button {
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 500;
   line-height: 1.5;
   text-align: left;
   justify-content: flex-start;
   width: 100%;
   border: 0;
-  padding: 9px;
+  padding: 10px 8px;
   overflow-wrap: anywhere;
 }
 #search-results li + li {
   border-top: 1px solid var(--line);
 }
-#search-results button[aria-pressed='true'] {
+#search-results button:focus-visible {
+  outline-offset: -3px;
   background: #edf6f4;
-  box-shadow: inset 3px 0 var(--teal);
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-suggestions {
+    transition: none;
+    transform: none;
+  }
 }
 .search-location {
   border: 3px solid white;

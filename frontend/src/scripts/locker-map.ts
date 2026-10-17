@@ -296,30 +296,53 @@ void update();
 
 const searchForm = element<HTMLFormElement>('location-search');
 const searchInput = element<HTMLInputElement>('location-query');
+const suggestions = element('search-suggestions');
 const searchStatus = element('search-status');
 const searchResults = element('search-results');
 const searchRetry = element<HTMLButtonElement>('search-retry');
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 let searchGeneration = 0;
 let pendingSearch: AbortController | null = null;
+let debounceTimer: number | undefined;
+let hideTimer: number | undefined;
+let animationGeneration = 0;
 let searchMarker: L.Marker | null = null;
-function invalidateSearch(): void {
+let pointerSelecting = false;
+function showSuggestions(open: boolean): void {
+  const animation = ++animationGeneration;
+  clearTimeout(hideTimer);
+  suggestions.inert = !open;
+  suggestions.setAttribute('aria-hidden', String(!open));
+  searchInput.setAttribute('aria-expanded', String(open));
+  if (open) {
+    if (suggestions.hidden) {
+      suggestions.hidden = false;
+      // Measure the collapsed state before starting the CSS transition.
+      void suggestions.offsetHeight;
+    }
+    suggestions.classList.add('is-open');
+  } else {
+    suggestions.classList.remove('is-open');
+    if (reducedMotion.matches || suggestions.hidden) suggestions.hidden = true;
+    else
+      hideTimer = window.setTimeout(() => {
+        if (animation === animationGeneration) suggestions.hidden = true;
+      }, 160);
+  }
+}
+function cancelSearch(): void {
   searchGeneration++;
+  clearTimeout(debounceTimer);
   pendingSearch?.abort();
   pendingSearch = null;
   searchForm.removeAttribute('aria-busy');
-  searchResults.replaceChildren();
-  searchResults.hidden = true;
-  searchStatus.hidden = true;
-  searchRetry.hidden = true;
-  searchMarker?.remove();
-  searchMarker = null;
 }
-searchInput.addEventListener('input', invalidateSearch);
-function locate(
-  place: Place,
-  postal: boolean,
-  selectedButton?: HTMLButtonElement,
-): void {
+function closeSuggestions(restoreFocus = false): void {
+  cancelSearch();
+  if (restoreFocus) searchInput.focus({ preventScroll: true });
+  showSuggestions(false);
+}
+function locate(place: Place, postal: boolean): void {
   searchMarker?.remove();
   searchMarker = L.marker(place.position, {
     title: `Ubicación buscada: ${place.label}`,
@@ -330,54 +353,47 @@ function locate(
       iconAnchor: [12, 12],
     }),
   }).addTo(map);
+  searchInput.value = place.label;
+  closeSuggestions(true);
   map.closePopup();
   map.setView(place.position, postal ? 13 : 16, { animate: false });
   revealPosition(place.position);
-  searchStatus.className = 'search-success';
-  searchStatus.textContent = `Ubicación localizada: ${place.label}`;
-  for (const button of searchResults.querySelectorAll('button'))
-    button.setAttribute('aria-pressed', String(button === selectedButton));
 }
-searchForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  invalidateSearch();
-  const query = searchInput.value.trim();
-  searchStatus.hidden = false;
-  if (!query) {
-    searchStatus.className = '';
-    searchStatus.textContent = 'Escribe una dirección o un código postal.';
-    return;
-  }
-  const generation = searchGeneration;
+async function findSuggestions(
+  query: string,
+  generation: number,
+): Promise<void> {
+  if (generation !== searchGeneration) return;
   const controller = new AbortController();
   pendingSearch = controller;
   searchForm.setAttribute('aria-busy', 'true');
+  searchResults.replaceChildren();
+  searchRetry.hidden = true;
+  searchStatus.hidden = false;
   searchStatus.className = 'loading';
   searchStatus.textContent = 'Buscando ubicaciones…';
+  showSuggestions(true);
   try {
     const places = await searchPlaces(query, controller.signal);
     if (generation !== searchGeneration || controller.signal.aborted) return;
     searchStatus.className = '';
+    searchStatus.hidden = places.length > 0;
     if (!places.length)
-      searchStatus.textContent =
-        'No se han encontrado ubicaciones en España. Prueba otra consulta.';
-    else if (places.length === 1) locate(places[0]!, isPostalCode(query));
-    else {
-      searchStatus.textContent =
-        'Selecciona una ubicación para verla en el mapa.';
-      searchResults.hidden = false;
-      for (const place of places) {
-        const li = document.createElement('li');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = place.label;
-        button.setAttribute('aria-pressed', 'false');
-        button.addEventListener('click', () =>
-          locate(place, isPostalCode(query), button),
-        );
-        li.append(button);
-        searchResults.append(li);
-      }
+      searchStatus.textContent = 'No se han encontrado ubicaciones en España.';
+    for (const [index, place] of places.entries()) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'presentation');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.id = `suggestion-${generation}-${index}`;
+      button.setAttribute('role', 'option');
+      button.setAttribute('aria-selected', 'false');
+      button.textContent = place.label;
+      button.addEventListener('click', () =>
+        locate(place, isPostalCode(query)),
+      );
+      li.append(button);
+      searchResults.append(li);
     }
   } catch (error) {
     if (generation !== searchGeneration || controller.signal.aborted) return;
@@ -393,5 +409,69 @@ searchForm.addEventListener('submit', async (event) => {
       searchForm.removeAttribute('aria-busy');
     }
   }
+}
+searchInput.addEventListener('input', () => {
+  cancelSearch();
+  showSuggestions(false);
+  const query = searchInput.value.trim();
+  if (query.length < 3) return;
+  const generation = searchGeneration;
+  debounceTimer = window.setTimeout(
+    () => void findSuggestions(query, generation),
+    350,
+  );
 });
-searchRetry.addEventListener('click', () => searchForm.requestSubmit());
+searchForm.addEventListener('submit', (event) => event.preventDefault());
+searchRetry.addEventListener('click', () => {
+  searchInput.focus({ preventScroll: true });
+  const query = searchInput.value.trim();
+  cancelSearch();
+  if (query.length >= 3) void findSuggestions(query, searchGeneration);
+});
+searchForm.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeSuggestions(true);
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (suggestions.inert) return;
+    const buttons = [...searchResults.querySelectorAll('button')];
+    if (!buttons.length) return;
+    event.preventDefault();
+    const current = buttons.indexOf(
+      document.activeElement as HTMLButtonElement,
+    );
+    const next =
+      event.key === 'ArrowDown'
+        ? (current + 1) % buttons.length
+        : current <= 0
+          ? buttons.length - 1
+          : current - 1;
+    buttons[next]?.focus();
+  }
+});
+// Keep blur from dismissing a touch/click before the candidate receives it.
+suggestions.addEventListener('pointerdown', () => {
+  pointerSelecting = true;
+});
+document.addEventListener('pointerup', () => {
+  window.setTimeout(() => {
+    pointerSelecting = false;
+    if (!searchForm.contains(document.activeElement)) closeSuggestions();
+  }, 0);
+});
+document.addEventListener('pointercancel', () => {
+  pointerSelecting = false;
+});
+searchForm.addEventListener('focusout', (event) => {
+  if (
+    pointerSelecting ||
+    (event.relatedTarget instanceof Node &&
+      searchForm.contains(event.relatedTarget))
+  )
+    return;
+  closeSuggestions();
+});
+document.addEventListener('pointerdown', (event) => {
+  if (event.target instanceof Node && !searchForm.contains(event.target))
+    closeSuggestions();
+});

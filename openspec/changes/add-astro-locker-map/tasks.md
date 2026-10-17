@@ -59,6 +59,14 @@ El usuario ha solicitado explícitamente cambiar el valor predeterminado a 250 c
 
 - [x] 9.1 Cambiar el valor predeterminado del generador a 250 y actualizar README; actualizar la prueba existente del valor predeterminado y conservar la cobertura de cantidades explícitas mediante `--count`. Verificar las pruebas unitarias del generador, dry-run sin HTTP con 250 payloads por defecto y una cantidad personalizada, ejecutar `uv run --extra dev pyright --project .. --warnings` desde `backend/` con cero errores y advertencias, validar OpenSpec y obtener revisión independiente. No ejecutar creaciones contra datos del usuario.
 
+## 10. Panel único y sugerencias automáticas
+
+Las 28 tareas anteriores y su evidencia se conservan. El usuario ha aprobado explícitamente esta ampliación; su implementación, verificación y revisión independiente están completadas. Sustituye la búsqueda explícita de 8.2 por sugerencias automáticas y reúne los dos menús superiores. La lista animada bajo el buscador contiene direcciones; el listado general de lockers conserva su función.
+
+- [x] 10.1 Unificar los dos menús superiores en un único panel con buscador, medidas, acciones/estados compactos y contadores vivos al final. Retirar botón «Buscar», párrafo Photon, éxito visible de ubicación y nota de medidas, limpiando referencias ARIA; preservar etiquetas, atribución OSM, «Ver España», «Ver lockers», actualizar/reintentar y detalle general. Ajustar estilos, pruebas de disposición y README para escritorio y móvil 375×480 sin cambiar backend ni dependencias.
+- [x] 10.2 Implementar sugerencias tras 350 ms y al menos tres caracteres, conservando país ES, CP textual, límite de cinco, timeout/cancelación y descarte de respuestas antiguas. Exigir selección incluso con un candidato; rellenar campo, encuadrar/marcar y cerrar sin consulta adicional. Animar apertura/cierre accesibles con movimiento reducido, Escape/foco/blur seguros y aislamiento del mapa; probar debounce, respuestas antiguas, teclado, cierre y ausencia de llamadas de lockers o cambios de medidas.
+- [x] 10.3 Ejecutar check/test/build y E2E afectados, comprobar visualmente escritorio y 375×480, contadores reales, animaciones interrumpidas/reducidas y ausencia de foco en sugerencias cerradas; verificar regresiones de mapa, listado/detalle, errores/reintentos y formulario local. Ejecutar desde `backend/` `uv run --extra dev pyright --project .. --warnings` con cero errores y advertencias, validar OpenSpec y obtener revisión independiente antes de completar estas tareas; registrar la limitación de conectividad externa sin repetir pruebas ajenas al cambio.
+
 ## Evidencia de verificación — 2026-10-17
 
 - `npm ci` con lockfile: correcto. `npm run check`: cero errores, advertencias y hints; `npm test`: 37 pruebas; `npm run test:e2e`: 10 pruebas en Chromium, incluidas peticiones reales entre orígenes a FastAPI.
@@ -108,3 +116,13 @@ El usuario ha solicitado explícitamente cambiar el valor predeterminado a 250 c
 - Generador y README actualizados a 250 por defecto; `--count N` conserva cantidades explícitas. Se actualizó la prueba existente, preservando los casos de 1000 payloads y `--count 3`.
 - Desde `backend/`, `uv run --extra dev python -m unittest tests.unit.test_seed_lockers -v`: 14 pruebas correctas. Dry-run sin opciones genera 250 payloads y `--count 12` genera 12, ambos sin peticiones HTTP.
 - `uv run --extra dev pyright --project .. --warnings`: cero errores y cero advertencias, confirmado también por el revisor. Ruff check/formato, validación OpenSpec estricta y `git diff --check`: correctos. Revisión independiente sin hallazgos; no se han creado datos reales ni sincronizado o archivado especificaciones.
+
+
+## Evidencia de panel único y sugerencias — 2026-10-17
+
+- Un único panel reúne búsqueda, medidas y controles; los contadores vivos de disponibles/en mapa cierran el menú. Retirados «Buscar» y los tres textos solicitados, sin referencias ARIA huérfanas; conservados listado, detalle y atribución OSM.
+- Sugerencias con mínimo de tres caracteres y pausa de 350 ms, CP con cero inicial y selección obligatoria incluso para un candidato. Elegir rellena el campo, encuadra y cierra sin nuevas peticiones. Comprobados clic, teclado, toque móvil, Escape/blur, reintento con clic y Enter, timeout, respuestas antiguas, animación y movimiento reducido; contenido cerrado inmediatamente inerte.
+- `npm run check`: cero errores, advertencias y hints. `npm test`: 57 pruebas correctas. `npm run test:e2e`: 24 pruebas correctas; tras retirar CSS sin uso y añadir cobertura de reintento con Enter, otras cuatro pruebas afectadas correctas. `npm run build`: salida estática correcta con API local `http://127.0.0.1:8000`.
+- Inspección visual y comprobación independiente del build en 1280×800 y 375×480: selección de Bellmunt por clic/toque, una consulta geográfica y una lectura de lockers por sesión, contadores derivados de la respuesta, marcador accesible por hit-test y cero errores JavaScript. El panel corto conserva scroll interno para acceder a los controles y contadores finales.
+- Desde `backend/`, `uv run --extra dev pyright --project .. --warnings`: cero errores y cero advertencias, confirmado también por el revisor. OpenSpec estricto y `git diff --check` correctos. Revisión independiente de `sdd_reviewer`: sin hallazgos pendientes.
+- Photon y teselas OSM se controlaron en las pruebas; la conectividad pública real no se verificó por la política de red. Sin cambios en dependencias, backend, Compose o generador; no se repitió el smoke ajeno de 1000 lockers. Especificaciones sin sincronizar ni archivar.
