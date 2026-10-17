@@ -170,7 +170,7 @@ el proveedor real.
 ### Generar lockers sintéticos de demostración
 
 El generador es manual: no se ejecuta al arrancar, compilar o abrir el mapa.
-Añade por defecto **1000 lockers**, con **semilla 42**, a
+Añade por defecto **250 lockers**, con **semilla 42**, a
 `http://127.0.0.1:8000`. Comprueba primero los payloads con `--dry-run`, que
 imprime un array JSON y no hace peticiones. Desde la raíz, con una API de
 **demostración** y su imagen reconstruida para incluir el script:
@@ -179,14 +179,18 @@ imprime un array JSON y no hace peticiones. Desde la raíz, con una API de
 docker compose up --build -d api
 docker compose exec -T api python scripts/seed_lockers.py --dry-run > /tmp/lockers-demo.json
 # Tras revisar el JSON, creación explícita en la API de demostración:
-docker compose exec api python scripts/seed_lockers.py --count 1000 --seed 42
+docker compose exec api python scripts/seed_lockers.py
+# Cantidad personalizada:
+docker compose exec api python scripts/seed_lockers.py --count 12 --seed 42
 ```
 
 También puedes ejecutarlo localmente desde `backend/`:
 
 ```bash
 uv run python scripts/seed_lockers.py --dry-run > /tmp/lockers-demo.json
-uv run python scripts/seed_lockers.py --base-url http://127.0.0.1:8000 --count 1000 --seed 42
+uv run python scripts/seed_lockers.py --base-url http://127.0.0.1:8000
+# Cantidad personalizada:
+uv run python scripts/seed_lockers.py --count 12 --seed 42
 ```
 
 `--count` exige un entero positivo; `--seed` acepta un entero y `--base-url`

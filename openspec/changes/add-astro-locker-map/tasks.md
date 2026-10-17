@@ -53,6 +53,12 @@ Las tareas 1–7 registran los 23 trabajos anteriores aprobados, implementados y
 - [x] 8.3 Añadir `backend/scripts/seed_lockers.py`, extracto español Natural Earth con procedencia/licencia y pruebas unitarias; documentar count=1000, seed, base URL, dry-run y ejecución manual local o mediante `docker compose exec api python scripts/seed_lockers.py` tras rebuild. Verificar 1000 payloads disponibles con posiciones dentro de polígonos/huecos, reproducibilidad, dry-run sin HTTP, validación de opciones y creación secuencial con fallo parcial sin reintento ni borrado; no modificar API, dominio o migraciones.
 - [x] 8.4 Ejecutar check/test/build y E2E afectados, unitarias backend y `uv run --extra dev pyright --project .. --warnings` desde `backend/` con cero errores y advertencias. Comprobar generador/API/mapa con 1000 lockers en stack desechable, conservando los datos del usuario; registrar conectividad externa no comprobada, validar OpenSpec y obtener revisión independiente antes de completar las nuevas tareas.
 
+## 9. Cantidad predeterminada del generador
+
+El usuario ha solicitado explícitamente cambiar el valor predeterminado a 250 conservando `--count`. Esta corrección sustituye el valor inicial de la tarea 8.3; las 27 tareas completadas y la evidencia histórica con 1000 lockers se conservan.
+
+- [x] 9.1 Cambiar el valor predeterminado del generador a 250 y actualizar README; actualizar la prueba existente del valor predeterminado y conservar la cobertura de cantidades explícitas mediante `--count`. Verificar las pruebas unitarias del generador, dry-run sin HTTP con 250 payloads por defecto y una cantidad personalizada, ejecutar `uv run --extra dev pyright --project .. --warnings` desde `backend/` con cero errores y advertencias, validar OpenSpec y obtener revisión independiente. No ejecutar creaciones contra datos del usuario.
+
 ## Evidencia de verificación — 2026-10-17
 
 - `npm ci` con lockfile: correcto. `npm run check`: cero errores, advertencias y hints; `npm test`: 37 pruebas; `npm run test:e2e`: 10 pruebas en Chromium, incluidas peticiones reales entre orígenes a FastAPI.
@@ -96,3 +102,9 @@ Las tareas 1–7 registran los 23 trabajos anteriores aprobados, implementados y
 - Smoke de Compose en proyecto desechable: colección inicialmente vacía y ejecución real `docker compose exec -T api python scripts/seed_lockers.py` con `Confirmados: 1000/1000`. `GET /lockers` confirma 1000 UUID únicos y 6000 celdas habilitadas libres. La imagen API final incluye la última validación de hostname y produce 1000 payloads en dry-run; conserva los 1000 registros tras reemplazar el contenedor.
 - Nginx estático en puerto 4322 frente a FastAPI/PostgreSQL/RabbitMQ reales en puerto 8770: 1000 filas y marcadores, mapa a todo el viewport y selección accesible por hit-test en 1280×800, 375×667 y 375×480. Tres lecturas HTTP 200 con CORS exacto y cero errores JavaScript. La API no se interceptó. La CA del entorno se montó solo en Dockerfiles/overrides temporales, sin cambios de confianza TLS en el repositorio.
 - Las pruebas controlan Photon y las teselas OSM; su conectividad pública real no se ha verificado por la política de red. Revisión independiente de `sdd_reviewer`: sin hallazgos pendientes. Eliminados únicamente contenedores, red y volúmenes del proyecto temporal de prueba. No se han sincronizado ni archivado las especificaciones.
+
+## Evidencia del valor predeterminado — 2026-10-17
+
+- Generador y README actualizados a 250 por defecto; `--count N` conserva cantidades explícitas. Se actualizó la prueba existente, preservando los casos de 1000 payloads y `--count 3`.
+- Desde `backend/`, `uv run --extra dev python -m unittest tests.unit.test_seed_lockers -v`: 14 pruebas correctas. Dry-run sin opciones genera 250 payloads y `--count 12` genera 12, ambos sin peticiones HTTP.
+- `uv run --extra dev pyright --project .. --warnings`: cero errores y cero advertencias, confirmado también por el revisor. Ruff check/formato, validación OpenSpec estricta y `git diff --check`: correctos. Revisión independiente sin hallazgos; no se han creado datos reales ni sincronizado o archivado especificaciones.

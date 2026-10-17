@@ -123,9 +123,9 @@ class SeedCliTests(unittest.TestCase):
             self.assertEqual(seed.main(["--dry-run"]), 0)
         http.assert_not_called()
         payloads = json.loads(output.getvalue())
-        self.assertEqual(len(payloads), 1000)
+        self.assertEqual(len(payloads), 250)
         self.assertEqual(payloads[0]["location_id"], "DEMO-42-1")
-        self.assertEqual(payloads[-1]["location_id"], "DEMO-42-1000")
+        self.assertEqual(payloads[-1]["location_id"], "DEMO-42-250")
         other = io.StringIO()
         with redirect_stdout(other), patch("scripts.seed_lockers.build_opener") as http:
             self.assertEqual(seed.main(["--dry-run"]), 0)

@@ -4,12 +4,17 @@
 
 ### Requirement: Generate synthetic lockers manually through the API
 
-The repository SHALL provide a manually invoked script that creates 1000 synthetic lockers by default using the existing POST /lockers API. It SHALL support a positive count, API base URL, reproducible random seed and a dry run without HTTP writes. Generated lockers SHALL be active with enabled free compartments, a synthetic alias, null address and terrestrial coordinates within the bundled Spanish boundary. Startup and builds SHALL NOT run the script automatically.
+The repository SHALL provide a manually invoked script that creates 250 synthetic lockers by default using the existing POST /lockers API. It SHALL support a positive count through --count, API base URL, reproducible random seed and a dry run without HTTP writes. Generated lockers SHALL be active with enabled free compartments, a synthetic alias, null address and terrestrial coordinates within the bundled Spanish boundary. Startup and builds SHALL NOT run the script automatically.
 
 #### Scenario: Create the requested demonstration collection
 - **WHEN** the script runs against an empty dedicated API with default count and successful responses
-- **THEN** exactly 1000 lockers are created and appear as available in the existing list/map
+- **THEN** exactly 250 lockers are created and appear as available in the existing list/map
 - **AND** every generated coordinate belongs to the bundled Spanish land geometry, rather than an unrestricted bounding rectangle
+
+#### Scenario: Override the default quantity
+- **WHEN** the script runs with --count 12 and all creation requests succeed
+- **THEN** exactly 12 new lockers are added regardless of the existing collection size
+- **AND** existing lockers are preserved
 
 #### Scenario: Reproduce generation without writing
 - **WHEN** two dry runs use the same seed, count and boundary version

@@ -258,7 +258,7 @@ def create_locker(base_url: str, payload: LockerPayload) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--count", type=positive_integer, default=1000)
+    parser.add_argument("--count", type=positive_integer, default=250)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--base-url", type=api_base_url, default="http://127.0.0.1:8000"

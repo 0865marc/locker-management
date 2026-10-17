@@ -10,7 +10,7 @@ La API ya conoce la ubicación y la capacidad de los lockers, pero no existe una
 - Situar arriba a la izquierda un menú compacto «Tu paquete», con largo, ancho y alto en centímetros y peso en kilogramos. Los campos empiezan vacíos y solo permiten introducir datos locales; no filtran, cotizan ni envían solicitudes.
 - Habilitar zoom con la rueda sobre el mapa y una vista inicial más cercana a la España peninsular; «Ver España» conserva el encuadre de todos los territorios.
 - Añadir encima de las dimensiones una búsqueda explícita por dirección o código postal español mediante Photon, con hasta cinco candidatos seleccionables y estados independientes. Elegir un resultado acerca el mapa sin filtrar lockers ni enviar los datos del paquete.
-- Proporcionar un script manual para crear por API 1000 lockers sintéticos disponibles en posiciones terrestres de España, con cantidad, semilla, URL API y simulación sin escrituras configurables.
+- Proporcionar un script manual para crear por API 250 lockers sintéticos disponibles por defecto en posiciones terrestres de España, con cantidad configurable mediante `--count`, semilla, URL API y simulación sin escrituras configurables.
 - Mostrar como disponibles los lockers activos con al menos una celda habilitada y libre. La consulta será informativa, sin comprobar tamaños de paquetes ni reservar capacidad.
 - Representar las coordenadas guardadas, cubriendo península, Baleares, Canarias, Ceuta y Melilla. Conservar en el listado los disponibles sin coordenadas, identificándolos explícitamente.
 - Resolver carga, ausencia de resultados, errores, actualización manual y recuperación; mantener el listado utilizable si falla la cartografía externa.
