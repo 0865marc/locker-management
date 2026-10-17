@@ -763,6 +763,39 @@ migrado. En caso de fallo muestra estado y logs, devuelve un código no cero y
 limpia solo contenedores, red y volúmenes de ese proyecto temporal, conservando
 los datos de desarrollo. No requiere URLs ni credenciales externas.
 
+## Cierre de cambios OpenSpec
+
+Antes de integrar en `main`, no debe quedar ningún directorio activo directamente
+en `openspec/changes`, salvo `archive`. Las propuestas, los cambios sin tareas y
+los que tienen todas sus tareas completadas siguen activos hasta archivarse;
+también cuentan los directorios ocultos y los enlaces a directorios. Los archivos
+auxiliares y el contenido de `archive` no afectan a esta comprobación.
+
+Desde la raíz del repositorio, ejecuta el mismo comando que CI:
+
+```bash
+scripts/ci/check-openspec-closed.sh
+```
+
+El comando lista todos los cambios activos y falla si encuentra alguno o no puede
+inspeccionar el directorio. No necesita OpenSpec ni servicios y no modifica el
+checkout. Antes del merge, completa y verifica la implementación, valida el cambio
+con `openspec validate NOMBRE --strict`, sincroniza sus deltas con las specs
+principales y valida el resultado con `openspec validate --specs --strict`.
+Después archiva localmente el cambio, preservando sus tareas y evidencia, y repite
+la comprobación. Marcar tareas como completas no sustituye sincronizar y archivar.
+
+El workflow `OpenSpec CI` publica el check independiente **OpenSpec closure** para
+todas las PR dirigidas a `main`, sin filtros por rutas, al abrirlas, reabrirlas o
+actualizarlas. Un push a una rama con una PR abierta hacia `main` vuelve a ejecutar
+el check mediante el evento `pull_request` de tipo `synchronize`. Los commits
+locales y los pushes sin PR, incluidos los de ramas nuevas y los pushes directos
+a `main`, no ejecutan este workflow. Para bloquear merges que incumplan esta
+política, configura **OpenSpec closure** como
+check requerido en las reglas de protección de `main`; el workflow no configura
+esas reglas ni archiva cambios automáticamente. Los cinco checks del backend
+conservan su funcionamiento.
+
 ## Tipos: Pyright y Pylance
 
 El extra `dev` incluye Pyright, fijado en `uv.lock`. Desde `backend/`:
