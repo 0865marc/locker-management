@@ -6,7 +6,7 @@ Los cambios OpenSpec implementados siguen activos cuando no se sincronizan ni ar
 
 ## What Changes
 
-- Añadir un check independiente `OpenSpec closure` para todas las PR dirigidas a `main` y los pushes a `main`, sin filtros por rutas.
+- Añadir un check independiente `OpenSpec closure` únicamente para PR dirigidas a `main`, sin filtros por rutas. Los commits locales y los pushes sin PR no lo disparan; actualizar una rama con PR abierta sí lo ejecuta mediante el evento de actualización de la PR.
 - Fallar si existe cualquier directorio activo directamente bajo `openspec/changes`, excepto `archive`, aunque sus tareas estén completas; listar los cambios y explicar cómo completar, validar, sincronizar y archivar localmente.
 - Compartir la comprobación entre CI y un comando local ligero que no modifica archivos ni necesita servicios o el CLI de OpenSpec.
 - Sincronizar y archivar los cambios actuales cuya implementación y evidencia estén completas, preservando requisitos y escenarios posteriores; cerrar también este cambio tras implementarlo y revisarlo.
@@ -16,7 +16,7 @@ Los cambios OpenSpec implementados siguen activos cuando no se sincronizan ni ar
 
 ### New Capabilities
 
-- `openspec-closure`: política verificable de ausencia de cambios activos en revisiones destinadas a `main`, diagnóstico y cierre explícito de los cambios terminados.
+- `openspec-closure`: política verificable de ausencia de cambios activos en PR destinadas a `main`, diagnóstico y cierre explícito de los cambios terminados.
 
 ### Modified Capabilities
 

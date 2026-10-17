@@ -8,6 +8,8 @@ La referencia remota inspeccionada es `main` en `1b8c4f0afbeb27063c0174be4f211f7
 
 El delta asíncrono actual ya conserva los escenarios de identidad de Compose y contiene los perfiles internos fijos de los simuladores; no se debe sincronizar la versión antigua del checkout. Su contrato de tarifas renombra `Supply three deterministic example adapters` a `Supply three example adapters with deterministic tariffs`.
 
+La implementación inicial y el cierre del 2026-10-16 se conservan como historia en `tasks.md`. El 2026-10-17 el usuario precisó el alcance de la PR #7: comprobar el cierre solo en PR a `main`. Esta corrección retira el evento `push` del workflow OpenSpec y ajusta README; el script y la política de directorios activos permanecen iguales.
+
 ## Goals / Non-Goals
 
 **Goals:** comprobar la estructura del checkout con un comando local y CI idénticos; sincronizar contratos implementados conservando la historia reciente; dejar el resultado final sin cambios activos.
@@ -24,7 +26,9 @@ El script devolverá cero solo si no encuentra cambios activos, y un código no 
 
 ### 2. Workflow pequeño e independiente
 
-`.github/workflows/openspec-ci.yml` tendrá nombre `OpenSpec CI` y un job `openspec-closure` con nombre visible `OpenSpec closure`. Seguirá las convenciones existentes: runner `ubuntu-24.04`, checkout `v7.0.1`, permisos `contents: read`, timeout de cinco minutos y concurrencia por workflow/PR o referencia que cancele ejecuciones reemplazadas. Ejecutará el script desde la raíz para PR a `main` y pushes a `main`, sin filtros por rutas.
+`.github/workflows/openspec-ci.yml` tendrá nombre `OpenSpec CI` y un job `openspec-closure` con nombre visible `OpenSpec closure`. Seguirá las convenciones existentes: runner `ubuntu-24.04`, checkout `v7.0.1`, permisos `contents: read`, timeout de cinco minutos y concurrencia por workflow/PR o referencia que cancele ejecuciones reemplazadas. Ejecutará el script desde la raíz únicamente para `pull_request` con base `main`, sin filtros por rutas.
+
+Se conservarán los tipos predeterminados de `pull_request`: `opened`, `reopened` y `synchronize`. No habrá disparador `push` ni hooks locales: crear un commit o subir una rama sin PR no ejecuta este control. Un push a una rama con PR abierta hacia `main` sí genera `synchronize` y vuelve a verificarla; un push directo a `main` no dispara este workflow. Los eventos del workflow del backend se mantienen.
 
 No requiere instalar herramientas ni depender de los jobs del backend. README documentará el comando local y que, para impedir merges, hay que exigir `OpenSpec closure` en las reglas de protección de `main`; un workflow por sí solo no configura ese bloqueo.
 
@@ -57,3 +61,5 @@ No está previsto editar `.github/workflows/backend-ci.yml` ni archivos de aplic
 ## Migration Plan
 
 Tras aprobar el plan, trabajar desde `main` actual, implementar el script/workflow/documentación y verificar los escenarios con árboles temporales. Sincronizar los cambios previos, validar las specs, ejecutar Pyright y obtener revisión independiente. Archivar los dos cambios previos y después sincronizar y archivar este cambio cuando sus tareas de implementación estén verificadas. Ejecutar el checker final, validar todas las specs y comprobar que `openspec list --json` no enumera cambios activos. La ejecución real de Actions se verificará al publicarse; las comprobaciones locales no se presentarán como ejecución remota.
+
+Para la corrección del 2026-10-17, ajustar únicamente el evento del workflow y su explicación en README, comprobar la matriz de eventos con actionlint y aserciones sobre el YAML, ejecutar Pyright y obtener revisión independiente. El coordinador sincronizará el requisito actualizado de `openspec-closure` y devolverá los artefactos a su misma ruta de archivo fechada antes de actualizar la PR #7. No se repiten la sincronización ni el archivo de los otros dos cambios históricos.

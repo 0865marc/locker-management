@@ -2,17 +2,29 @@
 
 ## Purpose
 
-Require revisions targeting main to contain only archived OpenSpec changes, with a reproducible diagnostic and explicit preservation of completed specifications and history.
+Require pull requests targeting main to contain only archived OpenSpec changes, with a reproducible diagnostic and explicit preservation of completed specifications and history.
 
 ## ADDED Requirements
 
 ### Requirement: Report an independent OpenSpec closure check
 
-GitHub Actions SHALL report a stable `OpenSpec closure` check for pull requests targeting main and pushes to main, regardless of changed paths. It SHALL propagate verification failures and run with bounded execution and read-only repository permissions. The existing five backend checks SHALL retain their names and behavior.
+GitHub Actions SHALL report a stable `OpenSpec closure` check only for pull requests targeting main, regardless of changed paths. Local commits and push events SHALL NOT trigger it. It SHALL propagate verification failures and run with bounded execution and read-only repository permissions. The existing five backend checks SHALL retain their names and behavior.
 
 #### Scenario: Verify all changes targeting main
-- **WHEN** a pull request to main is opened or updated, or a commit is pushed to main, including a documentation-only change
+- **WHEN** a pull request to main is opened, reopened or updated, including a documentation-only change
 - **THEN** the closure check runs independently of the five backend checks and reports its own outcome
+
+#### Scenario: Local commits do not require closure
+- **WHEN** a contributor creates a local commit with active OpenSpec changes
+- **THEN** this check does not run automatically and no local hook from this policy blocks the commit
+
+#### Scenario: Pushes without a pull request do not run the check
+- **WHEN** a branch without an open pull request is pushed, including a newly created branch or a direct push to main
+- **THEN** the push event does not trigger the OpenSpec closure check
+
+#### Scenario: Pushing an open pull request updates its check
+- **WHEN** a push updates the head branch of an open pull request targeting main
+- **THEN** the resulting pull-request synchronize event runs the closure check for the updated revision
 
 ### Requirement: Reject every active change directory
 

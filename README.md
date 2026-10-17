@@ -786,8 +786,12 @@ Después archiva localmente el cambio, preservando sus tareas y evidencia, y rep
 la comprobación. Marcar tareas como completas no sustituye sincronizar y archivar.
 
 El workflow `OpenSpec CI` publica el check independiente **OpenSpec closure** para
-todas las PR dirigidas a `main` y los pushes a `main`, sin filtros por rutas. Para
-bloquear merges que incumplan esta política, configura **OpenSpec closure** como
+todas las PR dirigidas a `main`, sin filtros por rutas, al abrirlas, reabrirlas o
+actualizarlas. Un push a una rama con una PR abierta hacia `main` vuelve a ejecutar
+el check mediante el evento `pull_request` de tipo `synchronize`. Los commits
+locales y los pushes sin PR, incluidos los de ramas nuevas y los pushes directos
+a `main`, no ejecutan este workflow. Para bloquear merges que incumplan esta
+política, configura **OpenSpec closure** como
 check requerido en las reglas de protección de `main`; el workflow no configura
 esas reglas ni archiva cambios automáticamente. Los cinco checks del backend
 conservan su funcionamiento.
