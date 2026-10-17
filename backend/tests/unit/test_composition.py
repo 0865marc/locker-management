@@ -85,8 +85,11 @@ class SharedCompositionTests(unittest.TestCase):
 
     def test_import_composition_does_not_import_infrastructure(self) -> None:
         script = """
-import composition, sys
-for module in ('main', 'worker', 'workers', 'sqlmodel', 'asyncpg', 'aio_pika', 'alembic'):
+import entrypoints, sys
+assert not any(name.startswith("entrypoints.") for name in sys.modules)
+assert "fastapi" not in sys.modules
+import composition
+for module in ('entrypoints.api', 'entrypoints.rabbitmq_worker', 'workers', 'sqlmodel', 'asyncpg', 'aio_pika', 'alembic'):
     assert module not in sys.modules, module
 """
         result = subprocess.run(

@@ -56,7 +56,7 @@ El consumidor SHALL procesar cotizaciones secuencialmente con los tres simulador
 
 ### Requirement: Select infrastructure at deployment composition
 
-El sistema SHALL ofrecer perfiles PostgreSQL/RabbitMQ y Cloudflare/D1/Queues seleccionados por su configuración de despliegue. Los contratos HTTP y de negocio SHALL ser compartidos, conservando el perfil original por defecto en sus comandos actuales. La elección SHALL no depender de entradas HTTP ni copiar o escribir datos en ambos perfiles.
+El sistema SHALL ofrecer perfiles PostgreSQL/RabbitMQ y Cloudflare/D1/Queues seleccionados por su configuración de despliegue. Los contratos HTTP y de negocio SHALL ser compartidos, conservando PostgreSQL/RabbitMQ por defecto en Compose y en sus comandos documentados. La elección SHALL no depender de entradas HTTP ni copiar o escribir datos en ambos perfiles.
 
 #### Scenario: Preserve an existing Compose installation
 - **WHEN** una instalación existente ejecuta los mismos comandos, URLs y credenciales Compose
@@ -65,3 +65,12 @@ El sistema SHALL ofrecer perfiles PostgreSQL/RabbitMQ y Cloudflare/D1/Queues sel
 #### Scenario: Package the Cloudflare profile independently
 - **WHEN** se prepara el paquete Cloudflare desde un checkout limpio
 - **THEN** puede construir su runtime sin cargar SQLModel, asyncpg, Alembic o aio-pika y mantiene los mismos endpoints y reglas
+- **AND** incluye la entrada Cloudflare y todos sus módulos compartidos, excluyendo las entradas API/RabbitMQ
+
+#### Scenario: Start the grouped CPython entrypoints
+- **WHEN** se ejecutan `uvicorn entrypoints.api:app` y `python -m entrypoints.rabbitmq_worker` con la configuración PostgreSQL/RabbitMQ correspondiente
+- **THEN** conservan la API, el procesamiento secuencial y la limpieza de recursos del perfil original
+
+#### Scenario: Import the entrypoint package without selecting a profile
+- **WHEN** se importa únicamente `entrypoints`
+- **THEN** no se importan sus entradas ni se construyen aplicaciones, SDKs o recursos de ningún perfil

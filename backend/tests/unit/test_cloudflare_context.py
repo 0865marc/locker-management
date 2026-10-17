@@ -241,12 +241,12 @@ ffi.JsException = type('JsException', (Exception,), {})
 sys.modules.update({'workers':workers,'pyodide':pyodide,'pyodide.ffi':ffi})
 import adapters.runtime.cloudflare as context
 with patch.object(context,'get_database', side_effect=AssertionError('import DB access')), patch.object(context,'get_queue', side_effect=AssertionError('import queue access')):
-    import cloudflare_worker
+    from entrypoints import cloudflare_worker
     application = cloudflare_worker.app
     assert cloudflare_worker.event_app.application is application
     assert application.state.quotation_service.repository is cloudflare_worker.quotation_repository
     assert cloudflare_worker.processor.repository is cloudflare_worker.quotation_repository
-for name in ('main','worker','sqlmodel','asyncpg','alembic','aio_pika'):
+for name in ('entrypoints.api','entrypoints.rabbitmq_worker','sqlmodel','asyncpg','alembic','aio_pika'):
     assert name not in sys.modules, name
 """
         result = subprocess.run(

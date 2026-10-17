@@ -30,10 +30,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "worker", "composition"]
+py-modules = ["composition"]
 
 [tool.setuptools.packages.find]
-include = ["domain*", "application*", "adapters*"]
+include = ["domain*", "application*", "adapters*", "entrypoints*"]
 
 [tool.ruff]
 target-version = "py311"

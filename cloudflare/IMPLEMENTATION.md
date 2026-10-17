@@ -11,8 +11,8 @@ anterior permanece en `runtime_spike/` y su evidencia histórica en
 | Responsabilidad | Implementación |
 | --- | --- |
 | Composición de servicios y HTTP compartida | `backend/composition.py` |
-| Entrada PostgreSQL/RabbitMQ | `backend/main.py`, `backend/worker.py` |
-| Entrada HTTP y consumidor Workers | `backend/cloudflare_worker.py` |
+| Entrada PostgreSQL/RabbitMQ | `backend/entrypoints/api.py`, `backend/entrypoints/rabbitmq_worker.py` |
+| Entrada HTTP y consumidor Workers | `backend/entrypoints/cloudflare_worker.py` |
 | Conexión y repositorios PostgreSQL/SQLModel | `backend/adapters/database/sqlmodel/` |
 | Repositorios D1 de lockers, entregas, devoluciones y cotizaciones | `backend/adapters/database/d1/` |
 | Frontera nativa del SDK D1 | `backend/adapters/database/d1/native.py` |
@@ -30,12 +30,19 @@ La conexión SQLModel y los repositorios de entregas, devoluciones, lockers y
 cotizaciones se importan desde `adapters.database.sqlmodel`. El binding D1 se
 envuelve en `adapters.database.d1.native`; `NativeMessage` vive junto al transporte
 de cola en `adapters.queue.cloudflare`, y el contexto compartido de DB/QUOTATIONS
-en `adapters.runtime.cloudflare`. Las cuatro fuentes de entrada/composición
-conservan sus rutas en `backend/`. Alembic mantiene sus revisiones en
+en `adapters.runtime.cloudflare`. Las tres entradas se agrupan en
+`backend/entrypoints/`, cuyo `__init__.py` vacío no selecciona ningún perfil al
+importarlo. `composition.py` permanece en la raíz de `backend/`. Desde ese
+directorio, la API arranca con `uvicorn entrypoints.api:app` y el consumidor
+con `python -m entrypoints.rabbitmq_worker`. Alembic mantiene sus revisiones en
 `backend/adapters/database/migrations/versions/`, con el registro de modelos en
 `migrations/env.py`; el historial SQL D1 conserva su ubicación separada. La
 preparación Workers selecciona runtime, D1 y Queues desde esas rutas y excluye
-el paquete SQLModel y AMQP.
+el paquete SQLModel y AMQP. De `entrypoints` solo incorpora el `__init__.py` vacío
+y `cloudflare_worker.py`; excluye las entradas CPython. Ambos manifiestos
+Wrangler de producción usan `main = ".production/entrypoints/cloudflare_worker.py"`
+y `base_dir = ".production"` para conservar los paquetes compartidos hermanos
+en el inventario de módulos.
 
 Todas las escrituras de capacidad sobre lockers existentes usan revisión y un
 token nuevo por intento. Lectura coherente, selección exacta con enteros Python
@@ -156,3 +163,35 @@ Los metadatos D1 locales exitosos de esta campaña sumaron 425494 filas leídas,
 7910 escritas y un máximo de `size_after` de 626688 bytes; excluyen fallos y no
 miden consumo remoto. Estas pruebas de regresión no sustituyen las verificaciones
 nativas de Python Workers/Queues ni la aceptación Free pendientes.
+
+## Verificación de las entradas agrupadas
+
+La agrupación en `backend/entrypoints/` se verificó el 17 de octubre de 2026.
+Las tres entradas, `composition.py` y las seis migraciones conservan exactamente
+sus bytes; solo cambian las rutas de entrada, sus referencias y el empaquetado.
+El paquete tiene un `__init__.py` vacío y su import no carga ningún perfil.
+La revisión independiente no encontró hallazgos en código, configuración ni
+empaquetado.
+
+| Comprobación sobre las nuevas entradas | Resultado |
+| --- | --- |
+| Unidades / PostgreSQL-Alembic / RabbitMQ | 99 / 50 / 1 pruebas correctas |
+| Smoke Docker basado en `scripts/ci/smoke.sh`, ampliado temporalmente al consumidor | API: `GET /lockers` → 200, `[]`; un proceso `python -m entrypoints.rabbitmq_worker` consume el mensaje confirmado y termina con código 0 al detenerlo |
+| Wheel instalado fuera del checkout | Imports del paquete, API, consumidor y composición, objetivo Uvicorn y OpenAPI correctos |
+| Preparación y build de fuentes Workers | 57 fuentes; preparación determinista y rechazo de staging obsoleto; inventario real y contenido del build coinciden con los 57 módulos seleccionados |
+| Aislamiento del perfil Workers | Solo entrada Cloudflare e init; entradas API/RabbitMQ y adaptadores SQLModel/AMQP excluidos |
+| Ruff lint y formato | Correctos en 123 archivos |
+| Pyright raíz y Cloudflare, con los comandos documentados arriba | Cero errores y cero advertencias en ambos |
+
+Ambos manifiestos Wrangler fijan `base_dir=.production`. El build emite la
+entrada principal como `cloudflare_worker.py` en su salida y conserva las rutas
+de los otros 56 módulos; la comparación de inventarios tiene en cuenta ese
+nombre de salida y comprueba el contenido de todos ellos. Tamaño del build de
+fuentes: 127.88 KiB, 23.60 KiB gzip. El import de la entrada Cloudflare también
+se comprobó con dobles explícitos del SDK bajo CPython.
+
+El smoke Docker usó el ajuste temporal de CA/schedulers descrito arriba y retiró
+sus contenedores, volúmenes y red. La comprobación verifica el consumo efectivo
+del mensaje: `basic_get` consulta la cola sin registrar un consumidor.
+Estas comprobaciones no ejecutan Python/WASM ni entrega nativa de Queues y no
+completan la aceptación Free pendiente.

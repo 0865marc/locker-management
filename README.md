@@ -368,7 +368,7 @@ un timeout o cancelación del llamador si el proveedor simula no responder. Hay 
 tras conseguir un hueco, sin reintentos. Cancelar la comparación cancela y espera
 sus tareas activas y pendientes. Añadir otro proveedor solo requiere implementar
 el puerto; futuros adaptadores REST, SOAP o SDK traducirían sus contratos externos.
-La API de cotizaciones y su almacenamiento se componen en `main.py`; el worker
+La API de cotizaciones y su almacenamiento se componen en `entrypoints/api.py`; el worker
 ejecuta el comparador. No hay reserva ni contratación.
 
 ## Organización
@@ -376,9 +376,10 @@ ejecuta el comparador. No hay reserva ni contratación.
 ```text
 locker-management-demo/
 ├── backend/
-│   ├── main.py
-│   ├── worker.py
-│   ├── cloudflare_worker.py
+│   ├── entrypoints/
+│   │   ├── api.py
+│   │   ├── rabbitmq_worker.py
+│   │   └── cloudflare_worker.py
 │   ├── composition.py
 │   ├── domain/
 │   │   ├── deliveries.py
@@ -539,10 +540,14 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | `backend/adapters/runtime/cloudflare.py` | Contexto de bindings por evento y middleware ASGI de Workers. |
 | `backend/adapters/providers/simulated_shipping.py` | Tres adaptadores de transporte simulados, sin servicios externos. |
 | `backend/composition.py` | Composición compartida de servicios, reloj, routers y manejadores HTTP a partir de puertos. |
-| `backend/main.py` y `backend/worker.py` | Entradas PostgreSQL/RabbitMQ para API y consumidor; gestionan sus recursos y ciclo de vida. |
-| `backend/cloudflare_worker.py` | Entrada HTTP y consumidor Workers con D1 y Queues. |
+| `backend/entrypoints/api.py` y `backend/entrypoints/rabbitmq_worker.py` | Entradas PostgreSQL/RabbitMQ para API y consumidor; gestionan sus recursos y ciclo de vida. |
+| `backend/entrypoints/cloudflare_worker.py` | Entrada HTTP y consumidor Workers con D1 y Queues. |
 | `backend/adapters/database/migrations/env.py` | Conecta Alembic con la base de datos y con `SQLModel.metadata`. |
 | `backend/adapters/database/migrations/versions/` | Historial de cambios del esquema, independiente del arranque de la API. |
+
+El paquete `entrypoints` tiene un `__init__.py` vacío: importarlo no selecciona
+un perfil ni carga sus aplicaciones o recursos. `composition.py` permanece en
+la raíz de `backend/`.
 
 El recorrido de una petición es **HTTP → caso de uso → repositorio → PostgreSQL o D1**,
 según el perfil.
@@ -859,8 +864,10 @@ pruebas de comportamiento afectadas. No necesita PostgreSQL ni variables de base
 de datos; una revisión manual, auditoría AST o captura del editor no lo sustituye.
 
 `pyrightconfig.json` en la raíz incluye todo `backend`: producción en modo strict
-(dominio, aplicación, adaptadores y `main.py`) y pruebas en standard, con objetivo
-Python 3.11 e imports desde `backend`. Solo excluye entornos/cachés y migraciones
+(dominio, aplicación, adaptadores, `composition.py` y entradas) y pruebas en
+standard. El código compartido y las entradas CPython usan Python 3.11; la entrada
+Workers se analiza con Python 3.13. Los imports parten de `backend`. Solo excluye
+entornos/cachés y migraciones
 históricas 0001–0003; `env.py`, 0004 y 0005 se analizan. No se desactivan reglas para
 ocultar diagnósticos. En VSCode abre la raíz del repositorio y selecciona
 `backend/.venv` como intérprete para que Pylance use el entorno/configuración
@@ -985,16 +992,16 @@ devuelve 404, uno mal formado 422, y persistencia no disponible 503.
 `use_cases.py` separan el estado persistido y los resultados, los contratos de
 salida, los errores compartidos, la comparación y los casos de uso. Los adaptadores
 son `adapters/database/sqlmodel/quotations.py`, `adapters/http/quotations/` y
-`adapters/queue/rabbitmq.py`; `main.py` compone API y `worker.py` el proceso de
-trabajo. API comparte servicios por instancia y cierra motor y broker incluso
+`adapters/queue/rabbitmq.py`; `entrypoints/api.py` compone API y
+`entrypoints/rabbitmq_worker.py` el proceso de trabajo. API comparte servicios por instancia y cierra motor y broker incluso
 si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
 
 `docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
 **un único worker**. API/worker esperan migraciones correctas y broker saludable;
 las migraciones esperan PostgreSQL saludable. Los volúmenes `postgres_data` y
 `rabbitmq_data` se conservan con `docker compose down` sin `-v`. Para arrancar
-por separado, ejecutar `alembic upgrade head`, `uvicorn main:app` y
-`python worker.py` desde backend, con DATABASE_URL y RABBITMQ_URL configurados.
+por separado, ejecutar `alembic upgrade head`, `uvicorn entrypoints.api:app` y
+`python -m entrypoints.rabbitmq_worker` desde backend, con DATABASE_URL y RABBITMQ_URL configurados.
 El valor local por defecto de RabbitMQ es `amqp://guest:guest@localhost/`.
 Ni API ni worker crean tablas ni ejecutan migraciones al arrancar.
 
@@ -1055,7 +1062,7 @@ uv run --extra dev python -m unittest discover -s tests/messaging -t . -v -f
 uv run --extra dev pyright --project .. --warnings
 ```
 
-Pyright incluye estrictamente `worker.py`, migración 0005 y el entorno Alembic,
+Pyright incluye estrictamente `entrypoints/rabbitmq_worker.py`, migración 0005 y el entorno Alembic,
 con las mismas reglas y exclusiones históricas. Las pruebas cubren ack antes de
 proveedores, publicación única, batch atómico, estados/errores, no requeue tras
 fallos de proveedor, simulación controlada y guardas de migración.
@@ -1064,7 +1071,7 @@ fallos de proveedor, simulación controlada y guardas de migración.
 
 `cloudflare/runtime_spike/` conserva el sondeo inicial. La implementación de
 producción está en `backend/adapters/database/d1`, `backend/adapters/queue/cloudflare.py`
-y `backend/cloudflare_worker.py`; el estado verificable se registra en
+y `backend/entrypoints/cloudflare_worker.py`; el estado verificable se registra en
 [IMPLEMENTATION.md](cloudflare/IMPLEMENTATION.md). El runtime Python Workers y las
 mediciones Free de 1000/2000 celdas siguen pendientes: la resolución oficial de
 wheels Pyodide está
@@ -1090,8 +1097,8 @@ campaña remota posterior autorizada y medidas de CPU/cuotas reales.
 
 ## Perfil Cloudflare: composición y operación
 
-`backend/cloudflare_worker.py` compone la API y el consumidor con D1 y Queues.
-`main:create_app` conserva PostgreSQL/RabbitMQ y sus comandos actuales; la elección
+`backend/entrypoints/cloudflare_worker.py` compone la API y el consumidor con D1 y Queues.
+`entrypoints.api:create_app` conserva PostgreSQL/RabbitMQ; la elección
 se hace por entrypoint de despliegue. Ambos perfiles reutilizan `composition.py`,
 los casos de uso y los routers existentes. No hay selección por cabeceras HTTP,
 sincronización ni traslado de datos entre los dos almacenamientos.
@@ -1103,7 +1110,10 @@ ni migra. Los fallos manejables de persistencia devuelven 503 sin detalles inter
 Los simuladores se construyen sin argumentos y mantienen sus perfiles privados.
 
 El manifiesto predeterminado `cloudflare/wrangler.jsonc` es de producción, con
-alias explícito `wrangler.production.jsonc`. El experimento usa
+alias explícito `wrangler.production.jsonc`. Ambos fijan
+`main = ".production/entrypoints/cloudflare_worker.py"` y
+`base_dir = ".production"`, para incluir los paquetes hermanos de `entrypoints`
+en la raíz de módulos. El experimento usa
 `wrangler.spike.jsonc`. Sus tablas de
 prueba no son las migraciones de negocio. El código de producción está sujeto a
 las pruebas y revisión del cambio en curso: la ejecución WASM y la aceptación
@@ -1119,8 +1129,9 @@ python scripts/cloudflare/prepare.py --check
 
 El árbol ignorado `cloudflare/.production` se genera desde una lista cerrada:
 dominio/aplicación, HTTP, adaptadores D1/Queues/contexto, simuladores y las dos
-fuentes de composición compartida/Workers. No incluye main/worker CPython,
-SQLModel, Alembic, asyncpg, aio-pika, tests ni secretos. El manifiesto SHA-256
+fuentes de composición compartida/Workers. Del paquete `entrypoints` incluye
+solo el `__init__.py` vacío y `cloudflare_worker.py`; excluye las entradas API/RabbitMQ,
+SQLModel, Alembic, asyncpg, aio-pika, tests y secretos. El manifiesto SHA-256
 permite detectar código o archivos añadidos obsoletos; no se mantienen copias
 manuales de negocio. `--check` falla sin reparar el árbol automáticamente.
 

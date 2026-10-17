@@ -15,15 +15,15 @@ from application.returns.use_cases import ReturnService
 
 class CompositionTests(unittest.TestCase):
     def test_services_are_composed_once_and_engine_is_disposed(self) -> None:
-        from main import create_app
+        from entrypoints.api import create_app
 
         engine = AsyncMock()
         sessions = object()
         with (
-            patch("main.create_database", return_value=(engine, sessions)),
-            patch("main.SqlModelDeliveryRepository") as delivery_repo,
-            patch("main.SqlModelReturnRepository") as return_repo,
-            patch("main.SqlModelLockerRepository") as locker_repo,
+            patch("entrypoints.api.create_database", return_value=(engine, sessions)),
+            patch("entrypoints.api.SqlModelDeliveryRepository") as delivery_repo,
+            patch("entrypoints.api.SqlModelReturnRepository") as return_repo,
+            patch("entrypoints.api.SqlModelLockerRepository") as locker_repo,
         ):
             app = create_app(
                 "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
@@ -41,11 +41,13 @@ class CompositionTests(unittest.TestCase):
         engine.dispose.assert_awaited_once_with()
 
     def test_lifespan_does_not_create_or_migrate_tables(self) -> None:
-        from main import create_app
+        from entrypoints.api import create_app
 
         engine = AsyncMock()
         sessions = object()
-        with patch("main.create_database", return_value=(engine, sessions)) as factory:
+        with patch(
+            "entrypoints.api.create_database", return_value=(engine, sessions)
+        ) as factory:
             app = create_app(
                 "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
             )
@@ -57,17 +59,26 @@ class CompositionTests(unittest.TestCase):
         engine.dispose.assert_awaited_once_with()
 
     def test_composition_provides_real_utc_clock_for_both_receptions(self) -> None:
-        from main import create_app
+        from entrypoints.api import create_app
 
         engine = AsyncMock()
         delivery_repository = AsyncMock(spec=DeliveryRepository)
         return_repository = AsyncMock(spec=ReturnRepository)
         locker_repository = AsyncMock(spec=LockerRepository)
         with (
-            patch("main.create_database", return_value=(engine, object())),
-            patch("main.SqlModelDeliveryRepository", return_value=delivery_repository),
-            patch("main.SqlModelReturnRepository", return_value=return_repository),
-            patch("main.SqlModelLockerRepository", return_value=locker_repository),
+            patch("entrypoints.api.create_database", return_value=(engine, object())),
+            patch(
+                "entrypoints.api.SqlModelDeliveryRepository",
+                return_value=delivery_repository,
+            ),
+            patch(
+                "entrypoints.api.SqlModelReturnRepository",
+                return_value=return_repository,
+            ),
+            patch(
+                "entrypoints.api.SqlModelLockerRepository",
+                return_value=locker_repository,
+            ),
         ):
             app = create_app(
                 "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
@@ -99,14 +110,16 @@ class CompositionTests(unittest.TestCase):
         engine.dispose.assert_awaited_once_with()
 
     def test_broker_lifecycle_and_cleanup_even_when_startup_fails(self) -> None:
-        from main import create_app
+        from entrypoints.api import create_app
 
         for failure in (None, ConnectionError("unavailable")):
             engine, broker = AsyncMock(), AsyncMock()
             broker.open.side_effect = failure
             with (
-                patch("main.create_database", return_value=(engine, object())),
-                patch("main.RabbitMQ", return_value=broker),
+                patch(
+                    "entrypoints.api.create_database", return_value=(engine, object())
+                ),
+                patch("entrypoints.api.RabbitMQ", return_value=broker),
             ):
                 app = create_app("postgresql+asyncpg://unused/unused")
             if failure is None:

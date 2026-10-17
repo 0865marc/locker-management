@@ -214,7 +214,7 @@ class QuotationPersistenceTests(PostgresTestCase):
         self.assertEqual(response.json()["results"], [])
 
     async def test_unavailable_database_returns_503_without_publication(self):
-        from main import create_app
+        from entrypoints.api import create_app
 
         # Port 1 is deliberately unavailable; no credentials appear in HTTP responses.
         publisher = AsyncMock()

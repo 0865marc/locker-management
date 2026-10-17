@@ -68,6 +68,14 @@ Reorganización aprobada sobre la implementación existente. Ejecutar 9.1 antes 
 - [x] 9.2 Actualizar la selección de fuentes Workers y documentación vigente de estructura/imports, conservando comandos y entradas de Compose, Docker, wheel y Wrangler. Comprobar preparación determinista/fresca, imports desde el árbol preparado, build de fuentes sin publicación y wheel instalado fuera del checkout; verificar que Workers incluye runtime/D1/Queues reubicados y excluye SQLModel/AMQP, sin añadir dependencias ni alterar evidencia histórica.
 - [x] 9.3 Ejecutar regresión de la reorganización: unidades, PostgreSQL/Alembic, smoke RabbitMQ, contratos D1/HTTP por el puente local y smoke Docker; Ruff y Pyright raíz/Cloudflare con cero errores/advertencias. Obtener revisión independiente de movimientos, imports y empaquetado, ejecutar validación OpenSpec estricta y registrar resultados actuales por nivel; las pruebas Python/WASM, Queues y Free ausentes conservan su estado pendiente, sin repetir descargas bloqueadas si no cambia la política de red.
 
+## 10. Agrupar las tres entradas de ejecución
+
+Organización aprobada posterior a la sección 9. Las rutas/comandos anteriores citados en tareas 1–9 son históricos y quedan sustituidos por el diseño actualizado; sus estados y evidencias se conservan. Ejecutar 10.1 y 10.2 antes de 10.3. Las verificaciones nativas/Free pendientes siguen abiertas.
+
+- [x] 10.1 Mover `main.py`, `worker.py` y `cloudflare_worker.py` a `entrypoints/api.py`, `entrypoints/rabbitmq_worker.py` y `entrypoints/cloudflare_worker.py`, dejando `composition.py` en raíz y `entrypoints/__init__.py` vacío. Actualizar imports/patches y comprobar unidades de composición/worker/contexto, import del paquete sin efectos laterales y ausencia de cambios de lógica o migraciones.
+- [x] 10.2 Ajustar Docker/Compose, setuptools (`entrypoints*` y solo `composition` en py-modules), scripts, documentación/AGENTS y ambos Pyright a las nuevas entradas y comandos. Preparar solo init/entrada Cloudflare y fuentes compartidas; en ambos manifiestos Wrangler usar main anidado y `base_dir=.production`. Verificar wheel fuera del checkout, imports/frescura del staging y que el inventario real del build de fuentes contiene todos los módulos Python seleccionados y excluye las entradas CPython, sin publicar ni añadir dependencias.
+- [x] 10.3 Ejecutar unidades y regresión de integración/imports afectados, smoke Docker de API y consumidor con los nuevos comandos y cierre correcto, Ruff y ambos Pyright con cero errores/advertencias y cobertura estricta de las entradas (Workers en Python 3.13). Obtener revisión independiente, validar OpenSpec estrictamente y registrar evidencia actual separada de la histórica; no repetir descargas bloqueadas sin cambios de red ni dar por probadas WASM/Queues/Free.
+
 ## Workflow follow-up
 
 - Presentar al usuario el resultado como planificación lista; no iniciar estas tareas durante el turno de propuesta.

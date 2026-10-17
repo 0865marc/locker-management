@@ -19,12 +19,10 @@
     "backend/domain",
     "backend/application",
     "backend/adapters",
-    "backend/main.py",
-    "backend/worker.py",
     "backend/composition.py",
-    "backend/cloudflare_worker.py",
     "cloudflare/runtime_spike",
-    "scripts/cloudflare"
+    "scripts/cloudflare",
+    "backend/entrypoints"
   ],
   "pythonVersion": "3.11",
   "venvPath": "backend",
@@ -47,7 +45,7 @@
       ]
     },
     {
-      "root": "backend/cloudflare_worker.py",
+      "root": "backend/entrypoints/cloudflare_worker.py",
       "pythonVersion": "3.13",
       "extraPaths": [
         "backend"

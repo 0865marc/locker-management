@@ -2,7 +2,8 @@
   "include": [
     "runtime_spike",
     "tests",
-    "../scripts/cloudflare"
+    "../scripts/cloudflare",
+    "../backend/entrypoints/cloudflare_worker.py"
   ],
   "typeCheckingMode": "strict",
   "pythonVersion": "3.13",
@@ -15,6 +16,13 @@
         "runtime_spike",
         "../backend",
         "../scripts/cloudflare"
+      ]
+    },
+    {
+      "root": "../backend/entrypoints/cloudflare_worker.py",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "../backend"
       ]
     },
     {

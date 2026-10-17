@@ -17,7 +17,8 @@ DIRECTORIES = (
 )
 FILES = (
     "composition.py",
-    "cloudflare_worker.py",
+    "entrypoints/__init__.py",
+    "entrypoints/cloudflare_worker.py",
     "adapters/__init__.py",
     "adapters/database/__init__.py",
     "adapters/queue/__init__.py",

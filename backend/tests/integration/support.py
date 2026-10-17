@@ -164,10 +164,10 @@ class PostgresTestCase(unittest.IsolatedAsyncioTestCase):
             return definitions, rows
 
     async def application(self):
-        from main import create_app
+        from entrypoints.api import create_app
 
         engine, sessions = self.database()
-        with patch("main.create_database", return_value=(engine, sessions)):
+        with patch("entrypoints.api.create_database", return_value=(engine, sessions)):
             app = create_app(str(self.url), publisher=AsyncMock())
         lifetime = AsyncExitStack()
         self.resources.push_async_callback(lifetime.aclose)
