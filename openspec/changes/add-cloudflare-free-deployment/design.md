@@ -113,12 +113,28 @@ Este conjunto es evidencia acotada, no un nuevo máximo de API ni garantía con 
 | --- | --- |
 | Composición | `backend/main.py`, `backend/composition.py`, `backend/cloudflare_worker.py`; `worker.py` solo si se comparte construcción de simuladores sin cambiar su lifecycle |
 | Distribución CPython | `backend/pyproject.toml` y `backend/Dockerfile` para incluir la composición en wheel/imagen; `backend/uv.lock` solo si se necesitan dependencias de tipado/verificación compatibles |
-| Adaptadores | `backend/adapters/database/d1/`, `backend/adapters/queue/cloudflare.py`, manejador HTTP de errores y tipos de error en `backend/application/` |
+| Adaptadores | `backend/adapters/database/sqlmodel/`, `backend/adapters/database/d1/`, `backend/adapters/queue/cloudflare.py`, `backend/adapters/runtime/cloudflare.py`, manejador HTTP de errores y tipos de error en `backend/application/` |
 | Distribución y migraciones | `cloudflare/pyproject.toml`, `cloudflare/uv.lock`, `cloudflare/wrangler.jsonc`, `cloudflare/migrations/`, `scripts/cloudflare/prepare.py` y comandos locales/aceptación |
 | Pruebas | nuevas unidades en `backend/tests/unit/`, harness nativo y puente local CPython/Miniflare exclusivo de tests en `cloudflare/tests/`, helpers de contratos compartibles; suites PostgreSQL/RabbitMQ conservadas |
 | Calidad y documentación | `.github/workflows/backend-ci.yml`, `pyrightconfig.json`, configuración Ruff si necesita incluir fuentes externas, `README.md`, `AGENTS.md`, `.gitignore`, documento reproducible de resultados en `cloudflare/` |
 
 El chequeo obligatorio `uv run --extra dev pyright --project .. --warnings` continúa desde `backend/` con cero errores y advertencias. Incluir entrada/adaptadores/composición nuevos en strict y harness/scripts en el alcance adecuado; mantener Python 3.11 del código compartido y añadir un entorno de análisis 3.13 únicamente para fuentes específicas Workers si el SDK lo exige. Resolver tipos del puente mediante Protocol/conversión o declaraciones precisas verificadas, sin Any generalizado, exclusiones nuevas de producción ni relajar reglas. Ruff cubre nuevas fuentes y las migraciones históricas Python conservan sus exclusiones actuales.
+
+### 11. Organización aprobada de adaptadores
+
+Refactorizar ubicación e imports sobre la implementación existente, sin cambiar contratos, SQL, concurrencia, ack ni ciclo de vida. Aplicar este mapa relativo a `backend/adapters/`:
+
+| Origen | Destino |
+| --- | --- |
+| `database/sqlmodel_{deliveries,returns,lockers,quotations}.py` | `database/sqlmodel/{deliveries,returns,lockers,quotations}.py` |
+| `database/connection.py` | `database/sqlmodel/connection.py` |
+| `cloudflare/d1.py` | `database/d1/native.py` |
+| `cloudflare/queue.py` (`NativeMessage` y helpers) | Integrar en `queue/cloudflare.py` |
+| `cloudflare/context.py` | `runtime/cloudflare.py` |
+
+El contexto Workers sigue reuniendo DB/QUOTATIONS y middleware ASGI, separado de persistencia y transporte de cola. Los adaptadores de cola conservan publicación/consumo; `backend/main.py`, `worker.py`, `cloudflare_worker.py` y `composition.py` conservan composición y arranque en sus rutas actuales, sin añadir otro bootstrap. Dominio/aplicación siguen sin importar infraestructura.
+
+Actualizar consumidores, imports de registro de modelos en `database/migrations/env.py`, pruebas/patches, documentación vigente y la lista de preparación Workers. Crear los paquetes necesarios y retirar los módulos sustituidos; los imports de pruebas/runtime deben apuntar a las ubicaciones nuevas. Las revisiones Alembic 0001–0005 y migraciones D1 permanecen byte a byte y en las mismas rutas; no cambiar `script_location`. Verificar wheel instalado fuera del checkout, imagen Docker y árbol Workers fresco, manteniendo sus entradas, selección de fuentes y ausencia de dependencias CPython en Workers. La reorganización no requiere nuevas dependencias ni cambios de comportamiento; no reescribe evidencia histórica ni completa comprobaciones Python/WASM, Queues o Free todavía pendientes.
 
 ## Risks / Trade-offs
 

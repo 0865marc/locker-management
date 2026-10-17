@@ -5,8 +5,8 @@ import signal
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 
-from adapters.database.connection import create_database, get_database_url
-from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
+from adapters.database.sqlmodel.connection import create_database, get_database_url
+from adapters.database.sqlmodel.quotations import SqlModelQuotationRepository
 from adapters.providers.simulated_shipping import (
     SimulatedEconomyProvider,
     SimulatedExpressProvider,

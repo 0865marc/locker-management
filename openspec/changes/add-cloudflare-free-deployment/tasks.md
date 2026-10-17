@@ -60,6 +60,14 @@ Las casillas cerradas acreditan exclusivamente sus criterios locales verificados
 - [x] 8.2 Obtener revisión independiente `sdd_reviewer` de contratos, fronteras hexagonales, CAS y todos sus writers, batch/rollback, cola, empaquetado y evidencias; resolver hallazgos y repetir solo comprobaciones afectadas. Ejecutar `openspec validate add-cloudflare-free-deployment --strict` y separar validación documental de pruebas funcionales.
 - [ ] 8.3 En el destino Free autorizado, aplicar migraciones, desplegar el paquete revisado y ejecutar smoke/campaña completa: CPU por operación en frío/caliente, memoria/arranque, consultas/filas D1, operaciones Queues, almacenamiento y errores. Registrar resultado verificable dentro de las cuotas actuales, incluido el máximo de 1000 celdas; dejar pendiente si no existe acceso y bloquear aceptación si falla un caso obligatorio, sin reducir contratos ni activar pago.
 
+## 9. Reorganizar adaptadores por responsabilidad
+
+Reorganización aprobada sobre la implementación existente. Ejecutar 9.1 antes de 9.2 y verificar la integración en 9.3; conservar el estado y los criterios de las tareas 1–8, incluidos los bloqueos nativos/Free.
+
+- [x] 9.1 Aplicar el mapa del diseño: agrupar repositorios/conexión SQLModel, mover la envoltura D1 a `database/d1/native.py`, integrar `NativeMessage` en `queue/cloudflare.py` y trasladar contexto a `runtime/cloudflare.py`. Actualizar imports de producción, registro Alembic y tests/patches; verificar imports y unidades afectadas, ausencia de referencias ejecutables a módulos retirados y que revisiones Alembic/migraciones D1 conservan sus bytes y rutas. Mantener entradas/composición y comportamiento actuales.
+- [x] 9.2 Actualizar la selección de fuentes Workers y documentación vigente de estructura/imports, conservando comandos y entradas de Compose, Docker, wheel y Wrangler. Comprobar preparación determinista/fresca, imports desde el árbol preparado, build de fuentes sin publicación y wheel instalado fuera del checkout; verificar que Workers incluye runtime/D1/Queues reubicados y excluye SQLModel/AMQP, sin añadir dependencias ni alterar evidencia histórica.
+- [x] 9.3 Ejecutar regresión de la reorganización: unidades, PostgreSQL/Alembic, smoke RabbitMQ, contratos D1/HTTP por el puente local y smoke Docker; Ruff y Pyright raíz/Cloudflare con cero errores/advertencias. Obtener revisión independiente de movimientos, imports y empaquetado, ejecutar validación OpenSpec estricta y registrar resultados actuales por nivel; las pruebas Python/WASM, Queues y Free ausentes conservan su estado pendiente, sin repetir descargas bloqueadas si no cambia la política de red.
+
 ## Workflow follow-up
 
 - Presentar al usuario el resultado como planificación lista; no iniciar estas tareas durante el turno de propuesta.

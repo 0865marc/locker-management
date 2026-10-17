@@ -7,17 +7,17 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 
-from adapters.database.connection import get_database_url
+from adapters.database.sqlmodel.connection import get_database_url
 
 # Importar los modelos registra las tablas que compara Alembic.
-from adapters.database.sqlmodel_deliveries import DeliveryRow
-from adapters.database.sqlmodel_lockers import AssignmentRow, CompartmentRow, LockerRow
-from adapters.database.sqlmodel_quotations import (
+from adapters.database.sqlmodel.deliveries import DeliveryRow
+from adapters.database.sqlmodel.lockers import AssignmentRow, CompartmentRow, LockerRow
+from adapters.database.sqlmodel.quotations import (
     OfferRow,
     ProviderResultRow,
     QuotationRow,
 )
-from adapters.database.sqlmodel_returns import ReturnRow
+from adapters.database.sqlmodel.returns import ReturnRow
 
 REGISTERED_TABLES = (
     DeliveryRow.__table__,

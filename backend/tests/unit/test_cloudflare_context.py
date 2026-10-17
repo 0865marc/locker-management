@@ -11,17 +11,16 @@ from unittest.mock import AsyncMock
 
 from starlette.types import Message, Receive, Scope, Send
 
-from adapters.cloudflare.context import (
+from adapters.database.d1.bindings import D1BindingError, D1PreparedStatement, D1Value
+from adapters.database.d1.native import NativeDatabase
+from adapters.queue.cloudflare import NativeMessage, handle_message
+from adapters.runtime.cloudflare import (
     EventBindings,
     event_scope,
     get_database,
     get_environment,
     get_queue,
 )
-from adapters.cloudflare.d1 import NativeDatabase
-from adapters.cloudflare.queue import NativeMessage
-from adapters.database.d1.bindings import D1BindingError, D1PreparedStatement, D1Value
-from adapters.queue.cloudflare import handle_message
 from application.persistence import PersistenceError
 from application.quotations.use_cases import QuotationProcessor
 
@@ -240,7 +239,7 @@ pyodide = types.ModuleType('pyodide')
 ffi = types.ModuleType('pyodide.ffi')
 ffi.JsException = type('JsException', (Exception,), {})
 sys.modules.update({'workers':workers,'pyodide':pyodide,'pyodide.ffi':ffi})
-import adapters.cloudflare.context as context
+import adapters.runtime.cloudflare as context
 with patch.object(context,'get_database', side_effect=AssertionError('import DB access')), patch.object(context,'get_queue', side_effect=AssertionError('import queue access')):
     import cloudflare_worker
     application = cloudflare_worker.app

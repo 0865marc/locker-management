@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import Field, SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from adapters.database.sqlmodel_lockers import (
+from adapters.database.sqlmodel.lockers import (
     AssignmentRow,
     CompartmentRow,
     choose_cell,

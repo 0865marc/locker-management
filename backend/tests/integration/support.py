@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from domain.deliveries import Delivery
 from domain.lockers import Dimensions
 from domain.returns import Return

@@ -3,11 +3,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from adapters.database.connection import create_database, get_database_url
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
-from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.connection import create_database, get_database_url
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.lockers import SqlModelLockerRepository
+from adapters.database.sqlmodel.quotations import SqlModelQuotationRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
 from application.quotations.ports import QuotationPublisher
 from composition import create_application

@@ -5,17 +5,9 @@ from typing import cast
 from pyodide.ffi import JsException
 from workers import Request, WorkerEntrypoint, asgi
 
-from adapters.cloudflare.context import (
-    EventBindings,
-    WorkerEnvironment,
-    event_scope,
-    get_database,
-    get_queue,
-)
-from adapters.cloudflare.d1 import NativeDatabase
-from adapters.cloudflare.queue import NativeMessage
 from adapters.database.d1.deliveries import D1DeliveryRepository
 from adapters.database.d1.lockers import D1LockerRepository
+from adapters.database.d1.native import NativeDatabase
 from adapters.database.d1.quotations import D1QuotationRepository
 from adapters.database.d1.returns import D1ReturnRepository
 from adapters.providers.simulated_shipping import (
@@ -25,8 +17,16 @@ from adapters.providers.simulated_shipping import (
 )
 from adapters.queue.cloudflare import (
     CloudflareQuotationPublisher,
+    NativeMessage,
     QueueBatch,
     handle_message,
+)
+from adapters.runtime.cloudflare import (
+    EventBindings,
+    WorkerEnvironment,
+    event_scope,
+    get_database,
+    get_queue,
 )
 from application.quotations.comparison import ShippingQuoteComparator
 from application.quotations.use_cases import QuotationProcessor

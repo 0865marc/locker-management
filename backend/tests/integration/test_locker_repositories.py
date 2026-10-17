@@ -9,13 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlmodel import select
 
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_lockers import (
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.lockers import (
     AssignmentRow,
     CompartmentRow,
     SqlModelLockerRepository,
 )
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from domain.deliveries import Delivery
 from domain.lockers import (
     CapacityConflictError,

@@ -8,6 +8,7 @@ La demo necesita un despliegue completo en servicios gratuitos de Cloudflare que
 
 - Añadir un perfil Cloudflare con Python Workers/FastAPI, D1 y Queues, sobre `workers.dev`, manteniendo el perfil PostgreSQL/RabbitMQ y sus comandos y contratos actuales. La selección ocurre al componer el despliegue; no hay sincronización ni doble escritura.
 - Incorporar cuatro repositorios D1, publicador/consumidor Queues y entrada Workers; reutilizar dominio, casos de uso y rutas HTTP. Aislar los imports y dependencias CPython del paquete Workers.
+- Organizar los adaptadores por responsabilidad: agrupar SQLModel y su conexión, integrar las envolturas nativas con D1/Queues y ubicar el contexto compartido de Workers en runtime. Conservar las entradas de composición, los contratos y las migraciones existentes.
 - Conservar recepción/ocupación y salida/liberación atómicas, protección de celdas ocupadas, selección exacta de capacidad, lectura coherente y publicación/ejecución de cotizaciones. Diferenciar contención o fallo D1 con `503`, sin convertirlo en `FULL` ni filtrar detalles internos.
 - Añadir historial SQL propio para D1 y procedimientos de preparación, despliegue, comprobación y reversión compatibles con datos. Proponer la excepción explícita de D1 a la regla de Alembic y la entrada Workers adicional en `AGENTS.md`; mantener intactas las revisiones PostgreSQL existentes.
 - Añadir pruebas sobre bindings D1/Queues y runtime Workers real, regresión PostgreSQL/RabbitMQ, CI local sin credenciales y una aceptación remota posterior en una cuenta realmente Free. Como evidencia complementaria, probar los adaptadores Python desde CPython contra D1 local de Miniflare mediante un puente exclusivo de tests.
@@ -35,6 +36,8 @@ Las capacidades `asynchronous-shipping-quotations` y `backend-ci` ya están sinc
 ## Impact
 
 La implementación afectará `backend/main.py`, composición HTTP compartida, una entrada `backend/cloudflare_worker.py`, adaptadores D1/Queues nuevos, anotaciones/errores de infraestructura y pruebas; añadirá `cloudflare/` con configuración, resolución de dependencias, migraciones y pruebas del runtime, más herramientas de preparación/verificación en `scripts/cloudflare/`. Actualizará `backend/pyproject.toml` y `backend/Dockerfile` para empaquetar la composición, el CI, `README.md`, `AGENTS.md`, `.gitignore` y el alcance estricto de tipos para los archivos nuevos. Los nombres concretos y responsabilidades se detallan en `design.md`.
+
+La reorganización aprobada añade `backend/adapters/database/sqlmodel/`, `database/d1/native.py` y `runtime/cloudflare.py`, integra `NativeMessage` en `queue/cloudflare.py` y actualiza sus imports, pruebas, empaquetado y documentación. `main.py`, `worker.py`, `cloudflare_worker.py` y `composition.py` mantienen sus rutas; las migraciones conservan ubicación y contenido, salvo los imports de `migrations/env.py`.
 
 No se modifica el contrato de éxito ni los límites públicos existentes, incluido crear hasta 1000 celdas por petición. Las listas sin paginación y el crecimiento acumulado impiden prometer capacidad ilimitada dentro de Free; la aceptación publicará un conjunto de datos y carga reproducible, incluirá esos extremos y fallará explícitamente si el contrato no cabe.
 

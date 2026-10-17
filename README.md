@@ -378,6 +378,8 @@ locker-management-demo/
 ├── backend/
 │   ├── main.py
 │   ├── worker.py
+│   ├── cloudflare_worker.py
+│   ├── composition.py
 │   ├── domain/
 │   │   ├── deliveries.py
 │   │   ├── returns.py
@@ -416,15 +418,28 @@ locker-management-demo/
 │   │   │   ├── routes.py
 │   │   │   └── request_validation.py
 │   │   ├── queue/
-│   │   │   └── rabbitmq.py
+│   │   │   ├── rabbitmq.py
+│   │   │   └── cloudflare.py
+│   │   ├── runtime/
+│   │   │   └── cloudflare.py
 │   │   ├── providers/
 │   │   │   └── simulated_shipping.py
 │   │   └── database/
-│   │       ├── connection.py
-│   │       ├── sqlmodel_deliveries.py
-│   │       ├── sqlmodel_returns.py
-│   │       ├── sqlmodel_lockers.py
-│   │       ├── sqlmodel_quotations.py
+│   │       ├── sqlmodel/
+│   │       │   ├── connection.py
+│   │       │   ├── deliveries.py
+│   │       │   ├── returns.py
+│   │       │   ├── lockers.py
+│   │       │   └── quotations.py
+│   │       ├── d1/
+│   │       │   ├── bindings.py
+│   │       │   ├── core.py
+│   │       │   ├── native.py
+│   │       │   ├── custody.py
+│   │       │   ├── deliveries.py
+│   │       │   ├── returns.py
+│   │       │   ├── lockers.py
+│   │       │   └── quotations.py
 │   │       └── migrations/
 │   │           ├── env.py
 │   │           ├── script.py.mako
@@ -455,6 +470,24 @@ locker-management-demo/
 │   ├── Dockerfile
 │   ├── .dockerignore
 │   └── pyproject.toml
+├── cloudflare/
+│   ├── migrations/
+│   │   └── 0001_initial.sql
+│   ├── runtime_spike/
+│   ├── tests/
+│   ├── typings/
+│   ├── pyproject.toml
+│   ├── wrangler.jsonc
+│   ├── wrangler.production.jsonc
+│   ├── wrangler.spike.jsonc
+│   ├── FEASIBILITY.md
+│   └── IMPLEMENTATION.md
+├── scripts/
+│   └── cloudflare/
+│       ├── prepare.py
+│       ├── check.sh
+│       ├── check_schema.py
+│       └── acceptance.py
 ├── compose.yaml
 └── README.md
 ```
@@ -466,10 +499,15 @@ consume en `ports.py`. Las entidades y reglas permanecen en dominio, incluidas
 las reglas compartidas de asignación y capacidad de Locker. Cada flujo conserva
 sus validadores y errores de dominio; los servicios de entregas y devoluciones
 declaran el error de registro inexistente junto a sus casos de uso. HTTP agrupa
-rutas y esquemas en paquetes por área y conserva `request_validation.py` para los cuerpos de las acciones. La conexión,
-los repositorios y las migraciones se agrupan en `backend/adapters/database/`; las rutas
-y los modelos HTTP, en `backend/adapters/http/`. Ambos adaptadores son externos al núcleo,
-pero se ejecutan en el mismo proceso: no son microservicios.
+rutas y esquemas en paquetes por área y conserva `request_validation.py` para los
+cuerpos de las acciones. La conexión y los repositorios PostgreSQL se agrupan en
+`backend/adapters/database/sqlmodel/`; los repositorios y la envoltura nativa D1,
+en `backend/adapters/database/d1/`. Alembic conserva su historial en
+`backend/adapters/database/migrations/`, y D1 usa `cloudflare/migrations/`.
+Las rutas y los modelos HTTP viven en `backend/adapters/http/`; las colas, en
+`backend/adapters/queue/`, y el contexto por evento de Workers, en
+`backend/adapters/runtime/cloudflare.py`. Los adaptadores son externos al núcleo
+y se componen dentro de cada perfil: no son microservicios.
 
 Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en este orden:
 
@@ -492,15 +530,22 @@ Las rutas siguientes son relativas a la raíz del repositorio. Lee el código en
 | `backend/adapters/http/lockers/routes.py` y `schemas.py` | Contratos HTTP de lockers, bases de recepción/asignación y traducción de errores de capacidad. |
 | `backend/adapters/http/routes.py` | Agrega los cuatro routers mediante `create_router`, recibiendo servicios ya construidos. |
 | `backend/adapters/http/request_validation.py` | Validación compartida de cuerpos vacíos en las acciones de salida. |
-| `backend/adapters/database/sqlmodel_deliveries.py` y `sqlmodel_returns.py` | Tablas, filas, conversiones y repositorios SQLModel de cada flujo; conservan sus consultas y transacciones. |
-| `backend/adapters/database/sqlmodel_lockers.py` | Persistencia de configuración y asignaciones, elección de celda, bloqueo/liberación y normalización UTC de persistencia. |
-| `backend/adapters/database/connection.py` | Crea el motor y la fábrica de sesiones compartidos. |
+| `backend/adapters/database/sqlmodel/deliveries.py` y `returns.py` | Tablas, filas, conversiones y repositorios SQLModel de cada flujo; conservan sus consultas y transacciones. |
+| `backend/adapters/database/sqlmodel/lockers.py` | Persistencia de configuración y asignaciones, elección de celda, bloqueo/liberación y normalización UTC de persistencia. |
+| `backend/adapters/database/sqlmodel/connection.py` | Crea el motor y la fábrica de sesiones compartidos. |
+| `backend/adapters/database/sqlmodel/quotations.py` | Estado y resultados de cotizaciones en PostgreSQL. |
+| `backend/adapters/database/d1/` | Repositorios D1, conversión de filas, SQL y frontera tipada; `native.py` envuelve el binding del SDK. |
+| `backend/adapters/queue/cloudflare.py` | Publicación y consumo Queues, incluida la envoltura `NativeMessage`. |
+| `backend/adapters/runtime/cloudflare.py` | Contexto de bindings por evento y middleware ASGI de Workers. |
 | `backend/adapters/providers/simulated_shipping.py` | Tres adaptadores de transporte simulados, sin servicios externos. |
-| `backend/main.py` | Punto de composición: conecta repositorios y servicios, proporciona `utc_now` e incluye el router agregado; gestiona motor y ciclo de vida. |
+| `backend/composition.py` | Composición compartida de servicios, reloj, routers y manejadores HTTP a partir de puertos. |
+| `backend/main.py` y `backend/worker.py` | Entradas PostgreSQL/RabbitMQ para API y consumidor; gestionan sus recursos y ciclo de vida. |
+| `backend/cloudflare_worker.py` | Entrada HTTP y consumidor Workers con D1 y Queues. |
 | `backend/adapters/database/migrations/env.py` | Conecta Alembic con la base de datos y con `SQLModel.metadata`. |
 | `backend/adapters/database/migrations/versions/` | Historial de cambios del esquema, independiente del arranque de la API. |
 
-El recorrido de una petición es **HTTP → caso de uso → repositorio → PostgreSQL**.
+El recorrido de una petición es **HTTP → caso de uso → repositorio → PostgreSQL o D1**,
+según el perfil.
 Los métodos públicos de `DeliveryService` y `ReturnService` son los puertos de
 entrada: expresan las operaciones disponibles sin una interfaz adicional.
 El adaptador HTTP depende directamente de estos servicios y de las entidades
@@ -939,7 +984,7 @@ devuelve 404, uno mal formado 422, y persistencia no disponible 503.
 `application/quotations/models.py`, `ports.py`, `errors.py`, `comparison.py` y
 `use_cases.py` separan el estado persistido y los resultados, los contratos de
 salida, los errores compartidos, la comparación y los casos de uso. Los adaptadores
-son `adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
+son `adapters/database/sqlmodel/quotations.py`, `adapters/http/quotations/` y
 `adapters/queue/rabbitmq.py`; `main.py` compone API y `worker.py` el proceso de
 trabajo. API comparte servicios por instancia y cierra motor y broker incluso
 si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
@@ -1052,8 +1097,8 @@ los casos de uso y los routers existentes. No hay selección por cabeceras HTTP,
 sincronización ni traslado de datos entre los dos almacenamientos.
 
 La aplicación Workers se construye una sola vez al importar. Sus proveedores
-resuelven DB/QUOTATIONS desde el contexto del evento; middleware HTTP y handler
-de cola restauran ese contexto incluso ante errores. Importar no accede a bindings
+resuelven DB/QUOTATIONS desde `adapters/runtime/cloudflare.py`; middleware HTTP y
+handler de cola restauran ese contexto incluso ante errores. Importar no accede a bindings
 ni migra. Los fallos manejables de persistencia devuelven 503 sin detalles internos.
 Los simuladores se construyen sin argumentos y mantienen sus perfiles privados.
 

@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
+from adapters.database.sqlmodel.quotations import SqlModelQuotationRepository
 from application.quotations.errors import QuotationStorageError
 from application.quotations.models import (
     ProcessErrorCode,

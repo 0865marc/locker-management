@@ -13,9 +13,11 @@ anterior permanece en `runtime_spike/` y su evidencia histórica en
 | Composición de servicios y HTTP compartida | `backend/composition.py` |
 | Entrada PostgreSQL/RabbitMQ | `backend/main.py`, `backend/worker.py` |
 | Entrada HTTP y consumidor Workers | `backend/cloudflare_worker.py` |
+| Conexión y repositorios PostgreSQL/SQLModel | `backend/adapters/database/sqlmodel/` |
 | Repositorios D1 de lockers, entregas, devoluciones y cotizaciones | `backend/adapters/database/d1/` |
-| Publicación y consumo Queues | `backend/adapters/queue/cloudflare.py` |
-| Contexto por evento y frontera del SDK | `backend/adapters/cloudflare/` |
+| Frontera nativa del SDK D1 | `backend/adapters/database/d1/native.py` |
+| Publicación y consumo Queues, incluida `NativeMessage` | `backend/adapters/queue/cloudflare.py` |
+| Contexto por evento y middleware ASGI Workers | `backend/adapters/runtime/cloudflare.py` |
 | Esquema D1 inicial | `cloudflare/migrations/0001_initial.sql` |
 | Preparación de fuentes del Worker | `scripts/cloudflare/prepare.py` |
 
@@ -23,6 +25,17 @@ Se selecciona el perfil mediante su entrypoint. Ambos reutilizan dominio,
 casos de uso, simuladores y routers. Cambiar de perfil no mueve ni sincroniza
 datos. La distribución Workers excluye PostgreSQL, SQLModel, Alembic y AMQP;
 `cloudflare/` contiene herramientas, configuración, migraciones y pruebas.
+
+La conexión SQLModel y los repositorios de entregas, devoluciones, lockers y
+cotizaciones se importan desde `adapters.database.sqlmodel`. El binding D1 se
+envuelve en `adapters.database.d1.native`; `NativeMessage` vive junto al transporte
+de cola en `adapters.queue.cloudflare`, y el contexto compartido de DB/QUOTATIONS
+en `adapters.runtime.cloudflare`. Las cuatro fuentes de entrada/composición
+conservan sus rutas en `backend/`. Alembic mantiene sus revisiones en
+`backend/adapters/database/migrations/versions/`, con el registro de modelos en
+`migrations/env.py`; el historial SQL D1 conserva su ubicación separada. La
+preparación Workers selecciona runtime, D1 y Queues desde esas rutas y excluye
+el paquete SQLModel y AMQP.
 
 Todas las escrituras de capacidad sobre lockers existentes usan revisión y un
 token nuevo por intento. Lectura coherente, selección exacta con enteros Python
@@ -118,3 +131,28 @@ sin resolver los paquetes WASM. Ese tamaño no mide el snapshot completo, la CPU
 remota ni demuestra que el contrato máximo quepa en Free. El cambio OpenSpec
 permanece activo hasta completar sus verificaciones; no se ha sincronizado ni
 archivado como terminado.
+
+## Verificación de la reorganización de adaptadores
+
+La reorganización por responsabilidad se verificó el 17 de octubre de 2026,
+sin cambiar comportamiento, dependencias ni los bytes/rutas de las revisiones
+Alembic y migraciones D1. La revisión independiente no encontró hallazgos
+materiales en movimientos, imports o empaquetado.
+
+| Comprobación repetida sobre las rutas nuevas | Resultado |
+| --- | --- |
+| Unidades / PostgreSQL-Alembic / RabbitMQ | 99 / 50 / 1 pruebas correctas |
+| `scripts/ci/smoke.sh` | Build, migraciones y `GET /lockers` → 200, `[]`; recursos eliminados |
+| `scripts/cloudflare/check.sh --d1-only` | 33 pruebas correctas, incluida la campaña de 421 peticiones HTTP; máximo de 8 sentencias y 13 parámetros |
+| Preparación Workers | 56 fuentes; determinista, staging obsoleto rechazado e imports comprobados; SQLModel/AMQP excluidos |
+| Build Workers de fuentes, sin publicación ni resolución WASM | 127.88 KiB; 23.60 KiB gzip |
+| Wheel instalado fuera del checkout | Imports y OpenAPI correctos; módulos retirados ausentes |
+| Ruff lint y formato | Correctos en 122 archivos |
+| `uv run --extra dev pyright --project .. --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| `uv run --extra dev pyright --project ../cloudflare --warnings`, desde `backend/` | Cero errores y cero advertencias |
+
+El smoke Docker reutilizó el ajuste temporal de CA/schedulers descrito arriba.
+Los metadatos D1 locales exitosos de esta campaña sumaron 425494 filas leídas,
+7910 escritas y un máximo de `size_after` de 626688 bytes; excluyen fallos y no
+miden consumo remoto. Estas pruebas de regresión no sustituyen las verificaciones
+nativas de Python Workers/Queues ni la aceptación Free pendientes.

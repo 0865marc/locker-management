@@ -1,7 +1,7 @@
 """Queues publication and synchronous acknowledgement before application work."""
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import Protocol, TypeGuard
+from typing import Protocol, TypeGuard, cast
 from uuid import UUID
 
 from application.quotations.errors import PublicationError
@@ -53,3 +53,28 @@ async def handle_message(message: QueueMessage, processor: QuotationProcessor) -
     except ValueError:
         return
     await processor.process(quotation_id)
+
+
+class Convertible(Protocol):
+    def to_py(self) -> object: ...
+
+
+def python_mapping(value: object) -> TypeGuard[dict[object, object]]:
+    return isinstance(value, dict)
+
+
+class NativeMessage:
+    def __init__(self, message: QueueMessage) -> None:
+        self.message = message
+
+    def ack(self) -> None:
+        self.message.ack()
+
+    @property
+    def body(self) -> object:
+        value = self.message.body
+        if python_mapping(value):
+            return value
+        if hasattr(value, "to_py"):
+            return cast(Convertible, value).to_py()
+        return value

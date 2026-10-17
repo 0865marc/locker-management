@@ -12,7 +12,7 @@ DIRECTORIES = (
     "domain",
     "application",
     "adapters/http",
-    "adapters/cloudflare",
+    "adapters/runtime",
     "adapters/database/d1",
 )
 FILES = (
