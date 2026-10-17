@@ -1,0 +1,14 @@
+ERROR    Error running command: uv pip compile
+         /workspace/locker-management/cloudflare/pyproject.toml
+         /tmp/tmpzclsl3r1.txt --python cpython-3.13.2-emscripten-wasm32-musl
+         --extra-index-url https://index.pyodide.org/0.28.3 --index-strategy
+         unsafe-best-match --no-header -o
+         /workspace/locker-management/cloudflare/pylock.toml --no-build
+         Exit code: 2
+         Output:
+         error: Request failed after 3 retries in 5.9s
+           cause: Failed to fetch: https://index.pyodide.org/0.28.3/pydantic/
+           cause: error sending request for url
+         (https://index.pyodide.org/0.28.3/pydantic/)
+           cause: client error (Connect)
+           cause: tunnel error: unsuccessful

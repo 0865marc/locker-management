@@ -1,0 +1,21 @@
+{
+  "include": [
+    "runtime_spike",
+    "tests",
+    "../scripts/cloudflare/prepare_spike.py"
+  ],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.13",
+  "venvPath": ".",
+  "venv": ".venv",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "runtime_spike",
+        "../backend"
+      ]
+    }
+  ],
+  "stubPath": "typings"
+}

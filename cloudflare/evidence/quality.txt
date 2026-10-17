@@ -1,0 +1,34 @@
+2026-10-17 final source checks (native runtime still blocked):
+
+From backend:
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --extra dev pyright --project .. --warnings
+0 errors, 0 warnings, 0 informations
+
+From repository root:
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev pyright --project cloudflare --warnings
+0 errors, 0 warnings, 0 informations
+
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare
+All checks passed!
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff format --check cloudflare/runtime_spike cloudflare/tests scripts/cloudflare
+9 files already formatted
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff check cloudflare/typings
+All checks passed!
+UV_CACHE_DIR=/tmp/locker-uv-cache uv run --project backend --extra dev ruff format --check cloudflare/typings
+2 files already formatted
+
+python scripts/cloudflare/prepare_spike.py
+Prepared 35 Python sources; two successive preparations produced identical
+relative paths and SHA-256 contents for all 36 files, including manifest.json.
+
+XDG_CONFIG_HOME=/workspace/locker-management/cloudflare/.wrangler/config XDG_CACHE_HOME=/workspace/locker-management/cloudflare/.wrangler/cache WRANGLER_SEND_METRICS=false node node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir .wrangler/build
+(exit 0 from cloudflare/; final source-only build: 81.10 KiB / gzip 15.63 KiB;
+not a build containing Pyodide dependency wheels, not a deploy.)
+
+PYTHONPATH=cloudflare/runtime_spike UV_CACHE_DIR=/workspace/.cache/uv uv run --project cloudflare --locked python -m unittest discover -s cloudflare/tests -p test_event_context.py -v
+1 test passed (CPython 3.13.5); see context-unit.log.
+
+Manual mutation: a disposable copy of event_context.py had only
+current_environment.reset(token) replaced with pass. The same unit failed with
+AssertionError at the same-task restoration check. Original sources were never
+mutated. See context-mutation.log. This is not native runtime evidence.

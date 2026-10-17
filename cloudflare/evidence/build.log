@@ -1,0 +1,88 @@
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mProxy environment variables detected. We'll use your proxy for fetch requests.[0m
+
+
+
+ ⛅️ wrangler 4.151.1
+────────────────────
+Attaching additional modules:
+┌──────────────────────────────────────┬────────┬───────────┐
+│ Name                                 │ Type   │ Size      │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/__init__.py                 │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/__init__.py            │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/deliveries/__init__.py │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/deliveries/routes.py   │ python │ 2.92 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/deliveries/schemas.py  │ python │ 1.43 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/lockers/__init__.py    │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/lockers/routes.py      │ python │ 7.85 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/lockers/schemas.py     │ python │ 5.91 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/quotations/__init__.py │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/quotations/routes.py   │ python │ 1.60 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/quotations/schemas.py  │ python │ 2.29 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/request_validation.py  │ python │ 0.64 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/returns/__init__.py    │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/returns/routes.py      │ python │ 2.15 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/returns/schemas.py     │ python │ 0.60 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ adapters/http/routes.py              │ python │ 1.01 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/__init__.py              │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/deliveries.py            │ python │ 2.50 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/lockers.py               │ python │ 3.38 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/quotation_models.py      │ python │ 1.17 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/quotation_ports.py       │ python │ 0.88 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/quotations.py            │ python │ 2.76 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/returns.py               │ python │ 1.80 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ application/shipping_quotes.py       │ python │ 5.95 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ bindings.py                          │ python │ 1.09 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ domain/__init__.py                   │ python │ 0.00 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ domain/deliveries.py                 │ python │ 4.43 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ domain/lockers.py                    │ python │ 8.62 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ domain/ports.py                      │ python │ 2.82 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ domain/returns.py                    │ python │ 3.44 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ domain/shipping_quotes.py            │ python │ 3.47 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ event_context.py                     │ python │ 2.90 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ import_clock.py                      │ python │ 0.14 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ worker.py                            │ python │ 8.91 KiB  │
+├──────────────────────────────────────┼────────┼───────────┤
+│ Total (34 modules)                   │        │ 80.66 KiB │
+└──────────────────────────────────────┴────────┴───────────┘
+Total Upload: 81.10 KiB / gzip: 15.63 KiB
+Your Worker has access to the following bindings:
+Binding                              Resource
+env.QUOTATIONS (runtime-spike)       Queue
+env.DB (runtime-spike)               D1 Database
+env.LABEL ("native-local")           Environment Variable
+
+--dry-run: exiting now.

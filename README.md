@@ -951,3 +951,28 @@ Pyright incluye estrictamente `worker.py`, migración 0005 y el entorno Alembic,
 con las mismas reglas y exclusiones históricas. Las pruebas cubren ack antes de
 proveedores, publicación única, batch atómico, estados/errores, no requeue tras
 fallos de proveedor, simulación controlada y guardas de migración.
+
+## Experimento Cloudflare pendiente de viabilidad
+
+`cloudflare/` contiene la prueba inicial de Python Workers/D1/Queues. Aún no es
+un despliegue completo del backend. El runtime nativo y las mediciones de
+1000/2000 celdas están pendientes: la resolución oficial de wheels Pyodide está
+bloqueada por la política de red de este entorno. La instalación CPython y el
+build de fuentes por sí solos no demuestran compatibilidad ni gratuidad.
+
+Con Python >=3.13, uv, Node y npm, desde la raíz:
+
+```bash
+uv sync --project cloudflare --locked
+cd cloudflare
+uv run --locked python tests/run_spike.py
+```
+
+El harness prepara fuentes actuales, instala herramientas bloqueadas y utiliza
+exclusivamente Workers/D1/Queues locales con estado temporal. No publica ni crea
+recursos remotos y falla si no puede resolver dependencias o iniciar el runtime.
+Consultar [el estado y los comandos exactos del experimento](cloudflare/FEASIBILITY.md)
+para las versiones provisionales, el bloqueo, las pruebas preparadas y sus
+límites. Los comandos PostgreSQL/RabbitMQ documentados arriba siguen siendo los
+del perfil operativo existente. La aceptación en una cuenta Free requiere una
+campaña remota posterior autorizada y medidas de CPU/cuotas reales.

@@ -31,3 +31,20 @@ coverage.xml
 *.log
 .DS_Store
 Thumbs.db
+
+# Generated Cloudflare runtime and source staging
+/cloudflare/node_modules/
+/cloudflare/.venv-workers/
+/cloudflare/.wrangler/
+/cloudflare/python_modules/
+/cloudflare/.prepared/
+/cloudflare/.pywrangler/
+# Reviewed local feasibility evidence (no credentials)
+!/cloudflare/evidence/build.log
+!/cloudflare/evidence/harness.log
+!/cloudflare/evidence/sync.log
+!/cloudflare/evidence/context-mutation.log
+!/cloudflare/evidence/context-unit.log
+!/cloudflare/evidence/install.log
+!/cloudflare/evidence/npm-install.log
+!/cloudflare/evidence/prepare.log
