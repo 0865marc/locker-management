@@ -1084,10 +1084,11 @@ wheels Pyodide está
 bloqueada por la política de red de este entorno. La instalación CPython y el
 build de fuentes por sí solos no demuestran compatibilidad ni gratuidad.
 
-Con Python >=3.13, uv, Node y npm, desde la raíz:
+Con Python `>=3.13,<3.14`, uv, Node y npm, desde la raíz:
 
 ```bash
 uv sync --project cloudflare --locked
+npm ci --ignore-scripts --prefix cloudflare
 cd cloudflare
 uv run --locked python tests/run_spike.py
 ```
@@ -1130,12 +1131,45 @@ prueba no son las migraciones de negocio. El código de producción está sujeto
 las pruebas y revisión del cambio en curso: la ejecución WASM y la aceptación
 Free continúan pendientes mientras la política de red bloquee Pyodide.
 
+### Compatibilidad de Pydantic y diagnóstico de instalación
+
+La distribución Cloudflare requiere Python `>=3.13,<3.14`, FastAPI 0.135.3 y
+Pydantic 2.10.6 con pydantic-core 2.27.2. El
+[manifiesto oficial de Pyodide 0.28.3](https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pyodide-lock.json)
+publica esas versiones de Pydantic/core para CPython 3.13.2 y ABI `2025_0`.
+Se mantienen workers-py 1.17.8, workers-runtime-sdk 1.9.4, Wrangler 4.151.1 y
+`compatibility_date = "2026-08-01"`. Esta correspondencia del manifiesto no
+acredita la resolución completa ni la ejecución WASM.
+
+El error observado con Pydantic 2.12.5 exige pydantic-core 2.41.5, para el que
+no había wheel WASM utilizable en el destino seleccionado. El aviso
+`VIRTUAL_ENV` por un entorno distinto no es la causa de ese fallo. La migración
+D1 local había terminado correctamente: no hace falta borrar su estado para
+corregir las dependencias. El rango Python corregido selecciona 3.13 aunque
+la máquina disponga de 3.14; se puede indicar `--python 3.13` explícitamente al
+sincronizar de nuevo.
+
+Para reintentar desde la raíz tras actualizar el checkout:
+
+```bash
+uv sync --project cloudflare --locked --python 3.13
+npm ci --ignore-scripts --prefix cloudflare
+cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+scripts/cloudflare/check.sh
+```
+
+`uv.lock` bloquea el entorno CPython. `pylock.toml` debe obtenerse mediante
+resolución nativa cuando el acceso lo permita; no se sustituye por el lock host.
+En este entorno sigue bloqueado `index.pyodide.org`. Instalar CPython o construir
+fuentes no prueba Python/WASM, entrega de Queues ni viabilidad Free.
+
 Preparar las fuentes actuales y detectar staging obsoleto, desde la raíz:
 
 ```bash
 uv sync --project cloudflare --locked
-python scripts/cloudflare/prepare.py
-python scripts/cloudflare/prepare.py --check
+npm ci --ignore-scripts --prefix cloudflare
+cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+cloudflare/.venv/bin/python scripts/cloudflare/prepare.py --check
 ```
 
 El árbol ignorado `cloudflare/.production` se genera desde una lista cerrada:
@@ -1145,6 +1179,10 @@ init vacío, API, consumidor y runtime; excluye `entrypoints/server`,
 SQLModel, Alembic, asyncpg, aio-pika, tests y secretos. El manifiesto SHA-256
 permite detectar código o archivos añadidos obsoletos; no se mantienen copias
 manuales de negocio. `--check` falla sin reparar el árbol automáticamente.
+
+El check usa exclusivamente `cloudflare/.venv/bin/python` para sus suites y
+harness. Si falta, falla con la instrucción de instalación bloqueada; no recurre
+al entorno backend.
 
 Comprobación local completa, sin cuenta ni credenciales:
 
@@ -1236,4 +1274,4 @@ uv run --extra dev pyright --project .. --warnings
 El extra dev incluye fuentes de SDK únicamente para análisis reproducible. Los
 stubs acotados en `cloudflare/typings` describen la interfaz usada; no sustituyen
 paquetes al ejecutar. El runtime Cloudflare mantiene su distribución Python
->=3.13 separada del soporte CPython >=3.11 del backend.
+`>=3.13,<3.14` separada del soporte CPython >=3.11 del backend.

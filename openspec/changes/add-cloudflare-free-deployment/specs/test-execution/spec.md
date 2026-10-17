@@ -66,7 +66,7 @@ La suite Cloudflare SHALL ejecutar los contratos HTTP/persistencia aplicables me
 
 ### Requirement: Supplement native evidence with a local D1 test bridge
 
-Los adaptadores Python reales SHALL probarse también desde CPython contra D1 local de Miniflare mediante un puente JavaScript/HTTP exclusivo de tests, con migraciones reales y recursos aislados que se limpian tras éxito o fallo. El puente SHALL preservar batches atómicos y excluirse de producción. Esta evidencia SHALL informarse por separado y no sustituir Python/WASM, eventos/Queues nativos ni aceptación Free.
+Los adaptadores Python reales SHALL probarse desde el entorno CPython bloqueado de Cloudflare contra D1 local de Miniflare mediante un puente JavaScript/HTTP exclusivo de tests, con migraciones reales y recursos aislados que se limpian tras éxito o fallo. El puente SHALL preservar batches atómicos y excluirse de producción. Esta evidencia SHALL informarse por separado y no sustituir Python/WASM, eventos/Queues nativos ni aceptación Free.
 
 #### Scenario: Exercise real adapters against local D1
 - **WHEN** el harness CPython ejecuta los adaptadores reales mediante el puente local
@@ -76,6 +76,15 @@ Los adaptadores Python reales SHALL probarse también desde CPython contra D1 lo
 #### Scenario: Preserve pending native evidence
 - **WHEN** el puente pasa pero el runtime Python Workers no puede ejecutarse
 - **THEN** solo se acredita la integración CPython/D1 local, las comprobaciones nativas ausentes siguen pendientes y el check nativo no se presenta como aprobado
+
+#### Scenario: Verify the Cloudflare dependency resolution
+- **WHEN** se ejecutan las suites complementarias HTTP/D1/aceptación mediante `scripts/cloudflare/check.sh`
+- **THEN** usan `cloudflare/.venv` con las dependencias bloqueadas del perfil Cloudflare, aunque el entorno backend tenga otras versiones
+- **AND** comprueban los contratos existentes de validación y serialización sin sustituirlos por tests que solo comparan pins
+
+#### Scenario: Reject a missing Cloudflare environment
+- **WHEN** falta el intérprete del entorno Cloudflare requerido por el ejecutor
+- **THEN** el comando falla con diagnóstico de instalación bloqueada y no recurre al entorno backend ni instala dependencias automáticamente
 
 ### Requirement: Verify Cloudflare messaging and event isolation
 

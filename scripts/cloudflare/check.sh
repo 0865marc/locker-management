@@ -9,9 +9,9 @@ if [[ "$mode" != "full" && "$mode" != "--d1-only" ]]; then
 fi
 export WRANGLER_SEND_METRICS=false
 export PYTHONPATH="$PWD/backend:$PWD/cloudflare/tests:$PWD/scripts/cloudflare${PYTHONPATH:+:$PYTHONPATH}"
-python_bin="$PWD/backend/.venv/bin/python"
+python_bin="$PWD/cloudflare/.venv/bin/python"
 if [[ ! -x "$python_bin" ]]; then
-  echo 'Install the locked backend dev dependencies before running Cloudflare checks.' >&2
+  echo 'Install the locked Cloudflare dependencies: uv sync --project cloudflare --locked' >&2
   exit 1
 fi
 "$python_bin" scripts/cloudflare/prepare.py --check

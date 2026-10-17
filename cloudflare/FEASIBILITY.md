@@ -1,5 +1,47 @@
 # Experimento inicial de Python Workers
 
+## Requisitos vigentes y diagnóstico de compatibilidad
+
+La distribución Cloudflare requiere Python `>=3.13,<3.14`, FastAPI 0.135.3 y
+Pydantic 2.10.6 con pydantic-core 2.27.2. El
+[manifiesto oficial de Pyodide 0.28.3](https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pyodide-lock.json)
+publica esas versiones de Pydantic/core para CPython 3.13.2 y ABI `2025_0`.
+Se mantienen workers-py 1.17.8, workers-runtime-sdk 1.9.4, Wrangler 4.151.1 y
+`compatibility_date = "2026-08-01"`. Esta correspondencia del manifiesto no
+acredita la resolución completa ni la ejecución WASM.
+
+El error observado con Pydantic 2.12.5 exige pydantic-core 2.41.5, para el que
+no había wheel WASM utilizable en el destino seleccionado. El aviso
+`VIRTUAL_ENV` por un entorno distinto no es la causa de ese fallo. La migración
+D1 local había terminado correctamente: no hace falta borrar su estado para
+corregir las dependencias. El rango Python corregido selecciona 3.13 aunque
+la máquina disponga de 3.14; se puede indicar `--python 3.13` explícitamente al
+sincronizar de nuevo.
+
+Preparación actual desde la raíz:
+
+```bash
+uv sync --project cloudflare --locked
+npm ci --ignore-scripts --prefix cloudflare
+cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+```
+
+Para seleccionar explícitamente Python 3.13 al sustituir un entorno anterior,
+usar `uv sync --project cloudflare --locked --python 3.13`.
+`scripts/cloudflare/check.sh` ejecuta sus suites y harness con
+`cloudflare/.venv/bin/python`, sin fallback al backend. Su modo `--d1-only`
+sigue siendo complementario; el modo completo exige el runtime nativo.
+`uv.lock` describe CPython y no sustituye `pylock.toml`: la resolución nativa,
+Python/WASM, Queues y Free continúan pendientes. El acceso de este entorno a
+`index.pyodide.org` sigue bloqueado; la instalación host y el build de fuentes
+se verifican por separado.
+
+## Evidencia histórica del experimento
+
+Los resultados y versiones anteriores que siguen se conservan como registro de
+cada ejecución. El pin Pydantic 2.12.5/core 2.41.5 de ese registro queda sustituido
+por los requisitos vigentes anteriores; no representa una nueva verificación.
+
 Estado al 2026-10-17: **gate local pendiente por acceso de red**. No se ha
 establecido ni incompatibilidad del runtime ni viabilidad en Free. Las tareas
 1.1–1.3 siguen incompletas. Esto es un experimento aislado, no una distribución
@@ -110,10 +152,11 @@ la configuración provisional ya sirve para producción.
 
 ## Reproducir
 
-Desde la raíz, con Python >=3.13, uv, Node y npm disponibles:
+Desde la raíz, con Python `>=3.13,<3.14`, uv, Node y npm disponibles:
 
 ```sh
 uv sync --project cloudflare --locked
+npm ci --ignore-scripts --prefix cloudflare
 cd cloudflare
 uv run --locked python tests/run_spike.py
 ```
@@ -142,7 +185,7 @@ CA heredados. No compartir logs que contengan credenciales añadidas posteriorme
 Para comprobar únicamente el empaquetado de fuentes, sin confundirlo con runtime:
 
 ```sh
-python scripts/cloudflare/prepare_spike.py
+cloudflare/.venv/bin/python scripts/cloudflare/prepare_spike.py
 cd cloudflare
 node node_modules/wrangler/bin/wrangler.js deploy --config wrangler.spike.jsonc --dry-run --outdir .wrangler/build
 ```

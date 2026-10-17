@@ -70,6 +70,36 @@ condicional ignora duplicados. El batch publica todos los resultados junto con
 el estado final. No hay transacción conjunta D1/Queues, outbox, requeue ni
 recuperación automática de trabajos interrumpidos.
 
+## Compatibilidad vigente del entorno Cloudflare
+
+Cloudflare requiere Python `>=3.13,<3.14`, FastAPI 0.135.3, Pydantic 2.10.6 y
+pydantic-core 2.27.2. El
+[manifiesto oficial Pyodide 0.28.3](https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pyodide-lock.json)
+publica Pydantic/core con esas versiones para CPython 3.13.2 y ABI `2025_0`.
+Se mantienen workers-py 1.17.8, workers-runtime-sdk 1.9.4, Wrangler 4.151.1 y
+`compatibility_date = "2026-08-01"`. El pin anterior Pydantic 2.12.5 exigía core
+2.41.5, sin wheel WASM utilizable para ese destino. El aviso `VIRTUAL_ENV` no era
+la causa; la migración D1 local había terminado correctamente y no requiere
+borrar su estado.
+
+Preparación vigente desde la raíz:
+
+```bash
+uv sync --project cloudflare --locked
+npm ci --ignore-scripts --prefix cloudflare
+cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+```
+
+El rango Python selecciona 3.13 también en máquinas con 3.14. Para sustituir un
+entorno anterior se puede añadir `--python 3.13` al sync. `check.sh` exige
+`cloudflare/.venv/bin/python` para suites y harness y falla si falta; no utiliza
+el backend como alternativa. `uv.lock` corresponde a CPython y no sustituye
+`pylock.toml`, que debe obtenerse mediante resolución nativa cuando el acceso
+lo permita. El manifiesto fundamenta los pins, pero no acredita ejecución
+Python/WASM ni entrega nativa de Queues. El bloqueo de `index.pyodide.org` sigue
+vigente; instalación host, build de fuentes y aceptación Free se verifican por
+separado.
+
 El registro de verificaciones conserva también resultados de organizaciones
 anteriores. Los nombres de módulos, comandos e inventarios corresponden a cada
 ejecución; las rutas e instrucciones vigentes son las descritas en esta sección.
@@ -264,3 +294,38 @@ cambió el código de persistencia D1 y su evidencia anterior permanece intacta.
 Los imports con dobles del SDK y el build de fuentes no prueban ejecución
 Python/WASM, entrega nativa de Queues ni cuotas Free; esas verificaciones
 siguen pendientes.
+
+## Verificación de la corrección de Pydantic y del entorno Cloudflare
+
+El 17 de octubre de 2026 se verificó la instalación bloqueada Cloudflare con
+Python 3.13.5, FastAPI 0.135.3, Pydantic 2.10.6, pydantic-core 2.27.2 y
+workers-runtime-sdk 1.9.4. Los resultados anteriores conservan sus versiones y
+entornos originales; esta sección registra la comprobación con los pins
+corregidos.
+
+| Comprobación con el entorno Cloudflare | Resultado |
+| --- | --- |
+| `scripts/cloudflare/check.sh --d1-only` | 33 pruebas correctas ejecutadas con `cloudflare/.venv/bin/python` |
+| Puente Miniflare/D1 | 4 pruebas correctas en 18.041 s |
+| Contratos D1 | 23 pruebas correctas en 67.170 s |
+| Campaña HTTP | 1 prueba correcta en 14.369 s; 421 peticiones |
+| Presupuesto de aceptación | 3 pruebas correctas en 0.004 s |
+| Guard de compatibilidad de esquema | 2 pruebas correctas en 10.647 s |
+| Unidades afectadas HTTP/contexto/composición/dominio/aplicación/lockers | 44 pruebas correctas en 1.995 s con las dependencias Cloudflare |
+| `uv run --extra dev pyright --project .. --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| `uv run --extra dev pyright --project ../cloudflare --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| Ruff lint y formato | Correctos en 125 archivos |
+| Staging fresco y build de fuentes | 58 módulos con hashes coincidentes; 128.60 KiB, 23.66 KiB gzip |
+| Resolución offline de `uv.lock` Cloudflare | Reproducción byte a byte idéntica |
+| Fixtures aislados del script de verificación | La ausencia del entorno Cloudflare falla con instrucciones de instalación, sin fallback backend; un fallo nativo simulado conserva la salida no cero |
+
+La campaña observó un máximo de ocho sentencias D1 y trece parámetros por
+ventana HTTP. Los metadatos locales registraron 425517 filas leídas, 7910
+escritas y un máximo de `size_after` de 630784 bytes; no son métricas remotas.
+Los locks y configuraciones server, los manifiestos Wrangler, el lock Node y
+las migraciones permanecieron sin cambios.
+
+Los fixtures del script comprueban propagación de errores, no ejecución
+nativa. No se repitió `pywrangler sync` ni el arranque nativo porque sigue
+bloqueado `index.pyodide.org`. La resolución de `pylock.toml`, Python/WASM,
+la entrega real de Queues y la aceptación Free continúan pendientes.
