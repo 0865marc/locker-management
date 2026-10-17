@@ -1,6 +1,6 @@
 # Tasks
 
-Plan revisado aprobado por el usuario. Implementación y verificación completadas; publicación, sincronización y archivo quedan pendientes de autorización separada.
+Plan revisado aprobado por el usuario. Las tareas 1–5 registran la implementación inicial completada; la ampliación Nginx aprobada de las tareas 6 también está implementada y verificada. La exclusión inicial del servicio frontend en 3.2 queda sustituida por esta ampliación. Publicación, sincronización y archivo quedan fuera de su alcance.
 
 ## 1. Astro estático y preparación de publicación
 
@@ -32,6 +32,13 @@ Plan revisado aprobado por el usuario. Implementación y verificación completad
 - [x] 5.3 Desde `backend/`, ejecutar `uv run --extra dev pyright --project .. --warnings` con cero errores y cero advertencias y `env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL uv run --extra dev python -m unittest discover -s tests/unit -t . -v`. Resolver regresiones y conservar evidencia real.
 - [x] 5.4 Validar `openspec validate add-astro-locker-map --strict` y obtener revisión independiente de `sdd_reviewer` contra escenarios, CORS y arquitectura estática. Resolver hallazgos y repetir comprobaciones afectadas; entregar estado de implementación sin sincronizar, archivar ni publicar implícitamente.
 
+## 6. Frontend estático en Compose
+
+- [x] 6.1 Añadir `frontend/Dockerfile` multietapa con Node 24, `npm ci`, argumento `PUBLIC_API_BASE_URL` y build Astro, copiando solo `dist` a Nginx Alpine; añadir `.dockerignore` para dependencias, salidas y entornos locales. Verificar build sin API, URL incorporada y runtime que sirve HTML/assets sin Node, npm, proxy ni sustitución de variables.
+- [x] 6.2 Añadir servicio `frontend` en `compose.yaml` con puerto `127.0.0.1:4321:80` y argumento de build por defecto `http://127.0.0.1:8000`; resetear sus puertos en `compose.ci.yaml`. Actualizar README para arranque completo con Compose, desarrollo npm opcional, configuración/rebuild y exclusividad del puerto 4321. Verificar `docker compose config` normal/CI, URL personalizada y preservación del flujo Pages y de servicios/volúmenes existentes.
+- [x] 6.3 Ejecutar smoke manual en stack Compose desechable: página y assets de Nginx accesibles, lectura real del navegador a FastAPI con CORS y estado vacío `[]` sin interceptar la API. Ejecutar `scripts/ci/smoke.sh` y limpiar únicamente recursos temporales; registrar evidencia y limitación de teselas sin ampliar workflows o funcionalidad UI.
+- [x] 6.4 Ejecutar desde `backend/` `uv run --extra dev pyright --project .. --warnings` con cero errores y cero advertencias; validar `openspec validate add-astro-locker-map --strict` y obtener revisión independiente de la ampliación. Resolver hallazgos y registrar resultados antes de marcar las tareas nuevas completas.
+
 ## Evidencia de verificación — 2026-10-17
 
 - `npm ci` con lockfile: correcto. `npm run check`: cero errores, advertencias y hints; `npm test`: 37 pruebas; `npm run test:e2e`: 10 pruebas en Chromium, incluidas peticiones reales entre orígenes a FastAPI.
@@ -42,3 +49,15 @@ Plan revisado aprobado por el usuario. Implementación y verificación completad
 - Navegador sirviendo el build con HTTP estático frente a FastAPI/PostgreSQL/RabbitMQ reales: página 200, API 200 con `[]`, origen CORS exacto, estado vacío correcto y cero errores JavaScript. Stacks y volúmenes temporales eliminados al terminar.
 - Revisión independiente de `sdd_reviewer`: sin hallazgos pendientes. Corregidos y comprobados el detalle fuera de vista en listas largas y la restauración del encuadre de España tras resultados vacíos.
 - Las pruebas interceptan las teselas de OpenStreetMap y verifican su fallo por separado; el acceso real al proveedor no se comprobó por la política de red del entorno.
+
+
+## Evidencia de ampliación Compose — 2026-10-17
+
+- Imagen frontend construida con la API apagada: `npm ci` y build Astro correctos. La imagen Nginx contiene solo los cuatro archivos HTML/CSS/JS de `dist`, sin Node, npm ni fuentes; `nginx -t` correcto. La CA del proxy de este entorno se montó mediante un Dockerfile/override temporal, sin alterar los archivos del repositorio ni desactivar TLS.
+- `docker compose config`: puerto `127.0.0.1:4321:80`, argumento de URL local, personalizado y vacío explícito comprobados; sin dependencias de arranque del frontend. Configuración CI sin puertos frontend/API/DB. Servicios backend y volúmenes iguales a los anteriores.
+- Reconstruir con `PUBLIC_API_BASE_URL=https://lockers.example.test/v1` incorpora esa URL y elimina la local del bundle. Una variable de runtime diferente no modifica el contenido compilado.
+- Nginx arrancado solo: página HTTP 200 con error recuperable y botón de reintento mientras la API está apagada. Stack completo desechable: migraciones, API, worker, PostgreSQL, RabbitMQ y frontend arrancan correctamente.
+- Navegador real tras comprobar disponibilidad de la API: desde `localhost:4321` y `127.0.0.1:4321`, página HTTP 200, tres assets con tipo correcto, `GET /lockers` HTTP 200 con `[]`, CORS exacto, mapa inicializado y cero errores JavaScript. La primera visita durante el arranque no recibió respuesta de API; tras estar lista la prueba pasó. Solo se interceptaron las teselas, nunca la API.
+- `scripts/ci/smoke.sh`: correcto, `GET /lockers` HTTP 200 con `[]`. Ambos proyectos y sus volúmenes temporales se eliminaron tras verificar; se conservaron los datos existentes.
+- Desde `backend/`, `uv run --extra dev pyright --project .. --warnings`: cero errores y advertencias, comprobado también por el revisor. `openspec validate add-astro-locker-map --strict` y `git diff --check`: correctos.
+- Revisión independiente de `sdd_reviewer` de la ampliación: sin hallazgos pendientes. No se han sincronizado ni archivado las especificaciones.

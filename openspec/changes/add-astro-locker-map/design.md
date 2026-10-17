@@ -2,13 +2,13 @@
 
 ## Context
 
-Ver la motivación en `proposal.md`. El backend FastAPI ya expone `GET /lockers` con UUID, `active`, celdas no retiradas y geografía nullable. No tiene CORS configurado. `main.py` compone la aplicación y `tests/unit/test_main.py` permite probarla con dobles sin PostgreSQL. El usuario requiere Astro estático y publicación futura en Cloudflare Pages: toda consulta e interacción deben ejecutarse en el navegador.
+Ver la motivación en `proposal.md`. El backend FastAPI expone `GET /lockers` con UUID, `active`, celdas no retiradas y geografía nullable. El frontend estático y CORS ya están implementados y verificados. El usuario ha aprobado añadir Nginx a Compose para arrancar también la web, conservando toda consulta e interacción en el navegador y la compatibilidad con Cloudflare Pages.
 
 ## Goals / Non-Goals
 
 **Goals:** archivos estáticos independientes del backend durante el build, lectura directa de la API y acceso CORS explícito, conservando la experiencia de mapa/lista definida en `specs/locker-map/spec.md`.
 
-**Non-Goals:** servidor de aplicación frontend, funciones de Cloudflare, contenedor frontend, nueva autenticación o cambios de dominio, capacidad o persistencia. Este cambio prepara documentación de publicación; no despliega ni proporciona alojamiento para FastAPI/PostgreSQL/RabbitMQ.
+**Non-Goals:** servidor de aplicación frontend, funciones de Cloudflare, nueva autenticación o cambios de dominio, capacidad o persistencia. Nginx solo sirve archivos estáticos; este cambio no publica en Cloudflare ni proporciona alojamiento para FastAPI/PostgreSQL/RabbitMQ.
 
 ## Decisions
 
@@ -50,7 +50,17 @@ Carga inicial, actualizar y reintentar comparten flujo; impedir intentos simult�
 
 Mapa/lista se adaptan a escritorio y móvil de 375 px sin desbordamiento horizontal. Controles nativos, foco visible y estados anunciados permiten consultar detalles por teclado. La interfaz describe disponibilidad como última lectura, sin reserva ni garantía de tamaño; una hora visible representa actualización del cliente, no un timestamp inventado del backend.
 
-### 6. Preparación de Cloudflare Pages y archivos afectados
+### 6. Nginx estático y arranque completo con Compose
+
+Añadir `frontend/Dockerfile` multietapa: Node 24 instala el lockfile con `npm ci` y ejecuta el build Astro; la etapa final Nginx Alpine copia únicamente `dist` al directorio de archivos públicos. La imagen final no incluye Node, npm, fuentes o dependencias de desarrollo. La configuración estática predeterminada de Nginx basta para esta página; no añadir proxy, SSR ni sustitución de variables durante el arranque. El build y la página estática funcionan sin que la API esté disponible.
+
+`PUBLIC_API_BASE_URL` se pasa como argumento de build con defecto local `http://127.0.0.1:8000`, también configurable desde Compose. Debe ser alcanzable por el navegador, nunca el hostname interno `api`. `.dockerignore` excluye `node_modules`, `dist`, `.astro`, resultados de pruebas y archivos `.env` locales, para que el build use el argumento explícito. Cambiarlo requiere reconstruir la imagen; una variable de runtime no reescribe los assets.
+
+Añadir `frontend` al arranque por defecto de `compose.yaml`, con contexto `./frontend` y puerto `127.0.0.1:4321:80`. No necesita dependencias de arranque: Nginx puede servir la interfaz mientras el cliente trata los estados de disponibilidad de API. La API tampoco depende del frontend. Los orígenes CORS actuales ya incluyen el puerto 4321. `compose.ci.yaml` resetea además los puertos de frontend; el smoke backend existente sigue seleccionando solo sus servicios.
+
+README presenta `docker compose up --build` como arranque completo y conserva npm como desarrollo opcional. Explicar URL pública de build, reconstrucción al cambiarla y que npm/preview y Compose no pueden ocupar simultáneamente el puerto 4321. El mismo `dist` sigue siendo válido para Pages; no cambian los requisitos de despliegue público.
+
+### 7. Preparación de Cloudflare Pages y archivos afectados
 
 Documentar raíz del proyecto `frontend`, build `npm run build`, directorio de salida `dist`, Node 24 y variable de build `PUBLIC_API_BASE_URL=https://<api-publica>`. La instalación debe usar el lockfile con `npm ci`; en Pages documentar la opción de desactivar la instalación automática y usar `npm ci && npm run build` si resulta necesaria para garantizar ese comando. Ningún comando publica desde esta tarea. Los placeholders de API, proyecto Pages y dominio propio se resolverán al preparar el despliegue real. La URL pública de la API y su allowlist CORS son prerrequisitos separados del alojamiento estático gratuito.
 
@@ -61,11 +71,12 @@ Documentar raíz del proyecto `frontend`, build `npm run build`, directorio de s
 | Datos en navegador | `frontend/src/lib/lockers.ts`, `frontend/src/lib/locker-api.ts` |
 | Pruebas frontend | `frontend/tests/` y configuración Vitest/Playwright |
 | CORS backend | `backend/main.py`, posible `backend/adapters/http/cors.py`, `backend/tests/unit/test_main.py` o prueba HTTP específica |
-| Integración/documentación | `compose.yaml`, `.gitignore`, `README.md` |
+| Contenedor estático | `frontend/Dockerfile`, `frontend/.dockerignore` |
+| Integración/documentación | `compose.yaml`, `compose.ci.yaml`, `.gitignore`, `README.md` |
 
-Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas conservando lockfile y `.env.example`. No se necesitan cambios en `compose.ci.yaml`, migraciones ni workflows.
+Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas conservando lockfile y `.env.example`. La ampliación de Compose no cambia código de interfaz, contratos API, migraciones ni workflows.
 
-### 7. Verificación
+### 8. Verificación
 
 - `npm ci`, check y build con API apagada; inspeccionar salida y servir `dist` mediante HTTP estático genérico. Comprobar que solo el navegador pide lockers y que cambiar la URL requiere nuevo build.
 - Vitest para contrato, disponibilidad, coordenadas inválidas, URL/configuración, errores y timeout. Tests backend de CORS en aplicación real con dependencias simuladas, siguiendo las pruebas actuales de `create_app`.
@@ -73,6 +84,8 @@ Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas c
 - Teselas interceptadas con imagen local solo en pruebas; cubrir fallo de teselas, territorios, solapamientos, nulls, texto no ejecutable, teclado y móvil. La red actual bloquea OSM real: registrar esa limitación separadamente.
 - Smoke del frontend estático contra `GET /lockers` real con base nueva del backend en entorno desechable, esperando `[]` sin seeds. Usar solo recursos temporales y ejecutar `scripts/ci/smoke.sh` para verificar regresión de Compose; registrar cualquier limitación real del entorno.
 - Desde `backend/`, `uv run --extra dev pyright --project .. --warnings` debe dar cero errores y cero advertencias; ejecutar `env -u TEST_DATABASE_URL -u TEST_RABBITMQ_URL uv run --extra dev python -m unittest discover -s tests/unit -t . -v`. Ejecutar check/test/build/e2e finales del frontend, validar OpenSpec y obtener revisión independiente.
+
+La ampliación Nginx conserva la evidencia anterior y añade comprobaciones proporcionadas: construir la imagen sin API, inspeccionar que solo sirve archivos estáticos sin Node, resolver Compose normal/CI y comprobar el argumento de URL personalizado. En un stack temporal real, abrir la página de Nginx y verificar lectura directa a FastAPI con CORS sin interceptar la API; las teselas pueden seguir controladas. Repetir smoke backend y Pyright obligatorio, validar OpenSpec y realizar revisión independiente de los archivos afectados. No ampliar la suite CI ni repetir pruebas funcionales ajenas a estos cambios.
 
 ## Risks / Trade-offs
 
@@ -83,4 +96,4 @@ Los ignores cubrirán `node_modules`, `.astro`, `dist` y resultados de pruebas c
 
 ## Migration Plan
 
-No hay migraciones. Tras aprobación, incorporar frontend, CORS, pruebas y documentación; comprobar el build estático y el backend existente. Preparar posteriormente una API HTTPS y los orígenes exactos antes de publicar en Pages. Revertir archivos frontend/configuración CORS no altera datos ni revisiones Alembic. Publicación efectiva, sincronización y archivo no forman parte de esta actualización de planificación.
+No hay migraciones. Incorporar la ampliación Nginx aprobada, verificar Compose y documentar el arranque completo. Retirar el servicio estático y sus archivos revierte esta ampliación sin tocar datos ni revisiones Alembic. Preparar posteriormente una API HTTPS y los orígenes exactos antes de publicar en Pages. Publicación efectiva, sincronización y archivo no forman parte de esta actualización de planificación.

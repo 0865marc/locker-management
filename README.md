@@ -25,8 +25,19 @@ no son claves únicas; el UUID identifica el registro.
 
 ## Mapa de lockers: frontend estático
 
-Necesitas **Node 24 LTS** y npm para desarrollo, build y pruebas. Arranca el
-backend con Compose como se explica en [Arrancar](#arrancar); en otra terminal:
+Con **Docker Compose**, `docker compose up --build` desde la raíz arranca toda
+la aplicación y sirve el mapa en [http://127.0.0.1:4321](http://127.0.0.1:4321).
+No necesitas instalar Node o npm para este arranque. Nginx sirve los archivos
+estáticos generados; el navegador consulta directamente la API del puerto 8000.
+El frontend puede arrancar aunque la API no esté disponible: en ese caso muestra
+el estado de error y permite reintentar cuando el backend esté preparado.
+
+### Desarrollo opcional con npm
+
+Para editar el frontend con recarga automática necesitas **Node 24 LTS** y npm.
+Arranca solo el backend con `docker compose up --build api worker` desde la raíz;
+si antes arrancaste todo el stack, libera el puerto con `docker compose stop frontend`.
+En otra terminal:
 
 ```bash
 cd frontend
@@ -55,11 +66,36 @@ npm run preview
 python3 -m http.server 4321 --bind 127.0.0.1 --directory dist
 ```
 
-Usa preview o el servidor genérico por separado; ambos ocupan el puerto 4321.
+Usa npm dev, preview, el servidor genérico o Nginx de Compose por separado:
+todos ocupan el puerto 4321. Detén el proceso anterior antes de cambiar de modo.
 `dist/` contiene HTML, CSS y JavaScript estáticos, sin instantáneas de lockers.
 No necesita Node en producción, SSR, Workers, funciones ni proxy frontend.
 Cambiar `PUBLIC_API_BASE_URL` requiere **un nuevo build** y volver a distribuir
 `dist`: las variables del host no cambian los archivos ya compilados.
+
+### URL de API al construir la imagen
+
+Compose pasa `PUBLIC_API_BASE_URL` como argumento de build, con el valor local
+por defecto `http://127.0.0.1:8000` cuando no está definida. Un valor explícitamente
+vacío se conserva y provoca el error de configuración del frontend. Puedes
+definirlo en el entorno o en `.env`
+de la raíz y reconstruir el servicio. Por ejemplo, para una API HTTPS propia:
+
+```bash
+PUBLIC_API_BASE_URL=https://api.example.com docker compose up --build frontend
+```
+
+Sustituye la URL de ejemplo por la API accesible desde tu navegador y autoriza
+el origen del frontend en su configuración CORS. El nombre interno `api` de
+Docker no es una URL pública para el navegador.
+
+El Dockerfile instala con `npm ci` y compila con Node 24; la imagen final contiene
+Nginx Alpine y únicamente el contenido de `dist`, sin Node, npm, fuentes o archivos
+`.env`. `.dockerignore` excluye entornos locales y salidas: `frontend/.env` no
+configura el build de Docker. La URL queda incorporada en los assets, no se
+sustituye al arrancar Nginx ni se utiliza un proxy. Cambiar una variable de runtime
+o reiniciar el contenedor no la actualiza; reconstruye con `--build`.
+El mismo build estático sigue siendo apto para Cloudflare Pages.
 
 Las pruebas de navegador necesitan `python3` para servir los archivos estáticos
 y el entorno local `backend/.venv`, incluso si normalmente ejecutas la API con
@@ -157,6 +193,8 @@ docker compose up --build
 
 Compose espera a que PostgreSQL esté preparado, ejecuta `alembic upgrade head`
 en el servicio `migrate` y arranca la API cuando la migración termina correctamente.
+También sirve el frontend estático con Nginx, sin depender del arranque de la API.
+Abre [el mapa de lockers](http://127.0.0.1:4321); no hace falta ejecutar npm aparte.
 Si conservas una base de datos de la versión anterior, consulta primero
 [el procedimiento de migración segura](#base-de-datos-de-la-versión-anterior).
 
@@ -1061,8 +1099,8 @@ son `adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
 trabajo. API comparte servicios por instancia y cierra motor y broker incluso
 si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
 
-`docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
-**un único worker**. API/worker esperan migraciones correctas y broker saludable;
+`docker compose up --build` inicia el frontend estático Nginx, PostgreSQL,
+migraciones, RabbitMQ 4, API y **un único worker**. API/worker esperan migraciones correctas y broker saludable;
 las migraciones esperan PostgreSQL saludable. Los volúmenes `postgres_data` y
 `rabbitmq_data` se conservan con `docker compose down` sin `-v`. Para arrancar
 por separado, ejecutar `alembic upgrade head`, `uvicorn main:app` y

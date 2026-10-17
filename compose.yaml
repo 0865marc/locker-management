@@ -1,6 +1,14 @@
 name: locker-management-demo
 
 services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL-http://127.0.0.1:8000}
+    ports:
+      - "127.0.0.1:4321:80"
+
   api:
     build: ./backend
     ports:

@@ -12,8 +12,29 @@ The repository SHALL provide locked frontend dependencies and documented develop
 - **AND** serving `dist` from a generic static HTTP server delivers the page, whose browser code handles API availability at visit time
 
 #### Scenario: Preserve backend startup
-- **WHEN** an operator starts the existing backend Compose stack or runs its smoke script
+- **WHEN** an operator starts only the existing backend services with Compose or runs its smoke script
 - **THEN** migrations, API, broker, worker and named volumes retain their existing behavior without requiring a frontend container
+
+### Requirement: Serve the static frontend through Compose
+
+Default Compose startup SHALL include a frontend serving only the generated static files at `http://127.0.0.1:4321`. Its image SHALL build without the API and run without Node or an API proxy. Compose SHALL pass `PUBLIC_API_BASE_URL` at build time, defaulting to `http://127.0.0.1:8000` when unset. Browser API reads SHALL remain direct. The CI Compose override SHALL publish no frontend host port.
+
+#### Scenario: Start the complete application locally
+- **WHEN** an operator runs `docker compose up --build` with default local settings
+- **THEN** the static page is available on port 4321 and, once the API is ready, the browser reads lockers directly from port 8000 using the existing CORS policy
+- **AND** no separate npm process is required to serve the page
+
+#### Scenario: Build and serve without API availability
+- **WHEN** the frontend image is built and started while the API is unavailable
+- **THEN** image creation and static page delivery succeed independently, and API failures are handled by the existing browser error state
+
+#### Scenario: Configure another browser-visible API
+- **WHEN** the operator supplies a different `PUBLIC_API_BASE_URL` and rebuilds the frontend image
+- **THEN** its browser assets use that URL directly, without relying on Docker-internal hostnames or runtime substitution
+
+#### Scenario: Isolate CI ports
+- **WHEN** Compose merges the CI override
+- **THEN** the frontend has no published host port and the backend-only smoke remains independently runnable
 
 ### Requirement: Configure the public API address at build time
 
