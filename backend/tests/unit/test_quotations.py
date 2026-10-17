@@ -261,7 +261,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
     ):
         from unittest.mock import patch
 
-        from entrypoints.rabbitmq_worker import run_worker
+        from entrypoints.rabbitmq_consumer import run_worker
 
         engine, broker = AsyncMock(), AsyncMock()
         old_settings = {
@@ -276,14 +276,18 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.dict("os.environ", old_settings),
             patch(
-                "entrypoints.rabbitmq_worker.create_database",
+                "entrypoints.rabbitmq_consumer.create_database",
                 return_value=(engine, object()),
             ),
-            patch("entrypoints.rabbitmq_worker.RabbitMQ", return_value=broker),
-            patch("entrypoints.rabbitmq_worker.SimulatedEconomyProvider") as economy,
-            patch("entrypoints.rabbitmq_worker.SimulatedStandardProvider") as standard,
-            patch("entrypoints.rabbitmq_worker.SimulatedExpressProvider") as express,
-            patch("entrypoints.rabbitmq_worker.ShippingQuoteComparator") as comparator,
+            patch("entrypoints.rabbitmq_consumer.RabbitMQ", return_value=broker),
+            patch("entrypoints.rabbitmq_consumer.SimulatedEconomyProvider") as economy,
+            patch(
+                "entrypoints.rabbitmq_consumer.SimulatedStandardProvider"
+            ) as standard,
+            patch("entrypoints.rabbitmq_consumer.SimulatedExpressProvider") as express,
+            patch(
+                "entrypoints.rabbitmq_consumer.ShippingQuoteComparator"
+            ) as comparator,
         ):
             await run_worker()
         for factory in (economy, standard, express):
@@ -299,7 +303,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
 
         from domain.shipping_quotes import QuoteOffers
-        from entrypoints.rabbitmq_worker import run_worker
+        from entrypoints.rabbitmq_consumer import run_worker
 
         entered, cancelled = asyncio.Event(), asyncio.Event()
 
@@ -324,16 +328,16 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         broker.consume.side_effect = consume
         with (
             patch(
-                "entrypoints.rabbitmq_worker.create_database",
+                "entrypoints.rabbitmq_consumer.create_database",
                 return_value=(engine, object()),
             ),
-            patch("entrypoints.rabbitmq_worker.RabbitMQ", return_value=broker),
+            patch("entrypoints.rabbitmq_consumer.RabbitMQ", return_value=broker),
             patch(
-                "entrypoints.rabbitmq_worker.SqlModelQuotationRepository",
+                "entrypoints.rabbitmq_consumer.SqlModelQuotationRepository",
                 return_value=repository,
             ),
             patch(
-                "entrypoints.rabbitmq_worker.ShippingQuoteComparator",
+                "entrypoints.rabbitmq_consumer.ShippingQuoteComparator",
                 return_value=ShippingQuoteComparator([WaitingProvider()]),
             ),
         ):
@@ -351,16 +355,16 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_worker_startup_failure_closes_broker_and_database(self):
         from unittest.mock import patch
 
-        from entrypoints.rabbitmq_worker import run_worker
+        from entrypoints.rabbitmq_consumer import run_worker
 
         engine, broker = AsyncMock(), AsyncMock()
         broker.open.side_effect = ConnectionError("unavailable")
         with (
             patch(
-                "entrypoints.rabbitmq_worker.create_database",
+                "entrypoints.rabbitmq_consumer.create_database",
                 return_value=(engine, object()),
             ),
-            patch("entrypoints.rabbitmq_worker.RabbitMQ", return_value=broker),
+            patch("entrypoints.rabbitmq_consumer.RabbitMQ", return_value=broker),
         ):
             with self.assertRaises(ConnectionError):
                 await run_worker()

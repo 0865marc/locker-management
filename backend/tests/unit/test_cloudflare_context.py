@@ -13,7 +13,7 @@ from starlette.types import Message, Receive, Scope, Send
 
 from adapters.database.d1.bindings import D1BindingError, D1PreparedStatement, D1Value
 from adapters.database.d1.native import NativeDatabase
-from adapters.queue.cloudflare import NativeMessage, handle_message
+from adapters.queue.cloudflare import NativeMessage, QueueMessage
 from adapters.runtime.cloudflare import (
     EventBindings,
     event_scope,
@@ -23,6 +23,7 @@ from adapters.runtime.cloudflare import (
 )
 from application.persistence import PersistenceError
 from application.quotations.use_cases import QuotationProcessor
+from entrypoints.cloudflare_consumer import consume_batch
 
 
 class Statement:
@@ -208,18 +209,46 @@ class NativeQueueBodyTests(unittest.IsolatedAsyncioTestCase):
                 events.append("body")
                 return Body()
 
+        environment = Environment(Database(), Queue())
+        prior = Environment(Database(), Queue())
+
+        async def process(quotation_id: object) -> None:
+            self.assertIs(get_environment(), environment)
+            events.append("process")
+            await asyncio.sleep(0)
+
         processor = AsyncMock(spec=QuotationProcessor)
+        processor.process.side_effect = process
         message = Message()
-        await handle_message(NativeMessage(message), processor)
-        self.assertEqual(events, ["ack", "body", "decode"])
-        processor.process.assert_awaited_once()
+
+        @dataclass
+        class Batch:
+            messages: Sequence[QueueMessage]
+
+        with event_scope(prior):
+            await consume_batch(Batch([message, message]), environment, processor)
+            self.assertIs(get_environment(), prior)
+        self.assertEqual(events, ["ack", "body", "decode", "process"] * 2)
+        self.assertEqual(processor.process.await_count, 2)
         events.clear()
         processor.process.reset_mock()
         message.fail = True
         with self.assertRaises(OSError):
-            await handle_message(NativeMessage(message), processor)
+            await consume_batch(Batch([message]), environment, processor)
         self.assertEqual(events, ["ack"])
         processor.process.assert_not_awaited()
+        with self.assertRaises(PersistenceError):
+            get_environment()
+        events.clear()
+        message.fail = False
+        processor.process.side_effect = ValueError("processing failed")
+        with event_scope(prior):
+            with self.assertRaisesRegex(ValueError, "processing failed"):
+                await consume_batch(Batch([message, message]), environment, processor)
+            self.assertIs(get_environment(), prior)
+        self.assertEqual(events, ["ack", "body", "decode"])
+        with self.assertRaises(PersistenceError):
+            get_environment()
 
 
 class CloudflareImportTests(unittest.TestCase):
@@ -230,7 +259,8 @@ class CloudflareImportTests(unittest.TestCase):
         # this is explicitly not a Workers/ASGI runtime compatibility test.
         script = """
 import sys, types
-from unittest.mock import patch
+import asyncio
+from unittest.mock import patch, AsyncMock
 workers = types.ModuleType('workers')
 workers.WorkerEntrypoint = type('WorkerEntrypoint', (), {})
 workers.Request = type('Request', (), {})
@@ -241,12 +271,50 @@ ffi.JsException = type('JsException', (Exception,), {})
 sys.modules.update({'workers':workers,'pyodide':pyodide,'pyodide.ffi':ffi})
 import adapters.runtime.cloudflare as context
 with patch.object(context,'get_database', side_effect=AssertionError('import DB access')), patch.object(context,'get_queue', side_effect=AssertionError('import queue access')):
-    from entrypoints import cloudflare_worker
-    application = cloudflare_worker.app
-    assert cloudflare_worker.event_app.application is application
-    assert application.state.quotation_service.repository is cloudflare_worker.quotation_repository
-    assert cloudflare_worker.processor.repository is cloudflare_worker.quotation_repository
-for name in ('entrypoints.api','entrypoints.rabbitmq_worker','sqlmodel','asyncpg','alembic','aio_pika'):
+    from entrypoints import cloudflare_api
+    application = cloudflare_api.app
+    assert cloudflare_api.event_app.application is application
+    assert application.state.quotation_service.repository is cloudflare_api.quotation_repository
+    assert cloudflare_api.processor.repository is cloudflare_api.quotation_repository
+async def check_delegate():
+    worker = cloudflare_api.Default()
+    environment = object()
+    worker.env = environment
+    batch = object()
+    with patch.object(cloudflare_api, 'consume_batch', new_callable=AsyncMock) as consume:
+        await worker.queue(batch)
+        await worker.queue(batch)
+        assert consume.await_count == 2
+        consume.assert_awaited_with(batch, environment, cloudflare_api.processor)
+    assert cloudflare_api.app is application
+    assert cloudflare_api.processor.repository is cloudflare_api.quotation_repository
+asyncio.run(check_delegate())
+for name in ('entrypoints.api','entrypoints.rabbitmq_consumer','sqlmodel','asyncpg','alembic','aio_pika'):
+    assert name not in sys.modules, name
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).resolve().parents[2],
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_consumer_import_is_independent_of_http_and_runtime_sdk(self) -> None:
+        script = """
+import sys
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock
+from application.quotations.ports import QuotationRepository
+from entrypoints.cloudflare_consumer import create_processor
+repository = AsyncMock(spec=QuotationRepository)
+clock = lambda: datetime.now(timezone.utc)
+processor = create_processor(repository, clock)
+assert processor.repository is repository
+assert processor.clock is clock
+assert repository.mock_calls == []
+for name in ('composition', 'entrypoints.cloudflare_api', 'entrypoints.api',
+             'fastapi', 'workers', 'pyodide', 'sqlmodel', 'asyncpg', 'aio_pika'):
     assert name not in sys.modules, name
 """
         result = subprocess.run(

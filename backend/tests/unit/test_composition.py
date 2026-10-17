@@ -89,7 +89,7 @@ import entrypoints, sys
 assert not any(name.startswith("entrypoints.") for name in sys.modules)
 assert "fastapi" not in sys.modules
 import composition
-for module in ('entrypoints.api', 'entrypoints.rabbitmq_worker', 'workers', 'sqlmodel', 'asyncpg', 'aio_pika', 'alembic'):
+for module in ('entrypoints.api', 'entrypoints.rabbitmq_consumer', 'workers', 'sqlmodel', 'asyncpg', 'aio_pika', 'alembic'):
     assert module not in sys.modules, module
 """
         result = subprocess.run(

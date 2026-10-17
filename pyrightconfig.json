@@ -45,7 +45,14 @@
       ]
     },
     {
-      "root": "backend/entrypoints/cloudflare_worker.py",
+      "root": "backend/entrypoints/cloudflare_api.py",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "backend"
+      ]
+    },
+    {
+      "root": "backend/entrypoints/cloudflare_consumer.py",
       "pythonVersion": "3.13",
       "extraPaths": [
         "backend"

@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "locker-management-demo",
-  "main": ".production/entrypoints/cloudflare_worker.py",
+  "main": ".production/entrypoints/cloudflare_api.py",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": [
     "python_workers"

@@ -101,8 +101,9 @@ its CLI before assuming OpenSpec needs to be installed again.
 - Keep `domain/` independent of FastAPI and persistence frameworks.
 - Keep `application/` focused on use cases and domain ports; adapters implement
   HTTP and database concerns. Use `entrypoints/api.py` as the CPython API root,
-  `entrypoints/rabbitmq_worker.py` as its consumer and
-  `entrypoints/cloudflare_worker.py` as the additional Workers root;
+  `entrypoints/rabbitmq_consumer.py` as its consumer and
+  `entrypoints/cloudflare_api.py` as the Workers API root and
+  `entrypoints/cloudflare_consumer.py` for its queue handling;
   `composition.py` shares HTTP/service composition from the backend root.
 - Define PostgreSQL migrations through Alembic and D1 migrations through the
   separate SQL/Wrangler history in `cloudflare/migrations/`. Follow the repository

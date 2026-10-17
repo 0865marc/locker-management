@@ -11,8 +11,9 @@ anterior permanece en `runtime_spike/` y su evidencia histórica en
 | Responsabilidad | Implementación |
 | --- | --- |
 | Composición de servicios y HTTP compartida | `backend/composition.py` |
-| Entrada PostgreSQL/RabbitMQ | `backend/entrypoints/api.py`, `backend/entrypoints/rabbitmq_worker.py` |
-| Entrada HTTP y consumidor Workers | `backend/entrypoints/cloudflare_worker.py` |
+| Entrada PostgreSQL/RabbitMQ | `backend/entrypoints/api.py`, `backend/entrypoints/rabbitmq_consumer.py` |
+| Entrada única HTTP/Queues Workers | `backend/entrypoints/cloudflare_api.py` |
+| Composición del procesador y consumo secuencial Queues | `backend/entrypoints/cloudflare_consumer.py` |
 | Conexión y repositorios PostgreSQL/SQLModel | `backend/adapters/database/sqlmodel/` |
 | Repositorios D1 de lockers, entregas, devoluciones y cotizaciones | `backend/adapters/database/d1/` |
 | Frontera nativa del SDK D1 | `backend/adapters/database/d1/native.py` |
@@ -30,19 +31,26 @@ La conexión SQLModel y los repositorios de entregas, devoluciones, lockers y
 cotizaciones se importan desde `adapters.database.sqlmodel`. El binding D1 se
 envuelve en `adapters.database.d1.native`; `NativeMessage` vive junto al transporte
 de cola en `adapters.queue.cloudflare`, y el contexto compartido de DB/QUOTATIONS
-en `adapters.runtime.cloudflare`. Las tres entradas se agrupan en
+en `adapters.runtime.cloudflare`. Los cuatro módulos de API/consumo se agrupan en
 `backend/entrypoints/`, cuyo `__init__.py` vacío no selecciona ningún perfil al
 importarlo. `composition.py` permanece en la raíz de `backend/`. Desde ese
 directorio, la API arranca con `uvicorn entrypoints.api:app` y el consumidor
-con `python -m entrypoints.rabbitmq_worker`. Alembic mantiene sus revisiones en
+con `python -m entrypoints.rabbitmq_consumer`. Alembic mantiene sus revisiones en
 `backend/adapters/database/migrations/versions/`, con el registro de modelos en
 `migrations/env.py`; el historial SQL D1 conserva su ubicación separada. La
 preparación Workers selecciona runtime, D1 y Queues desde esas rutas y excluye
-el paquete SQLModel y AMQP. De `entrypoints` solo incorpora el `__init__.py` vacío
-y `cloudflare_worker.py`; excluye las entradas CPython. Ambos manifiestos
-Wrangler de producción usan `main = ".production/entrypoints/cloudflare_worker.py"`
+el paquete SQLModel y AMQP. De `entrypoints` solo incorpora el `__init__.py` vacío,
+`cloudflare_api.py` y `cloudflare_consumer.py`; excluye las entradas CPython.
+Ambos manifiestos Wrangler de producción usan `main = ".production/entrypoints/cloudflare_api.py"`
 y `base_dir = ".production"` para conservar los paquetes compartidos hermanos
 en el inventario de módulos.
+
+`cloudflare_api.py` conserva `Default.fetch` y un `Default.queue` que delega
+el lote y el entorno al consumidor dentro del mismo despliegue. La fábrica de
+`cloudflare_consumer.py` recibe el repositorio compartido y el reloj y compone
+el procesador una sola vez. Este módulo no importa la API, la composición HTTP
+ni routers. El consumidor instala y limpia el contexto del evento y procesa
+los mensajes secuencialmente, con reconocimiento antes de leer sus cuerpos.
 
 Todas las escrituras de capacidad sobre lockers existentes usan revisión y un
 token nuevo por intento. Lectura coherente, selección exacta con enteros Python
@@ -57,6 +65,10 @@ El consumidor solicita ack antes de leer el cuerpo o procesar, y el start
 condicional ignora duplicados. El batch publica todos los resultados junto con
 el estado final. No hay transacción conjunta D1/Queues, outbox, requeue ni
 recuperación automática de trabajos interrumpidos.
+
+El registro de verificaciones conserva también resultados de organizaciones
+anteriores. Los nombres de módulos, comandos e inventarios corresponden a cada
+ejecución; las rutas e instrucciones vigentes son las descritas en esta sección.
 
 ## Verificación del perfil existente
 
@@ -195,3 +207,25 @@ sus contenedores, volúmenes y red. La comprobación verifica el consumo efectiv
 del mensaje: `basic_get` consulta la cola sin registrar un consumidor.
 Estas comprobaciones no ejecutan Python/WASM ni entrega nativa de Queues y no
 completan la aceptación Free pendiente.
+
+## Verificación de API y consumidores separados
+
+El 17 de octubre de 2026 se verificó la organización en cuatro módulos, con
+`cloudflare_api.py` como entrada única de plataforma y delegación de mensajes
+a `cloudflare_consumer.py`. La revisión independiente no encontró hallazgos.
+
+| Comprobación actual | Resultado |
+| --- | --- |
+| Unidades | 100 correctas, incluida delegación, import independiente del consumidor, repositorio/reloj compartidos, secuencia ack/cuerpo/procesamiento y restauración del contexto ante errores |
+| Pyright raíz y Cloudflare | Cero errores y cero advertencias en ambos, usando los comandos documentados arriba |
+| Ruff lint y formato | Correctos en 124 archivos |
+| Wheel nuevo instalado fuera del checkout | API/Uvicorn/OpenAPI, RabbitMQ y consumidor Cloudflare importan correctamente; módulos retirados ausentes; entrada Cloudflare comprobada con dobles explícitos del SDK |
+| Preparación y build Workers de fuentes | Preparación determinista y rechazo de staging obsoleto; los 58 módulos del build coinciden en contenido con la selección, sin entradas CPython |
+| Docker desechable con API y consumidor | `GET /lockers` → 200, `[]`; `python -m entrypoints.rabbitmq_consumer` consume un mensaje confirmado y se detiene con código 0; recursos retirados |
+
+El build de fuentes mide 128.60 KiB, 23.72 KiB gzip. El consumidor Cloudflare
+importa sin FastAPI, composición HTTP ni SDK, y recibe repositorio y reloj al
+construir el procesador. La API PostgreSQL, el consumidor RabbitMQ renombrado,
+`composition.py` y las seis migraciones conservan sus bytes. El smoke Docker
+empleó el ajuste temporal de CA/schedulers ya documentado. Esta verificación
+no sustituye Python/WASM, entrega nativa de Queues ni aceptación Free.

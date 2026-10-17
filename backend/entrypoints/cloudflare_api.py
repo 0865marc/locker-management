@@ -10,27 +10,15 @@ from adapters.database.d1.lockers import D1LockerRepository
 from adapters.database.d1.native import NativeDatabase
 from adapters.database.d1.quotations import D1QuotationRepository
 from adapters.database.d1.returns import D1ReturnRepository
-from adapters.providers.simulated_shipping import (
-    SimulatedEconomyProvider,
-    SimulatedExpressProvider,
-    SimulatedStandardProvider,
-)
-from adapters.queue.cloudflare import (
-    CloudflareQuotationPublisher,
-    NativeMessage,
-    QueueBatch,
-    handle_message,
-)
+from adapters.queue.cloudflare import CloudflareQuotationPublisher, QueueBatch
 from adapters.runtime.cloudflare import (
     EventBindings,
     WorkerEnvironment,
-    event_scope,
     get_database,
     get_queue,
 )
-from application.quotations.comparison import ShippingQuoteComparator
-from application.quotations.use_cases import QuotationProcessor
 from composition import create_application, utc_now
+from entrypoints.cloudflare_consumer import consume_batch, create_processor
 
 
 def native_database() -> NativeDatabase:
@@ -46,17 +34,7 @@ app = create_application(
     CloudflareQuotationPublisher(get_queue),
 )
 event_app = EventBindings(app)
-processor = QuotationProcessor(
-    quotation_repository,
-    ShippingQuoteComparator(
-        (
-            SimulatedEconomyProvider(),
-            SimulatedStandardProvider(),
-            SimulatedExpressProvider(),
-        )
-    ),
-    utc_now,
-)
+processor = create_processor(quotation_repository, utc_now)
 
 
 class Default(WorkerEntrypoint):
@@ -64,6 +42,4 @@ class Default(WorkerEntrypoint):
         return await asgi.fetch(event_app, request, self.env, self.ctx)
 
     async def queue(self, batch: QueueBatch) -> None:
-        with event_scope(cast(WorkerEnvironment, self.env)):
-            for message in batch.messages:
-                await handle_message(NativeMessage(message), processor)
+        await consume_batch(batch, cast(WorkerEnvironment, self.env), processor)
