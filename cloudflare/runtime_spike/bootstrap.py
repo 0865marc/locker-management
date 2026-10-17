@@ -3,9 +3,8 @@
 import importlib
 from typing import Protocol, cast
 
-from workers import WorkerEntrypoint
-
 import import_clock
+from workers import WorkerEntrypoint
 
 
 class ApplicationModule(Protocol):

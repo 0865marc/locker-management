@@ -2,7 +2,7 @@
   "include": [
     "runtime_spike",
     "tests",
-    "../scripts/cloudflare/prepare_spike.py"
+    "../scripts/cloudflare"
   ],
   "typeCheckingMode": "strict",
   "pythonVersion": "3.13",
@@ -13,7 +13,23 @@
       "root": ".",
       "extraPaths": [
         "runtime_spike",
+        "../backend",
+        "../scripts/cloudflare"
+      ]
+    },
+    {
+      "root": "../backend",
+      "pythonVersion": "3.11",
+      "extraPaths": [
         "../backend"
+      ]
+    },
+    {
+      "root": "../scripts/cloudflare",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "../backend",
+        "../scripts/cloudflare"
       ]
     }
   ],

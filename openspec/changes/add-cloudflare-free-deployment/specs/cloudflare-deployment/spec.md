@@ -26,7 +26,7 @@ El perfil Cloudflare SHALL conservar el máximo de 1000 celdas nuevas por petici
 
 ### Requirement: Verify platform feasibility before claiming completion
 
-La aceptación SHALL comprobar el runtime, dependencias, acceso D1, rollback y consumo de cola en las herramientas oficiales. Un fallo demostrado de compatibilidad o de límites Free SHALL bloquear la solución dependiente hasta revisar el diseño. La ausencia de una cuenta de prueba SHALL dejar la evidencia remota pendiente, permitiendo completar trabajo local independiente sin afirmar gratuidad verificada.
+La aceptación SHALL verificar runtime/dependencias, D1/rollback y Queues con herramientas oficiales. Una incompatibilidad o exceso Free demostrados SHALL bloquear la solución dependiente hasta revisar el diseño. Si faltan descarga del runtime o cuenta, SHALL permitirse implementación/pruebas locales, manteniendo pendiente la evidencia nativa/remota ausente y sin declarar viabilidad Free.
 
 #### Scenario: Detect an incompatible runtime or budget
 - **WHEN** la prueba inicial demuestra que el paquete no se ejecuta o una petición obligatoria excede el presupuesto de una cuenta Free
@@ -35,6 +35,11 @@ La aceptación SHALL comprobar el runtime, dependencias, acceso D1, rollback y c
 #### Scenario: No remote account is available
 - **WHEN** se pueden ejecutar pruebas locales pero no medir un despliegue Free autorizado
 - **THEN** la evidencia local se informa por separado y la aceptación gratuita permanece pendiente
+
+#### Scenario: Runtime download is blocked by the environment
+- **WHEN** la política de red impide descargar dependencias Python Workers sin demostrar incompatibilidad del paquete
+- **THEN** se permite implementar adaptadores/composición y ejecutar pruebas locales disponibles, registrando el bloqueo y dejando pendientes las comprobaciones Python Workers/Queues y Free que no se ejecutaron
+- **AND** aprobar pruebas CPython o D1 mediante un puente local no completa esas comprobaciones ausentes
 
 ### Requirement: Publish reproducible Free acceptance evidence
 

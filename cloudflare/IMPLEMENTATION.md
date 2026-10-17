@@ -1,0 +1,120 @@
+# Implementación Cloudflare y evidencia local
+
+Estado: 2026-10-17. Cambio OpenSpec `add-cloudflare-free-deployment`.
+La rama parte de `main` en `6a5db11`; sus migraciones Alembic 0001–0005 se
+conservan byte a byte. Este documento describe el backend real. El experimento
+anterior permanece en `runtime_spike/` y su evidencia histórica en
+`FEASIBILITY.md`.
+
+## Código y selección del perfil
+
+| Responsabilidad | Implementación |
+| --- | --- |
+| Composición de servicios y HTTP compartida | `backend/composition.py` |
+| Entrada PostgreSQL/RabbitMQ | `backend/main.py`, `backend/worker.py` |
+| Entrada HTTP y consumidor Workers | `backend/cloudflare_worker.py` |
+| Repositorios D1 de lockers, entregas, devoluciones y cotizaciones | `backend/adapters/database/d1/` |
+| Publicación y consumo Queues | `backend/adapters/queue/cloudflare.py` |
+| Contexto por evento y frontera del SDK | `backend/adapters/cloudflare/` |
+| Esquema D1 inicial | `cloudflare/migrations/0001_initial.sql` |
+| Preparación de fuentes del Worker | `scripts/cloudflare/prepare.py` |
+
+Se selecciona el perfil mediante su entrypoint. Ambos reutilizan dominio,
+casos de uso, simuladores y routers. Cambiar de perfil no mueve ni sincroniza
+datos. La distribución Workers excluye PostgreSQL, SQLModel, Alembic y AMQP;
+`cloudflare/` contiene herramientas, configuración, migraciones y pruebas.
+
+Todas las escrituras de capacidad sobre lockers existentes usan revisión y un
+token nuevo por intento. Lectura coherente, selección exacta con enteros Python
+y batch atómico evitan dobles ocupaciones y escrituras parciales. Solo un CAS
+con cero cambios confirmado admite relectura, hasta tres intentos totales.
+Una respuesta de commit desconocida no se reintenta. La contención agotada o
+un fallo de infraestructura devuelve 503; un conflicto de negocio sigue siendo
+404/409 según el contrato.
+
+Las cotizaciones esperan la confirmación de publicación antes de responder 202.
+El consumidor solicita ack antes de leer el cuerpo o procesar, y el start
+condicional ignora duplicados. El batch publica todos los resultados junto con
+el estado final. No hay transacción conjunta D1/Queues, outbox, requeue ni
+recuperación automática de trabajos interrumpidos.
+
+## Verificación del perfil existente
+
+| Comprobación | Resultado local |
+| --- | --- |
+| Unidades: `uv run --extra dev python -m unittest discover -s tests/unit -t . -v` | 99 pruebas, correctas |
+| PostgreSQL/Alembic: `uv run --extra dev python -m unittest discover -s tests/integration -t . -v -f` | 50 pruebas, correctas; PostgreSQL 17 desechable |
+| RabbitMQ: `uv run --extra dev python -m unittest discover -s tests/messaging -t . -v -f` | 1 smoke, correcto; PostgreSQL 17 y RabbitMQ 4 desechables |
+| Wheel instalado fuera del checkout | Imports de `main`, `worker`, `composition`, D1 y Queues correctos; OpenAPI incluye los endpoints |
+| `scripts/ci/smoke.sh` | Build bloqueado, migraciones y `GET /lockers` → 200, `[]`; recursos eliminados |
+
+Los comandos Python se ejecutaron desde `backend/`, con `UV_CACHE_DIR` en `/tmp`
+y URLs de pruebas explícitas para los servicios desechables. El smoke Docker
+usó una configuración temporal del entorno: el certificado CA se montó como
+secreto de BuildKit y RabbitMQ usó dos schedulers. No se desactivó TLS ni se
+incluyó el certificado en la imagen. El script del repositorio no se modificó.
+
+## Alcance de las pruebas D1
+
+El puente de tests ejecuta los adaptadores Python reales en CPython y envía cada
+operación a un binding D1 de Miniflare/workerd. No reimplementa sus consultas ni
+fragmenta los batches. Usa estado temporal y loopback; queda excluido del
+paquete publicado. Sus resultados prueban SQL y contratos de los adaptadores,
+pero no la conversión de proxies ni la ejecución Python/WASM.
+
+Los contratos cubren constraints, UUID/UTC, 1000/2000 celdas, selección de
+volúmenes casi iguales con ejes máximos, carreras de recepción/configuración,
+salidas históricas, rollback intermedio, contención agotada y commit desconocido.
+Las pruebas de cotizaciones cubren resultados mixtos, estados condicionales,
+duplicados, fallo de publicación y ausencia de resultados parciales.
+
+Ejecución final de `scripts/cloudflare/check.sh`, tras preparar las fuentes:
+
+| Nivel | Resultado |
+| --- | --- |
+| Puente, aislamiento, rollback y reapertura de workerd | 4 pruebas correctas |
+| Repositorios y esquema D1 | 23 pruebas correctas |
+| Campaña HTTP completa | 421 peticiones; una prueba correcta |
+| Presupuesto de campaña | 3 pruebas correctas |
+| Guard de compatibilidad sobre historial Wrangler poblado | 2 pruebas correctas; comprobación compatible y rechazo incompatible sin escrituras |
+| Experimento: unidades de contexto/ack/batch | 13 pruebas correctas en CPython |
+| Python Workers y Queues nativos | Bloqueado en `pywrangler sync`; el comando completo termina con error |
+
+La campaña conserva 10 lockers y 100 entregas/100 devoluciones, con 25 de cada
+combinación asignado/sin asignar y pendiente/finalizado por flujo, y 30
+cotizaciones. Verifica contenido y listas completas, concurrencia de cuatro,
+volúmenes exactos y fechas con microsegundos. La ventana HTTP observó como
+máximo ocho sentencias (incluye intercalados de peticiones concurrentes) y
+trece parámetros; los contratos de tres intentos CAS comprueban por separado
+el techo de 24 sentencias. Los metadatos D1 locales exitosos sumaron 425518
+filas leídas, 7910 escritas y un máximo de `size_after` de 622592 bytes. Son
+datos de esa ejecución; excluyen fallos y no equivalen al consumo remoto.
+
+La revisión independiente detectó un fallo al traducir errores de `prepare/bind`:
+podían escapar como HTTP 500. Se corrigió la frontera y se añadieron pruebas
+HTTP 503 para ambas operaciones, conservando visibles los errores de programación.
+También se corrigieron los imports del guard en el harness y se reforzaron las
+aserciones de aceptación. La revisión final no dejó hallazgos materiales locales.
+
+Ruff lint y formato pasan en 122 archivos. Desde `backend/`, el comando
+obligatorio `uv run --extra dev pyright --project .. --warnings` y el análisis
+adicional `uv run --extra dev pyright --project ../cloudflare --warnings`
+terminan con **cero errores y cero advertencias**. OpenSpec valida en modo
+estricto; esa validación documental no sustituye las pruebas pendientes.
+
+## Verificaciones que siguen pendientes
+
+- Ejecutar los harnesses oficiales de Python Workers y entrega real de Queues.
+  El entorno restringido sigue sin permitir `index.pyodide.org`, necesario para
+  resolver los paquetes WASM. El check completo debe fallar ante ese bloqueo.
+- Medir CPU, arranque, memoria y cuotas reales en una cuenta Free autorizada.
+  No hay destino ni credenciales configurados; no se han creado recursos remotos
+  ni publicado un Worker.
+- Ensayar allí el despliegue y la parada/reversión del consumidor. El guard de
+  compatibilidad y las migraciones locales no sustituyen ese ensayo.
+
+El build de fuentes desde un árbol limpio produjo 128.12 KiB (23.57 KiB gzip),
+sin resolver los paquetes WASM. Ese tamaño no mide el snapshot completo, la CPU
+remota ni demuestra que el contrato máximo quepa en Free. El cambio OpenSpec
+permanece activo hasta completar sus verificaciones; no se ha sincronizado ni
+archivado como terminado.

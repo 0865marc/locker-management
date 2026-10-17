@@ -64,6 +64,19 @@ La suite Cloudflare SHALL ejecutar los contratos HTTP/persistencia aplicables me
 - **WHEN** se crean/amplían 1000 celdas, se consultan configuraciones acumuladas y se prueban dimensiones máximas y fechas con microsegundos
 - **THEN** se conservan precisión y atomicidad, sin truncar listas, exceder parámetros o superar el presupuesto D1 definido en el diseño
 
+### Requirement: Supplement native evidence with a local D1 test bridge
+
+Los adaptadores Python reales SHALL probarse también desde CPython contra D1 local de Miniflare mediante un puente JavaScript/HTTP exclusivo de tests, con migraciones reales y recursos aislados que se limpian tras éxito o fallo. El puente SHALL preservar batches atómicos y excluirse de producción. Esta evidencia SHALL informarse por separado y no sustituir Python/WASM, eventos/Queues nativos ni aceptación Free.
+
+#### Scenario: Exercise real adapters against local D1
+- **WHEN** el harness CPython ejecuta los adaptadores reales mediante el puente local
+- **THEN** sus consultas y batches se ejecutan en D1 de Miniflare, permitiendo comprobar contratos, CAS y rollback sin copiar reglas de negocio ni SQL en el puente
+- **AND** el batch se envía como una sola operación al binding, sin commits parciales ni reintentos añadidos por el transporte de tests
+
+#### Scenario: Preserve pending native evidence
+- **WHEN** el puente pasa pero el runtime Python Workers no puede ejecutarse
+- **THEN** solo se acredita la integración CPython/D1 local, las comprobaciones nativas ausentes siguen pendientes y el check nativo no se presenta como aprobado
+
 ### Requirement: Verify Cloudflare messaging and event isolation
 
 Pruebas unitarias y nativas SHALL cubrir publicación confirmada/fallida, ack previo, ack fallido, duplicados, resultados atómicos y ausencia de reejecución. SHALL verificar aislamiento de bindings entre eventos concurrentes y cleanup en error, manteniendo el smoke RabbitMQ existente. La emulación SHALL identificarse como evidencia local, no de cuotas Free remotas.

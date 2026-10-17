@@ -5,9 +5,8 @@ from contextvars import Context, ContextVar
 from dataclasses import dataclass
 from typing import cast
 
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
-
 from bindings import Database, Environment, Queue
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 current_environment: ContextVar[Environment] = ContextVar("spike_environment")
 

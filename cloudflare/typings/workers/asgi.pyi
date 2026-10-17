@@ -1,4 +1,4 @@
-"""Subset of workers.asgi.fetch used by the experiment."""
+"""Subset of workers.asgi.fetch used by production Workers and the experiment."""
 
 from typing import Protocol
 

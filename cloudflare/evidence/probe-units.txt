@@ -12,6 +12,6 @@ test_invalid_message_is_acknowledged_before_validation (test_probe_units.QueuePr
 test_processing_failure_occurs_after_ack_and_single_write (test_probe_units.QueueProbeTests.test_processing_failure_occurs_after_ack_and_single_write) ... ok
 
 ----------------------------------------------------------------------
-Ran 12 tests in 0.012s
+Ran 12 tests in 0.010s
 
 OK

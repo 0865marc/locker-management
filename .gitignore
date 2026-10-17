@@ -13,6 +13,7 @@ dist/
 /.aws/
 
 # Python caches and coverage
+/.cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -48,3 +49,8 @@ Thumbs.db
 !/cloudflare/evidence/install.log
 !/cloudflare/evidence/npm-install.log
 !/cloudflare/evidence/prepare.log
+
+# Generated production Workers sources and local binding secrets
+/cloudflare/.production/
+/cloudflare/.dev.vars
+/cloudflare/.dev.vars.*

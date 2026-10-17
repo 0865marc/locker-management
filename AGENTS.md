@@ -100,9 +100,11 @@ its CLI before assuming OpenSpec needs to be installed again.
 
 - Keep `domain/` independent of FastAPI and persistence frameworks.
 - Keep `application/` focused on use cases and domain ports; adapters implement
-  HTTP and database concerns. Use `main.py` as the composition root.
-- Define migrations through Alembic and follow the repository README for their
-  preparation and verification.
+  HTTP and database concerns. Use `main.py` as the CPython composition root and `cloudflare_worker.py` as
+  the additional Workers root; `composition.py` shares HTTP/service composition.
+- Define PostgreSQL migrations through Alembic and D1 migrations through the
+  separate SQL/Wrangler history in `cloudflare/migrations/`. Follow the repository
+  README for preparation and verification; neither runtime migrates on startup.
 - Validate the selected change with
   `openspec validate <change-name> --strict`. Document validation is separate
   from proving that the implementation satisfies its requirements.

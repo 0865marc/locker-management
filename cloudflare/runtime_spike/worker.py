@@ -8,11 +8,20 @@ from time import perf_counter
 from typing import cast
 from uuid import UUID
 
+from bindings import Environment, MessageBatch, NativeResponse
+from d1_probe import verify_d1_batch
+from event_context import (
+    EventContext,
+    ProbeEnvironment,
+    current_environment,
+    verify_context_cleanup,
+)
+from fastapi import FastAPI, Request
+from import_clock import STARTED
+from pydantic import BaseModel, ValidationError
+from queue_probe import process_spike_message
 from workers import Request as WorkerRequest
 from workers import WorkerEntrypoint, asgi
-
-from fastapi import FastAPI, Request
-from pydantic import BaseModel, ValidationError
 
 from adapters.http.deliveries.schemas import DeliveryResponse
 from adapters.http.lockers.schemas import (
@@ -23,16 +32,6 @@ from adapters.http.lockers.schemas import (
 )
 from adapters.http.quotations.schemas import QuotationResponse
 from adapters.http.returns.schemas import ReturnResponse
-from bindings import Environment, MessageBatch, NativeResponse
-from d1_probe import verify_d1_batch
-from queue_probe import process_spike_message
-from import_clock import STARTED
-from event_context import (
-    EventContext,
-    ProbeEnvironment,
-    current_environment,
-    verify_context_cleanup,
-)
 
 # Import the actual shared use cases, without the PostgreSQL composition roots.
 for _module in (

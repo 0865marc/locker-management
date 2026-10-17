@@ -1,4 +1,4 @@
-"""Typed subset used by this experiment, checked against workers-runtime-sdk1.9.4.
+"""Typed subset used by production Workers and the feasibility experiment, checked against workers-runtime-sdk1.9.4.
 
 The runtime's Env and ExecutionContext are generated JavaScript types. Keeping
 these opaque forces the application to cross its explicit Protocol boundary.

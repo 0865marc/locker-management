@@ -121,7 +121,7 @@ uv run --locked python tests/run_spike.py
 El harness instala herramientas bloqueadas, prepara las fuentes actuales,
 ejecuta las unidades CPython de contexto/orquestación y `pywrangler sync`,
 construye sin publicar, crea únicamente las dos tablas
-de prueba en D1 local aislado e inicia `pywrangler dev --local`. Usa un puerto
+de prueba en D1 local aislado e inicia `pywrangler dev --config wrangler.spike.jsonc --local`. Usa un puerto
 local libre; espera como máximo 90 segundos para arrancar, ejecuta cinco pruebas
 y guarda logs/mediciones. Cancela su grupo de procesos y elimina exclusivamente
 su directorio temporal de estado al terminar, también en caso de fallo. No
@@ -144,7 +144,7 @@ Para comprobar únicamente el empaquetado de fuentes, sin confundirlo con runtim
 ```sh
 python scripts/cloudflare/prepare_spike.py
 cd cloudflare
-node node_modules/wrangler/bin/wrangler.js deploy --dry-run --outdir .wrangler/build
+node node_modules/wrangler/bin/wrangler.js deploy --config wrangler.spike.jsonc --dry-run --outdir .wrangler/build
 ```
 
 ## Contratos que probará el harness nativo
@@ -216,3 +216,63 @@ No hay evidencia de CPU remota, tamaño de snapshot/memoria, consumo de cuotas,
 retención Free ni límites efectivos de cola. El tamaño de fuentes del build
 provisional se registra en el log; falta el tamaño del paquete con dependencias.
 Ninguno de estos resultados permite declarar aceptado el objetivo Free.
+
+
+## Selección explícita de harness tras añadir producción
+
+`wrangler.jsonc` selecciona ahora la aplicación de producción; el experimento
+histórico permanece en `wrangler.spike.jsonc`. `tests/run_spike.py` pasa ese
+manifiesto explícitamente a build, migración local y dev. Las conclusiones y
+mediciones históricas de este documento no cambian por esa selección.
+`pywrangler sync` usa las dependencias/fecha comunes del proyecto y conserva su
+bloqueo Pyodide mientras la política de red no cambie.
+
+Desde la raíz, `scripts/cloudflare/check.sh --d1-only` ejecuta únicamente el
+complemento CPython/adaptadores/D1 de Miniflare. El comando sin argumentos exige
+además los contratos Python Workers/Queues del spike y la aplicación real
+(`tests/run_runtime.py`, manifiesto `wrangler.production.jsonc`). Un runtime
+inaccesible produce fallo; el complemento no convierte ese fallo en éxito.
+La campaña HTTP está en `scripts/cloudflare/acceptance.py --base-url URL`; usa
+un destino de prueba nuevo autorizado, conserva sus datos y limita toda la
+campaña a como máximo 1000 peticiones, incluso con override. Los tiempos HTTP
+son de pared: CPU, filas D1, operaciones Queues y cuota remota se verifican por
+separado antes de aceptar Free.
+
+## Evidencia complementaria CPython/D1 de los adaptadores reales
+
+La campaña HTTP local del 2026-10-17 pasó 421 peticiones con los adaptadores de
+producción y el D1 oficial de Miniflare/workerd. Conserva diez lockers, uno
+ampliado de 1000 a 2000 celdas; cien entregas y cien devoluciones, cada flujo con
+25 elementos de cada combinación asignado/sin asignar y pendiente/terminal; y
+30 cotizaciones. Comprueba listas completas/identificadores, cuatro peticiones
+normales simultáneas, carrera de última celda, ejes máximos y volúmenes próximos
+con desempate UUID exacto, y snapshots UTC con microsegundos tras persistencia,
+salida y repetición. El fixture de cola usa el handler/comparador reales con
+mensajes y tres proveedores deterministas de tests; prueba resultados completos
+QUOTED/NOT_COVERED/FAILED con los códigos de proveedores de producción, sin
+configurar ni modificar los simuladores reales.
+
+El máximo observado fue ocho sentencias D1 por ventana HTTP y trece parámetros
+por sentencia. En peticiones concurrentes la ventana incluye también consultas
+intercaladas de otra petición: es un conteo conservador. Los metadatos de
+respuestas D1 exitosas registraron 425519 filas leídas, 7910 escritas y un máximo
+de `size_after` de 630784 bytes. Excluyen operaciones fallidas o sin metadatos y
+no son métricas de cuota remota. La campaña corta tráfico auxiliar al alcanzar
+su presupuesto y rechaza overrides fuera de 1–1000 antes de efectuar I/O.
+
+Cuatro tests del puente pasaron además rollback intermedio, constraints en
+concurrencia, aislamiento/bounds/cleanup y cierre/reinicio completo de workerd
+con almacenamiento poblado e historial de migraciones preservados. Cada caso
+posee su estado temporal; al recibir un directorio externo de tests, el puente
+no lo elimina al cerrar. Los comandos individuales ejecutados fueron:
+
+```bash
+PYTHONPATH=backend:cloudflare/tests backend/.venv/bin/python -m unittest discover -s cloudflare/tests/test_support -v
+PYTHONPATH=backend:cloudflare/tests backend/.venv/bin/python -m unittest discover -s cloudflare/tests -p test_cloudflare_http.py -v
+PYTHONPATH=backend:cloudflare/tests backend/.venv/bin/python -m unittest discover -s cloudflare/tests -p test_acceptance.py -v
+```
+
+Esta evidencia no ejecuta Python en WASM, no acredita entrega nativa de Queues y
+no mide CPU/arranque/snapshot/cuotas Free. Sus verificaciones obligatorias y la
+aceptación remota continúan pendientes; el check completo exige esos niveles
+por separado y no convierte un bloqueo del runtime en éxito.

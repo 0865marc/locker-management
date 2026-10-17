@@ -1,5 +1,10 @@
 {
-  "include": ["backend"],
+  "include": [
+    "backend",
+    "cloudflare/runtime_spike",
+    "cloudflare/tests",
+    "scripts/cloudflare"
+  ],
   "exclude": [
     "**/.venv",
     "**/__pycache__",
@@ -10,9 +15,47 @@
     "backend/adapters/database/migrations/versions/0003_lockers_and_custody.py"
   ],
   "typeCheckingMode": "standard",
-  "strict": ["backend/domain", "backend/application", "backend/adapters", "backend/main.py", "backend/worker.py"],
+  "strict": [
+    "backend/domain",
+    "backend/application",
+    "backend/adapters",
+    "backend/main.py",
+    "backend/worker.py",
+    "backend/composition.py",
+    "backend/cloudflare_worker.py",
+    "cloudflare/runtime_spike",
+    "scripts/cloudflare"
+  ],
   "pythonVersion": "3.11",
   "venvPath": "backend",
   "venv": ".venv",
-  "executionEnvironments": [{"root": "backend"}]
+  "executionEnvironments": [
+    {
+      "root": "cloudflare",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "backend",
+        "cloudflare/runtime_spike",
+        "scripts/cloudflare"
+      ]
+    },
+    {
+      "root": "scripts/cloudflare",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "backend"
+      ]
+    },
+    {
+      "root": "backend/cloudflare_worker.py",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "backend"
+      ]
+    },
+    {
+      "root": "backend"
+    }
+  ],
+  "stubPath": "cloudflare/typings"
 }

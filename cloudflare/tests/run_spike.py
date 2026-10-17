@@ -14,7 +14,12 @@ from pathlib import Path
 CLOUDFLARE = Path(__file__).resolve().parents[1]
 ROOT = CLOUDFLARE.parent
 EVIDENCE = CLOUDFLARE / "evidence"
-WRANGLER = ["node", "node_modules/wrangler/bin/wrangler.js"]
+WRANGLER = [
+    "node",
+    "node_modules/wrangler/bin/wrangler.js",
+    "--config",
+    "wrangler.spike.jsonc",
+]
 CLIENT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -114,6 +119,8 @@ def main() -> None:
             "--locked",
             "pywrangler",
             "dev",
+            "--config",
+            "wrangler.spike.jsonc",
             "--local",
             "--ip",
             "127.0.0.1",

@@ -4,8 +4,10 @@ Demo de backend para gestionar **lockers y puntos de entrega y recogida de paque
 con arquitectura hexagonal y FastAPI. **Delivery** registra un
 paquete recibido del transportista para que lo recoja el destinatario; **Return**
 registra uno depositado por el cliente para que lo retire el transportista.
-Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
-usa **SQLModel asíncrono sobre PostgreSQL** y **Alembic** gestiona las migraciones.
+Cada entidad representa un paquete y tiene un UUID independiente. El perfil
+predeterminado
+usa **SQLModel asíncrono sobre PostgreSQL** y **Alembic** para sus migraciones.
+El perfil Cloudflare usa Workers Python, D1 y Queues con historial SQL separado.
 
 Ambas entidades contienen `tracking_number`, `carrier_code` y `received_at` UTC
 asignado por el sistema. Delivery añade `recipient_name` obligatorio, los campos
@@ -527,7 +529,7 @@ El agregador `create_router(delivery_service, return_service, locker_service, qu
 recibe las instancias e incluye sus routers en orden Locker/Delivery/Return/Quotation,
 sin construir dependencias. Las rutas
 reutilizan los servicios recibidos, sin instanciarlos por petición ni buscarlos
-en `app.state`. Todos los endpoints usan SQLModel a través de los casos de uso:
+en `app.state`. En el perfil PostgreSQL, los endpoints usan SQLModel a través de los casos de uso:
 
 | Endpoint | Repositorio |
 | --- | --- |
@@ -584,7 +586,7 @@ aunque una migración pueda afectar a varios archivos de infraestructura.
 
 ## Migraciones
 
-Hay **un único historial para toda la base de datos**, con `deliveries`, `returns`,
+En PostgreSQL hay **un único historial Alembic para su base de datos**, con `deliveries`, `returns`,
 `lockers`, `locker_compartments` y `locker_assignments`. La revisión inicial `0001` conserva las columnas legacy `address` y
 `reason`; `0002` incorpora el modelo de custodia y `0003` añade lockers y la revisión `0004` incorpora geografía nullable y `0005` añade cotizaciones. `upgrade 0001`
 prepara el esquema histórico y `upgrade head` prepara el contrato de la API actual. `SQLModel.metadata` es la fuente del
@@ -697,7 +699,7 @@ no fuerces un downgrade destructivo ni borres volúmenes para superar las guarda
 
 ## CI del backend y comprobaciones locales
 
-El workflow `.github/workflows/backend-ci.yml` ejecuta cinco checks independientes
+El workflow `.github/workflows/backend-ci.yml` ejecuta seis checks independientes
 para todas las PR dirigidas a `main` y cada push a `main`, sin filtros por rutas.
 Los jobs corren en paralelo, tienen tiempos máximos y cancelan una ejecución
 anterior de la misma PR cuando llega otro commit. Usa permisos de lectura y
@@ -710,6 +712,7 @@ caché de uv; la instalación bloqueada comprueba siempre `backend/uv.lock`.
 | `Unit tests` | `tests/unit`, dominio, aplicación y adaptadores aislados. | Python 3.11, sin URLs de test ni servicios. |
 | `PostgreSQL integration` | `tests/integration`, persistencia, API y migraciones Alembic. | Python 3.11, PostgreSQL 17 temporal y `TEST_DATABASE_URL` explícita; sin RabbitMQ. |
 | `Docker smoke` | Construcción bloqueada, migraciones y `GET /lockers` → HTTP 200 con `[]` en una base nueva. | Imagen Python 3.13, Docker Compose, PostgreSQL y RabbitMQ temporales. |
+| `Cloudflare local` | Instalación bloqueada, staging fresco, D1 local y runtime Python Workers; falla si falta el runtime. | Python 3.13, Node 24; sin cuenta ni secretos. |
 
 Para reproducir los checks Python desde `backend/`, instala uv y Python 3.11 y
 usa las dependencias bloqueadas. CI fija uv 0.13.1 y Docker usa la misma versión.
@@ -732,7 +735,7 @@ env -u TEST_RABBITMQ_URL \
 la preparación de la base de pruebas y el comando de la suite completa se explican
 en [Pruebas](#pruebas). Actions selecciona unitarias e integración; la suite
 completa local también incluye `tests/messaging` y requiere ambas URLs de test.
-Los cinco checks no configuran por sí mismos la protección de `main`.
+Los seis checks no configuran por sí mismos la protección de `main`.
 
 Ruff usa `backend/pyproject.toml`: Python 3.11, longitud 88 y reglas `E4`, `E7`,
 `E9`, `F` e `I`. Analiza producción y tests, incluido `migrations/env.py`.
@@ -793,7 +796,7 @@ locales y los pushes sin PR, incluidos los de ramas nuevas y los pushes directos
 a `main`, no ejecutan este workflow. Para bloquear merges que incumplan esta
 política, configura **OpenSpec closure** como
 check requerido en las reglas de protección de `main`; el workflow no configura
-esas reglas ni archiva cambios automáticamente. Los cinco checks del backend
+esas reglas ni archiva cambios automáticamente. Los seis checks del backend
 conservan su funcionamiento.
 
 ## Tipos: Pyright y Pylance
@@ -1014,9 +1017,12 @@ fallos de proveedor, simulación controlada y guardas de migración.
 
 ## Experimento Cloudflare pendiente de viabilidad
 
-`cloudflare/` contiene la prueba inicial de Python Workers/D1/Queues. Aún no es
-un despliegue completo del backend. El runtime nativo y las mediciones de
-1000/2000 celdas están pendientes: la resolución oficial de wheels Pyodide está
+`cloudflare/runtime_spike/` conserva el sondeo inicial. La implementación de
+producción está en `backend/adapters/database/d1`, `backend/adapters/queue/cloudflare.py`
+y `backend/cloudflare_worker.py`; el estado verificable se registra en
+[IMPLEMENTATION.md](cloudflare/IMPLEMENTATION.md). El runtime Python Workers y las
+mediciones Free de 1000/2000 celdas siguen pendientes: la resolución oficial de
+wheels Pyodide está
 bloqueada por la política de red de este entorno. La instalación CPython y el
 build de fuentes por sí solos no demuestran compatibilidad ni gratuidad.
 
@@ -1036,3 +1042,131 @@ para las versiones provisionales, el bloqueo, las pruebas preparadas y sus
 límites. Los comandos PostgreSQL/RabbitMQ documentados arriba siguen siendo los
 del perfil operativo existente. La aceptación en una cuenta Free requiere una
 campaña remota posterior autorizada y medidas de CPU/cuotas reales.
+
+## Perfil Cloudflare: composición y operación
+
+`backend/cloudflare_worker.py` compone la API y el consumidor con D1 y Queues.
+`main:create_app` conserva PostgreSQL/RabbitMQ y sus comandos actuales; la elección
+se hace por entrypoint de despliegue. Ambos perfiles reutilizan `composition.py`,
+los casos de uso y los routers existentes. No hay selección por cabeceras HTTP,
+sincronización ni traslado de datos entre los dos almacenamientos.
+
+La aplicación Workers se construye una sola vez al importar. Sus proveedores
+resuelven DB/QUOTATIONS desde el contexto del evento; middleware HTTP y handler
+de cola restauran ese contexto incluso ante errores. Importar no accede a bindings
+ni migra. Los fallos manejables de persistencia devuelven 503 sin detalles internos.
+Los simuladores se construyen sin argumentos y mantienen sus perfiles privados.
+
+El manifiesto predeterminado `cloudflare/wrangler.jsonc` es de producción, con
+alias explícito `wrangler.production.jsonc`. El experimento usa
+`wrangler.spike.jsonc`. Sus tablas de
+prueba no son las migraciones de negocio. El código de producción está sujeto a
+las pruebas y revisión del cambio en curso: la ejecución WASM y la aceptación
+Free continúan pendientes mientras la política de red bloquee Pyodide.
+
+Preparar las fuentes actuales y detectar staging obsoleto, desde la raíz:
+
+```bash
+uv sync --project cloudflare --locked
+python scripts/cloudflare/prepare.py
+python scripts/cloudflare/prepare.py --check
+```
+
+El árbol ignorado `cloudflare/.production` se genera desde una lista cerrada:
+dominio/aplicación, HTTP, adaptadores D1/Queues/contexto, simuladores y las dos
+fuentes de composición compartida/Workers. No incluye main/worker CPython,
+SQLModel, Alembic, asyncpg, aio-pika, tests ni secretos. El manifiesto SHA-256
+permite detectar código o archivos añadidos obsoletos; no se mantienen copias
+manuales de negocio. `--check` falla sin reparar el árbol automáticamente.
+
+Comprobación local completa, sin cuenta ni credenciales:
+
+```bash
+scripts/cloudflare/check.sh
+```
+
+Ese comando y el sexto check de backend `Cloudflare local` deben fallar si no
+pueden instalar, construir o ejecutar el runtime oficial. Los cinco checks de
+backend existentes y el workflow separado `OpenSpec closure` se conservan. Las
+pruebas CPython suplementarias no sustituyen Workers/D1/Queues nativos.
+
+Desarrollo local con el esquema preparado antes de iniciar:
+
+```bash
+cd cloudflare
+uv run --locked pywrangler sync
+uv run --locked pywrangler d1 migrations apply locker-management-demo --local --config wrangler.production.jsonc
+uv run --locked pywrangler dev --local --config wrangler.production.jsonc
+```
+
+Para inspeccionar únicamente el empaquetado de fuentes:
+
+```bash
+cd cloudflare
+node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.production.jsonc --outdir .wrangler/production-build
+```
+
+Ese dry-run no publica y no acredita que dependencias WASM o límites Free
+funcionen. No se deben editar manualmente las fuentes generadas ni ejecutar
+staging antiguo después de cambiar el backend.
+
+Un despliegue remoto exige cuenta/destino Free autorizados y cuota verificada.
+El operador debe establecer `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN` fuera de
+Git, comprobar la identidad seleccionada y sustituir el UUID de ceros por el D1
+recién creado en el manifiesto. Los nombres de Worker/DB/cola también deben
+corresponder al destino autorizado. La configuración proporcionada usa
+`workers.dev`, lote uno, concurrencia uno y cero retries. La retención Free es
+24 horas; no se activa pago, dead letter ni recuperación automática.
+
+Secuencia documentada para ese destino futuro, **no ejecutada por CI**:
+
+```bash
+cd cloudflare
+uv run --locked pywrangler whoami
+uv run --locked pywrangler d1 create locker-management-demo
+# Registrar el database_id devuelto en wrangler.production.jsonc.
+uv run --locked pywrangler queues create locker-management-quotations --message-retention-period-secs 86400
+uv run --locked pywrangler d1 migrations apply locker-management-demo --remote --config wrangler.production.jsonc
+uv run --locked pywrangler deploy --config wrangler.production.jsonc
+```
+
+Antes de publicar se preparan fuentes frescas, dependencias bloqueadas, migraciones
+y revisión; después se verifica HTTP, persistencia y cotizaciones por GET en
+workers.dev. El ack de Queues es síncrono y se solicita antes de procesar; no
+promete recuperación tras caída ni exactamente una vez. Las listas completas y
+el máximo de 1000 celdas nuevas permanecen: solo mediciones remotas de CPU,
+consultas/filas, almacenamiento y operaciones de cola permiten aceptar Free.
+
+La reversión ordinaria detiene nuevas recepciones y el consumidor afectado antes
+de restaurar código compatible con el esquema D1. No elimina tablas, resetea D1,
+purga Queues ni cambia PostgreSQL. Si no existe versión compatible, se deja el
+servicio detenido y se prepara una intervención explícita con export/copia.
+Cambiar al entrypoint PostgreSQL no copia ni recupera los datos Cloudflare.
+
+Antes de restaurar código, desde el checkout de la **versión destino** y con las
+recepciones/consumidor ya detenidos por el operador, comprobar el historial:
+
+```bash
+python scripts/cloudflare/check_schema.py --database locker-management-demo
+# Para el destino remoto autorizado, añadir --remote explícitamente.
+```
+
+El guard consulta únicamente `d1_migrations` y exige coincidencia exacta con los
+archivos de migración de esa versión. Un historial ausente, adicional, incompleto
+o ilegible falla sin modificar datos ni historial; no ejecuta deploy ni rollback.
+`--config` permite seleccionar el manifiesto destino y `--persist-to` el estado
+local de prueba. Esta comprobación no automatiza ni demuestra por sí sola la
+parada operativa de recepciones/consumidor. El ensayo remoto de esa parada y la
+reversión completa siguen pendientes de destino autorizado.
+
+
+El chequeo raíz sigue ejecutándose desde backend:
+
+```bash
+uv run --extra dev pyright --project .. --warnings
+```
+
+El extra dev incluye fuentes de SDK únicamente para análisis reproducible. Los
+stubs acotados en `cloudflare/typings` describen la interfaz usada; no sustituyen
+paquetes al ejecutar. El runtime Cloudflare mantiene su distribución Python
+>=3.13 separada del soporte CPython >=3.11 del backend.
