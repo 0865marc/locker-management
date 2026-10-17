@@ -109,7 +109,7 @@ its CLI before assuming OpenSpec needs to be installed again.
   stay empty, and adapters must not import entrypoints. `composition.py` shares
   HTTP/service composition from the backend root.
 - Define PostgreSQL migrations through Alembic and D1 migrations through the
-  separate SQL/Wrangler history in `cloudflare/migrations/`. Follow the repository
+  separate SQL/Wrangler history in `deploy/cloudflare/migrations/`. Follow the repository
   README for preparation and verification; neither runtime migrates on startup.
 - Validate the selected change with
   `openspec validate <change-name> --strict`. Document validation is separate

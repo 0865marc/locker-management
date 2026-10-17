@@ -15,8 +15,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-CLOUDFLARE = ROOT / "cloudflare"
+ROOT = Path(__file__).resolve().parents[3]
+CLOUDFLARE = ROOT / "deploy" / "cloudflare"
 CONFIG = "wrangler.production.jsonc"
 WRANGLER = ["node", "node_modules/wrangler/bin/wrangler.js"]
 CLIENT = urllib.request.build_opener(urllib.request.ProxyHandler({}))

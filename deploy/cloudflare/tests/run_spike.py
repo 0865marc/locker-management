@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 CLOUDFLARE = Path(__file__).resolve().parents[1]
-ROOT = CLOUDFLARE.parent
+ROOT = CLOUDFLARE.parents[1]
 EVIDENCE = CLOUDFLARE / "evidence"
 WRANGLER = [
     "node",

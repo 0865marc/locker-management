@@ -19,13 +19,13 @@ anterior permanece en `runtime_spike/` y su evidencia histórica en
 | Frontera nativa del SDK D1 | `backend/adapters/database/d1/native.py` |
 | Publicación y consumo Queues, incluida `NativeMessage` | `backend/adapters/queue/cloudflare.py` |
 | Contexto por evento y middleware ASGI Workers | `backend/entrypoints/cloudflare/runtime.py` |
-| Esquema D1 inicial | `cloudflare/migrations/0001_initial.sql` |
+| Esquema D1 inicial | `deploy/cloudflare/migrations/0001_initial.sql` |
 | Preparación de fuentes del Worker | `scripts/cloudflare/prepare.py` |
 
 Se selecciona el perfil mediante su entrypoint. Ambos reutilizan dominio,
 casos de uso, simuladores y routers. Cambiar de perfil no mueve ni sincroniza
 datos. La distribución Workers excluye PostgreSQL, SQLModel, Alembic y AMQP;
-`cloudflare/` contiene herramientas, configuración, migraciones y pruebas.
+`deploy/cloudflare/` contiene herramientas, configuración, migraciones y pruebas.
 
 La conexión SQLModel y los repositorios de entregas, devoluciones, lockers y
 cotizaciones se importan desde `adapters.database.sqlmodel`. El binding D1 se
@@ -85,14 +85,14 @@ borrar su estado.
 Preparación vigente desde la raíz:
 
 ```bash
-uv sync --project cloudflare --locked
-npm ci --ignore-scripts --prefix cloudflare
-cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+uv sync --project deploy/cloudflare --locked
+npm ci --ignore-scripts --prefix deploy/cloudflare
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
 ```
 
 El rango Python selecciona 3.13 también en máquinas con 3.14. Para sustituir un
 entorno anterior se puede añadir `--python 3.13` al sync. `check.sh` exige
-`cloudflare/.venv/bin/python` para suites y harness y falla si falta; no utiliza
+`deploy/cloudflare/.venv/bin/python` para suites y harness y falla si falta; no utiliza
 el backend como alternativa. `uv.lock` corresponde a CPython y no sustituye
 `pylock.toml`, que debe obtenerse mediante resolución nativa cuando el acceso
 lo permita. El manifiesto fundamenta los pins, pero no acredita ejecución
@@ -103,6 +103,16 @@ separado.
 El registro de verificaciones conserva también resultados de organizaciones
 anteriores. Los nombres de módulos, comandos e inventarios corresponden a cada
 ejecución; las rutas e instrucciones vigentes son las descritas en esta sección.
+
+La distribución vive en `deploy/cloudflare/`; las referencias a la antigua
+carpeta raíz `cloudflare/` en los resultados y comandos históricos siguientes
+corresponden a sus ejecuciones originales. Para trasladar estado ignorado tras
+Git, seguir la sección «Conservar estado local después del traslado» del
+[README](../../README.md#conservar-estado-local-después-del-traslado).
+El usuario informó del arranque de ambas APIs en su máquina; es un reporte de
+uso y no acredita entrega de Queues ni aceptación Free. Los comandos actuales
+de análisis, desde `backend/`, son `uv run --extra dev pyright --project .. --warnings`
+y `uv run --extra dev pyright --project ../deploy/cloudflare --warnings`.
 
 ## Verificación del perfil existente
 
@@ -329,3 +339,29 @@ Los fixtures del script comprueban propagación de errores, no ejecución
 nativa. No se repitió `pywrangler sync` ni el arranque nativo porque sigue
 bloqueado `index.pyodide.org`. La resolución de `pylock.toml`, Python/WASM,
 la entrega real de Queues y la aceptación Free continúan pendientes.
+
+## Verificación del traslado a deploy/cloudflare
+
+El traslado se verificó el 17 de octubre de 2026, conservando la evidencia
+histórica anterior. `uv sync --project deploy/cloudflare --locked --python 3.13`
+recreó el entorno host con 24 paquetes y las mismas versiones.
+
+| Comprobación desde la ubicación nueva | Resultado |
+| --- | --- |
+| `scripts/cloudflare/check.sh --d1-only` | 33 pruebas correctas: puente 4, contratos D1 23, campaña HTTP 1, presupuesto 3 y guard de esquema 2 |
+| Campaña HTTP | 421 peticiones; máximo de 8 sentencias D1 y 13 parámetros |
+| Unidades de contexto y probes | 1 y 12 pruebas correctas, respectivamente |
+| `uv run --extra dev pyright --project .. --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| `uv run --extra dev pyright --project ../deploy/cloudflare --warnings`, desde `backend/` | Cero errores y cero advertencias |
+| Ruff lint y formato | Correctos en 125 archivos |
+| Preparación y build Wrangler sin publicación | Producción: 58 fuentes; spike: 45. Los 58 módulos del build coinciden byte a byte con la selección, normalizando el nombre de salida de la API principal; 128.60 KiB, 23.66 KiB gzip |
+| Conservación de contenido | 147 de los 156 archivos del baseline idénticos; 9 diferencias limitadas a documentación, Pyright Cloudflare y rutas de pruebas. Todo el backend, locks, manifiestos y migraciones idénticos; 415 hashes de estado preservados inmediatamente después del traslado |
+| Transición manual del README, ejecutada literalmente en fixtures | Preservación y repetición correctas, incluido checkout vacío; colisiones de directorio, archivo o enlace roto y enlaces de origen rechazados sin movimientos |
+| Guard de entorno ausente e ignores | Fallo con instrucciones de la ruta nueva y sin fallback; 16 rutas antiguas/nuevas ignoradas; 49 candidatos versionados sin extras |
+
+No se reintentó el runtime nativo bloqueado. El arranque de ambas APIs
+comunicado por el usuario sigue siendo un reporte de uso: esta verificación
+local no acredita entrega nativa de Queues ni aceptación Free.
+
+La revisión independiente no encontró hallazgos y
+`openspec validate add-cloudflare-free-deployment --strict` terminó correctamente.

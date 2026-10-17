@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DESTINATION = ROOT / "cloudflare" / ".prepared"
+DESTINATION = ROOT / "deploy" / "cloudflare" / ".prepared"
 DIRECTORIES = (
     "backend/domain",
     "backend/application",
@@ -14,13 +14,13 @@ DIRECTORIES = (
 )
 FILES = (
     "backend/adapters/__init__.py",
-    "cloudflare/runtime_spike/worker.py",
-    "cloudflare/runtime_spike/bindings.py",
-    "cloudflare/runtime_spike/d1_probe.py",
-    "cloudflare/runtime_spike/queue_probe.py",
-    "cloudflare/runtime_spike/event_context.py",
-    "cloudflare/runtime_spike/bootstrap.py",
-    "cloudflare/runtime_spike/import_clock.py",
+    "deploy/cloudflare/runtime_spike/worker.py",
+    "deploy/cloudflare/runtime_spike/bindings.py",
+    "deploy/cloudflare/runtime_spike/d1_probe.py",
+    "deploy/cloudflare/runtime_spike/queue_probe.py",
+    "deploy/cloudflare/runtime_spike/event_context.py",
+    "deploy/cloudflare/runtime_spike/bootstrap.py",
+    "deploy/cloudflare/runtime_spike/import_clock.py",
 )
 
 

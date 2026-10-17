@@ -73,3 +73,16 @@ La reversión SHALL conservar datos D1 y trabajos de la cola, restaurando solo c
 #### Scenario: A free quota is exhausted
 - **WHEN** la cuenta alcanza una cuota que impide la operación
 - **THEN** se informa del fallo disponible de plataforma o aplicación sin activar una suscripción ni presentar un conflicto de capacidad de locker ficticio
+
+### Requirement: Preserve local state when relocating deployment tooling
+
+La distribución SHALL residir en `deploy/cloudflare/`, conservando código backend, scripts, versiones, locks y contenido de migraciones. El traslado SHALL preservar estado local y configuración privada. La documentación SHALL explicar que Git no mueve archivos ignorados, comprobar destinos antes de trasladarlos y rechazar colisiones sin sobrescribir. Los entornos virtuales SHALL recrearse en la ruta nueva sin eliminar datos.
+
+#### Scenario: Continue local development after a tracked move
+- **WHEN** el usuario actualiza una copia que conserva `.wrangler`, `.dev.vars` o `pylock.toml` en la carpeta raíz anterior y sigue la transición documentada con procesos detenidos
+- **THEN** mueve esos archivos a los destinos libres correspondientes, conserva datos/configuración y el historial D1, y prepara el entorno en `deploy/cloudflare`
+- **AND** los archivos ignorados que permanezcan en la ubicación anterior continúan protegidos frente a inclusión accidental en Git
+
+#### Scenario: Reject an occupied migration destination
+- **WHEN** un destino de estado o configuración ya existe al comprobar la transición
+- **THEN** el procedimiento se detiene antes de mover archivos, sin fusionar, sobrescribir ni borrar datos y sin resetear el esquema

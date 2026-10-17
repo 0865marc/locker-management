@@ -36,9 +36,9 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra dev
       - name: Check lint and imports
-        run: uv run --extra dev ruff check . ../cloudflare/runtime_spike ../cloudflare/tests ../cloudflare/typings ../scripts/cloudflare
+        run: uv run --extra dev ruff check . ../deploy/cloudflare/runtime_spike ../deploy/cloudflare/tests ../deploy/cloudflare/typings ../scripts/cloudflare
       - name: Check format
-        run: uv run --extra dev ruff format --check . ../cloudflare/runtime_spike ../cloudflare/tests ../cloudflare/typings ../scripts/cloudflare
+        run: uv run --extra dev ruff format --check . ../deploy/cloudflare/runtime_spike ../deploy/cloudflare/tests ../deploy/cloudflare/typings ../scripts/cloudflare
 
   pyright:
     name: Pyright
@@ -146,20 +146,20 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: |
-            cloudflare/uv.lock
+            deploy/cloudflare/uv.lock
             backend/uv.lock
       - name: Select Node for locked Wrangler
         uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: cloudflare/package-lock.json
+          cache-dependency-path: deploy/cloudflare/package-lock.json
       - name: Install locked backend analysis and contract tools
         run: uv sync --project backend --locked --extra dev
       - name: Install locked Python Workers tools
-        run: uv sync --project cloudflare --locked
+        run: uv sync --project deploy/cloudflare --locked
       - name: Install locked Wrangler packages
-        run: npm ci --ignore-scripts --prefix cloudflare
+        run: npm ci --ignore-scripts --prefix deploy/cloudflare
       - name: Prepare current production sources
         run: python scripts/cloudflare/prepare.py
       - name: Verify production Workers and local bindings

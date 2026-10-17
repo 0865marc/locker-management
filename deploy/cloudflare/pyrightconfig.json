@@ -2,8 +2,8 @@
   "include": [
     "runtime_spike",
     "tests",
-    "../scripts/cloudflare",
-    "../backend/entrypoints/cloudflare"
+    "../../scripts/cloudflare",
+    "../../backend/entrypoints/cloudflare"
   ],
   "typeCheckingMode": "strict",
   "pythonVersion": "3.13",
@@ -14,30 +14,30 @@
       "root": ".",
       "extraPaths": [
         "runtime_spike",
-        "../backend",
-        "../scripts/cloudflare"
+        "../../backend",
+        "../../scripts/cloudflare"
       ]
     },
     {
-      "root": "../backend/entrypoints/cloudflare",
+      "root": "../../backend/entrypoints/cloudflare",
       "pythonVersion": "3.13",
       "extraPaths": [
-        "../backend"
+        "../../backend"
       ]
     },
     {
-      "root": "../backend",
+      "root": "../../backend",
       "pythonVersion": "3.11",
       "extraPaths": [
-        "../backend"
+        "../../backend"
       ]
     },
     {
-      "root": "../scripts/cloudflare",
+      "root": "../../scripts/cloudflare",
       "pythonVersion": "3.13",
       "extraPaths": [
-        "../backend",
-        "../scripts/cloudflare"
+        "../../backend",
+        "../../scripts/cloudflare"
       ]
     }
   ],

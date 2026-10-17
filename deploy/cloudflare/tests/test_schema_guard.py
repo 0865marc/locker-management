@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 from check_schema import history_from_response, inspect_history, validate_history
 
-ROOT = Path(__file__).resolve().parents[2]
-CLOUDFLARE = ROOT / "cloudflare"
+ROOT = Path(__file__).resolve().parents[3]
+CLOUDFLARE = ROOT / "deploy" / "cloudflare"
 CONFIG = CLOUDFLARE / "wrangler.production.jsonc"
 WRANGLER = ["node", str(CLOUDFLARE / "node_modules/wrangler/bin/wrangler.js")]
 

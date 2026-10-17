@@ -1,8 +1,8 @@
 {
   "include": [
     "backend",
-    "cloudflare/runtime_spike",
-    "cloudflare/tests",
+    "deploy/cloudflare/runtime_spike",
+    "deploy/cloudflare/tests",
     "scripts/cloudflare"
   ],
   "exclude": [
@@ -20,7 +20,7 @@
     "backend/application",
     "backend/adapters",
     "backend/composition.py",
-    "cloudflare/runtime_spike",
+    "deploy/cloudflare/runtime_spike",
     "scripts/cloudflare",
     "backend/entrypoints"
   ],
@@ -29,11 +29,11 @@
   "venv": ".venv",
   "executionEnvironments": [
     {
-      "root": "cloudflare",
+      "root": "deploy/cloudflare",
       "pythonVersion": "3.13",
       "extraPaths": [
         "backend",
-        "cloudflare/runtime_spike",
+        "deploy/cloudflare/runtime_spike",
         "scripts/cloudflare"
       ]
     },
@@ -55,5 +55,5 @@
       "root": "backend"
     }
   ],
-  "stubPath": "cloudflare/typings"
+  "stubPath": "deploy/cloudflare/typings"
 }

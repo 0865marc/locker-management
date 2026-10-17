@@ -473,18 +473,19 @@ locker-management-demo/
 │   ├── Dockerfile
 │   ├── .dockerignore
 │   └── pyproject.toml
-├── cloudflare/
-│   ├── migrations/
-│   │   └── 0001_initial.sql
-│   ├── runtime_spike/
-│   ├── tests/
-│   ├── typings/
-│   ├── pyproject.toml
-│   ├── wrangler.jsonc
-│   ├── wrangler.production.jsonc
-│   ├── wrangler.spike.jsonc
-│   ├── FEASIBILITY.md
-│   └── IMPLEMENTATION.md
+├── deploy/
+│   └── cloudflare/
+│       ├── migrations/
+│       │   └── 0001_initial.sql
+│       ├── runtime_spike/
+│       ├── tests/
+│       ├── typings/
+│       ├── pyproject.toml
+│       ├── wrangler.jsonc
+│       ├── wrangler.production.jsonc
+│       ├── wrangler.spike.jsonc
+│       ├── FEASIBILITY.md
+│       └── IMPLEMENTATION.md
 ├── scripts/
 │   └── cloudflare/
 │       ├── prepare.py
@@ -506,7 +507,7 @@ rutas y esquemas en paquetes por área y conserva `request_validation.py` para l
 cuerpos de las acciones. La conexión y los repositorios PostgreSQL se agrupan en
 `backend/adapters/database/sqlmodel/`; los repositorios y la envoltura nativa D1,
 en `backend/adapters/database/d1/`. Alembic conserva su historial en
-`backend/adapters/database/migrations/`, y D1 usa `cloudflare/migrations/`.
+`backend/adapters/database/migrations/`, y D1 usa `deploy/cloudflare/migrations/`.
 Las rutas y los modelos HTTP viven en `backend/adapters/http/`; las colas, en
 `backend/adapters/queue/`, y el contexto por evento de Workers, en
 `backend/entrypoints/cloudflare/runtime.py`. Los adaptadores son externos al núcleo
@@ -1074,11 +1075,11 @@ fallos de proveedor, simulación controlada y guardas de migración.
 
 ## Experimento Cloudflare pendiente de viabilidad
 
-`cloudflare/runtime_spike/` conserva el sondeo inicial. La implementación de
+`deploy/cloudflare/runtime_spike/` conserva el sondeo inicial. La implementación de
 producción está en `backend/adapters/database/d1`, `backend/adapters/queue/cloudflare.py`
 y `backend/entrypoints/cloudflare/{api,consumer,runtime}.py`; el estado
 verificable se registra en
-[IMPLEMENTATION.md](cloudflare/IMPLEMENTATION.md). El runtime Python Workers y las
+[IMPLEMENTATION.md](deploy/cloudflare/IMPLEMENTATION.md). El runtime Python Workers y las
 mediciones Free de 1000/2000 celdas siguen pendientes: la resolución oficial de
 wheels Pyodide está
 bloqueada por la política de red de este entorno. La instalación CPython y el
@@ -1087,16 +1088,16 @@ build de fuentes por sí solos no demuestran compatibilidad ni gratuidad.
 Con Python `>=3.13,<3.14`, uv, Node y npm, desde la raíz:
 
 ```bash
-uv sync --project cloudflare --locked
-npm ci --ignore-scripts --prefix cloudflare
-cd cloudflare
+uv sync --project deploy/cloudflare --locked
+npm ci --ignore-scripts --prefix deploy/cloudflare
+cd deploy/cloudflare
 uv run --locked python tests/run_spike.py
 ```
 
 El harness prepara fuentes actuales, instala herramientas bloqueadas y utiliza
 exclusivamente Workers/D1/Queues locales con estado temporal. No publica ni crea
 recursos remotos y falla si no puede resolver dependencias o iniciar el runtime.
-Consultar [el estado y los comandos exactos del experimento](cloudflare/FEASIBILITY.md)
+Consultar [el estado y los comandos exactos del experimento](deploy/cloudflare/FEASIBILITY.md)
 para las versiones provisionales, el bloqueo, las pruebas preparadas y sus
 límites. Los comandos PostgreSQL/RabbitMQ documentados arriba siguen siendo los
 del perfil operativo existente. La aceptación en una cuenta Free requiere una
@@ -1121,7 +1122,7 @@ handler de cola restauran ese contexto incluso ante errores. Importar no accede 
 ni migra. Los fallos manejables de persistencia devuelven 503 sin detalles internos.
 Los simuladores se construyen sin argumentos y mantienen sus perfiles privados.
 
-El manifiesto predeterminado `cloudflare/wrangler.jsonc` es de producción, con
+El manifiesto predeterminado `deploy/cloudflare/wrangler.jsonc` es de producción, con
 alias explícito `wrangler.production.jsonc`. Ambos fijan
 `main = ".production/entrypoints/cloudflare/api.py"` y
 `base_dir = ".production"`, para incluir los paquetes hermanos de `entrypoints`
@@ -1130,6 +1131,54 @@ en la raíz de módulos. El experimento usa
 prueba no son las migraciones de negocio. El código de producción está sujeto a
 las pruebas y revisión del cambio en curso: la ejecución WASM y la aceptación
 Free continúan pendientes mientras la política de red bloquee Pyodide.
+
+### Conservar estado local después del traslado
+
+Tras `git pull`, detén los procesos `pywrangler dev` antes de la transición.
+Git mueve los archivos versionados a `deploy/cloudflare/`, pero no traslada los
+ignorados del antiguo `cloudflare/`. Desde la raíz, este paso manual comprueba
+**todos** los destinos antes de mover estado/configuración existentes; rechaza
+colisiones, incluidos enlaces simbólicos rotos, sin fusionar ni sobrescribir.
+No muestra secretos ni borra D1. Los ignores antiguos se conservan para restos
+locales de la transición.
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import os
+
+old = Path("cloudflare")
+new = Path("deploy/cloudflare")
+if old.is_symlink() or new.is_symlink() or not new.is_dir():
+    raise SystemExit("Revisar los directorios antes de continuar")
+names = [".wrangler", ".dev.vars", "pylock.toml"]
+names += sorted(path.name for path in old.glob(".dev.vars.*"))
+moves = [(old / name, new / name) for name in names if os.path.lexists(old / name)]
+for source, target in moves:
+    if source.is_symlink() or os.path.lexists(target):
+        raise SystemExit("Colisión o enlace: no se ha movido ningún archivo")
+for source, target in moves:
+    source.rename(target)
+PY
+```
+
+Si falla la comprobación, resuelve la colisión manualmente antes de repetirla.
+Git no mueve `.venv` ni `.venv-workers`: no copies los entornos antiguos al
+destino, porque contienen rutas absolutas. La instalación bloqueada siguiente
+crea el entorno en la ruta nueva. Si ya trasladaste manualmente esos entornos,
+detén sus procesos y apártalos fuera del checkout antes de recrearlos. Esto no
+afecta al estado `.wrangler/state` ni a los archivos locales conservados.
+
+```bash
+uv sync --project deploy/cloudflare --locked --python 3.13
+npm ci --ignore-scripts --prefix deploy/cloudflare
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+```
+
+Cuando el acceso al índice esté disponible, ejecuta `uv run --locked pywrangler
+sync` desde `deploy/cloudflare/` para preparar el entorno Workers nuevo. Conserva
+el `pylock.toml` trasladado si existe. No hace falta reiniciar la base ni borrar
+el directorio anterior para completar este traslado.
 
 ### Compatibilidad de Pydantic y diagnóstico de instalación
 
@@ -1152,9 +1201,9 @@ sincronizar de nuevo.
 Para reintentar desde la raíz tras actualizar el checkout:
 
 ```bash
-uv sync --project cloudflare --locked --python 3.13
-npm ci --ignore-scripts --prefix cloudflare
-cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+uv sync --project deploy/cloudflare --locked --python 3.13
+npm ci --ignore-scripts --prefix deploy/cloudflare
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
 scripts/cloudflare/check.sh
 ```
 
@@ -1166,13 +1215,13 @@ fuentes no prueba Python/WASM, entrega de Queues ni viabilidad Free.
 Preparar las fuentes actuales y detectar staging obsoleto, desde la raíz:
 
 ```bash
-uv sync --project cloudflare --locked
-npm ci --ignore-scripts --prefix cloudflare
-cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
-cloudflare/.venv/bin/python scripts/cloudflare/prepare.py --check
+uv sync --project deploy/cloudflare --locked
+npm ci --ignore-scripts --prefix deploy/cloudflare
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare.py --check
 ```
 
-El árbol ignorado `cloudflare/.production` se genera desde una lista cerrada:
+El árbol ignorado `deploy/cloudflare/.production` se genera desde una lista cerrada:
 dominio/aplicación, HTTP, adaptadores D1/Queues, simuladores y `composition.py`.
 De `entrypoints` incluye el `__init__.py` vacío y el paquete `cloudflare` con su
 init vacío, API, consumidor y runtime; excluye `entrypoints/server`,
@@ -1180,7 +1229,7 @@ SQLModel, Alembic, asyncpg, aio-pika, tests y secretos. El manifiesto SHA-256
 permite detectar código o archivos añadidos obsoletos; no se mantienen copias
 manuales de negocio. `--check` falla sin reparar el árbol automáticamente.
 
-El check usa exclusivamente `cloudflare/.venv/bin/python` para sus suites y
+El check usa exclusivamente `deploy/cloudflare/.venv/bin/python` para sus suites y
 harness. Si falta, falla con la instrucción de instalación bloqueada; no recurre
 al entorno backend.
 
@@ -1198,7 +1247,7 @@ pruebas CPython suplementarias no sustituyen Workers/D1/Queues nativos.
 Desarrollo local con el esquema preparado antes de iniciar:
 
 ```bash
-cd cloudflare
+cd deploy/cloudflare
 uv run --locked pywrangler sync
 uv run --locked pywrangler d1 migrations apply locker-management-demo --local --config wrangler.production.jsonc
 uv run --locked pywrangler dev --local --config wrangler.production.jsonc
@@ -1207,7 +1256,7 @@ uv run --locked pywrangler dev --local --config wrangler.production.jsonc
 Para inspeccionar únicamente el empaquetado de fuentes:
 
 ```bash
-cd cloudflare
+cd deploy/cloudflare
 node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.production.jsonc --outdir .wrangler/production-build
 ```
 
@@ -1226,7 +1275,7 @@ corresponder al destino autorizado. La configuración proporcionada usa
 Secuencia documentada para ese destino futuro, **no ejecutada por CI**:
 
 ```bash
-cd cloudflare
+cd deploy/cloudflare
 uv run --locked pywrangler whoami
 uv run --locked pywrangler d1 create locker-management-demo
 # Registrar el database_id devuelto en wrangler.production.jsonc.
@@ -1265,13 +1314,14 @@ parada operativa de recepciones/consumidor. El ensayo remoto de esa parada y la
 reversión completa siguen pendientes de destino autorizado.
 
 
-El chequeo raíz sigue ejecutándose desde backend:
+Los análisis raíz y Cloudflare se ejecutan desde `backend/`:
 
 ```bash
 uv run --extra dev pyright --project .. --warnings
+uv run --extra dev pyright --project ../deploy/cloudflare --warnings
 ```
 
 El extra dev incluye fuentes de SDK únicamente para análisis reproducible. Los
-stubs acotados en `cloudflare/typings` describen la interfaz usada; no sustituyen
+stubs acotados en `deploy/cloudflare/typings` describen la interfaz usada; no sustituyen
 paquetes al ejecutar. El runtime Cloudflare mantiene su distribución Python
 `>=3.13,<3.14` separada del soporte CPython >=3.11 del backend.

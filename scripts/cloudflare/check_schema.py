@@ -49,7 +49,7 @@ def inspect_history(
         raise ValueError("Local persistence cannot be combined with --remote")
     command = [
         "node",
-        str(ROOT / "cloudflare/node_modules/wrangler/bin/wrangler.js"),
+        str(ROOT / "deploy/cloudflare/node_modules/wrangler/bin/wrangler.js"),
         "d1",
         "execute",
         database,
@@ -66,7 +66,7 @@ def inspect_history(
     environment["WRANGLER_SEND_METRICS"] = "false"
     result = subprocess.run(
         command,
-        cwd=ROOT / "cloudflare",
+        cwd=ROOT / "deploy" / "cloudflare",
         env=environment,
         capture_output=True,
         text=True,
@@ -83,10 +83,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", default="locker-management-demo")
     parser.add_argument(
-        "--config", type=Path, default=ROOT / "cloudflare/wrangler.production.jsonc"
+        "--config",
+        type=Path,
+        default=ROOT / "deploy/cloudflare/wrangler.production.jsonc",
     )
     parser.add_argument(
-        "--migrations", type=Path, default=ROOT / "cloudflare/migrations"
+        "--migrations", type=Path, default=ROOT / "deploy/cloudflare/migrations"
     )
     parser.add_argument("--persist-to", type=Path)
     parser.add_argument(

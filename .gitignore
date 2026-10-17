@@ -54,3 +54,22 @@ Thumbs.db
 /cloudflare/.production/
 /cloudflare/.dev.vars
 /cloudflare/.dev.vars.*
+
+# Current Cloudflare distribution; retain old ignores for manual transitions
+/deploy/cloudflare/node_modules/
+/deploy/cloudflare/.venv-workers/
+/deploy/cloudflare/.wrangler/
+/deploy/cloudflare/python_modules/
+/deploy/cloudflare/.prepared/
+/deploy/cloudflare/.pywrangler/
+!/deploy/cloudflare/evidence/build.log
+!/deploy/cloudflare/evidence/harness.log
+!/deploy/cloudflare/evidence/sync.log
+!/deploy/cloudflare/evidence/context-mutation.log
+!/deploy/cloudflare/evidence/context-unit.log
+!/deploy/cloudflare/evidence/install.log
+!/deploy/cloudflare/evidence/npm-install.log
+!/deploy/cloudflare/evidence/prepare.log
+/deploy/cloudflare/.production/
+/deploy/cloudflare/.dev.vars
+/deploy/cloudflare/.dev.vars.*

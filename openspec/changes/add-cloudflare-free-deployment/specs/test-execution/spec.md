@@ -79,7 +79,7 @@ Los adaptadores Python reales SHALL probarse desde el entorno CPython bloqueado 
 
 #### Scenario: Verify the Cloudflare dependency resolution
 - **WHEN** se ejecutan las suites complementarias HTTP/D1/aceptación mediante `scripts/cloudflare/check.sh`
-- **THEN** usan `cloudflare/.venv` con las dependencias bloqueadas del perfil Cloudflare, aunque el entorno backend tenga otras versiones
+- **THEN** usan `deploy/cloudflare/.venv` con las dependencias bloqueadas del perfil Cloudflare, aunque el entorno backend tenga otras versiones
 - **AND** comprueban los contratos existentes de validación y serialización sin sustituirlos por tests que solo comparan pins
 
 #### Scenario: Reject a missing Cloudflare environment

@@ -21,20 +21,27 @@ sincronizar de nuevo.
 Preparación actual desde la raíz:
 
 ```bash
-uv sync --project cloudflare --locked
-npm ci --ignore-scripts --prefix cloudflare
-cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
+uv sync --project deploy/cloudflare --locked
+npm ci --ignore-scripts --prefix deploy/cloudflare
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare.py
 ```
 
 Para seleccionar explícitamente Python 3.13 al sustituir un entorno anterior,
-usar `uv sync --project cloudflare --locked --python 3.13`.
+usar `uv sync --project deploy/cloudflare --locked --python 3.13`.
 `scripts/cloudflare/check.sh` ejecuta sus suites y harness con
-`cloudflare/.venv/bin/python`, sin fallback al backend. Su modo `--d1-only`
+`deploy/cloudflare/.venv/bin/python`, sin fallback al backend. Su modo `--d1-only`
 sigue siendo complementario; el modo completo exige el runtime nativo.
 `uv.lock` describe CPython y no sustituye `pylock.toml`: la resolución nativa,
 Python/WASM, Queues y Free continúan pendientes. El acceso de este entorno a
 `index.pyodide.org` sigue bloqueado; la instalación host y el build de fuentes
 se verifican por separado.
+
+La distribución se encuentra en `deploy/cloudflare/`; las rutas antiguas de
+los registros históricos describen su organización anterior. La transición de
+estado ignorado tras Git está en el
+[README](../../README.md#conservar-estado-local-después-del-traslado).
+El arranque de ambas APIs comunicado por el usuario se conserva como reporte,
+sin acreditar entrega real de Queues ni aceptación Free.
 
 ## Evidencia histórica del experimento
 
@@ -155,9 +162,9 @@ la configuración provisional ya sirve para producción.
 Desde la raíz, con Python `>=3.13,<3.14`, uv, Node y npm disponibles:
 
 ```sh
-uv sync --project cloudflare --locked
-npm ci --ignore-scripts --prefix cloudflare
-cd cloudflare
+uv sync --project deploy/cloudflare --locked
+npm ci --ignore-scripts --prefix deploy/cloudflare
+cd deploy/cloudflare
 uv run --locked python tests/run_spike.py
 ```
 
@@ -173,7 +180,7 @@ necesita cuenta, token ni D1 remoto; no ejecuta `deploy` sin `--dry-run`.
 Para ver el bloqueo directamente:
 
 ```sh
-cd cloudflare
+cd deploy/cloudflare
 uv run --locked pywrangler sync
 ```
 
@@ -185,8 +192,8 @@ CA heredados. No compartir logs que contengan credenciales añadidas posteriorme
 Para comprobar únicamente el empaquetado de fuentes, sin confundirlo con runtime:
 
 ```sh
-cloudflare/.venv/bin/python scripts/cloudflare/prepare_spike.py
-cd cloudflare
+deploy/cloudflare/.venv/bin/python scripts/cloudflare/prepare_spike.py
+cd deploy/cloudflare
 node node_modules/wrangler/bin/wrangler.js deploy --config wrangler.spike.jsonc --dry-run --outdir .wrangler/build
 ```
 
