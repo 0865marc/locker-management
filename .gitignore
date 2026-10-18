@@ -40,15 +40,8 @@ Thumbs.db
 /cloudflare/python_modules/
 /cloudflare/.prepared/
 /cloudflare/.pywrangler/
-# Reviewed local feasibility evidence (no credentials)
-!/cloudflare/evidence/build.log
-!/cloudflare/evidence/harness.log
-!/cloudflare/evidence/sync.log
-!/cloudflare/evidence/context-mutation.log
-!/cloudflare/evidence/context-unit.log
-!/cloudflare/evidence/install.log
-!/cloudflare/evidence/npm-install.log
-!/cloudflare/evidence/prepare.log
+# Local Cloudflare feasibility evidence
+/cloudflare/evidence/
 
 # Generated production Workers sources and local binding secrets
 /cloudflare/.production/
@@ -62,14 +55,7 @@ Thumbs.db
 /deploy/cloudflare/python_modules/
 /deploy/cloudflare/.prepared/
 /deploy/cloudflare/.pywrangler/
-!/deploy/cloudflare/evidence/build.log
-!/deploy/cloudflare/evidence/harness.log
-!/deploy/cloudflare/evidence/sync.log
-!/deploy/cloudflare/evidence/context-mutation.log
-!/deploy/cloudflare/evidence/context-unit.log
-!/deploy/cloudflare/evidence/install.log
-!/deploy/cloudflare/evidence/npm-install.log
-!/deploy/cloudflare/evidence/prepare.log
+/deploy/cloudflare/evidence/
 /deploy/cloudflare/.production/
 /deploy/cloudflare/.dev.vars
 /deploy/cloudflare/.dev.vars.*

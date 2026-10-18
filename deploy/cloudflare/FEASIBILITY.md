@@ -62,8 +62,12 @@ prueban Python/WASM, Queues, Free ni la causa de un fallo previo de CI sin log.
 ## Evidencia histórica del experimento
 
 Los resultados y versiones anteriores que siguen se conservan como registro de
-cada ejecución. El pin Pydantic 2.12.5/core 2.41.5 de ese registro queda sustituido
-por los requisitos vigentes anteriores; no representa una nueva verificación.
+cada ejecución. Los archivos de `deploy/cloudflare/evidence/` se retiraron del
+checkout al cerrar estos cambios; las rutas `evidence/` citadas a continuación
+identifican evidencia histórica consultable en el historial Git. Las nuevas
+ejecuciones pueden regenerar logs locales ignorados. El pin Pydantic
+2.12.5/core 2.41.5 de ese registro queda sustituido por los requisitos vigentes
+anteriores; no representa una nueva verificación.
 
 Estado al 2026-10-17: **gate local pendiente por acceso de red**. No se ha
 establecido ni incompatibilidad del runtime ni viabilidad en Free. Las tareas
@@ -95,10 +99,11 @@ el reintento siguió fallando. Hace falta guardar/aplicar la incorporación de
 proxies, deshabilitado TLS ni sustituido el índice por un espejo alternativo.
 Si aparecen otros destinos necesarios, deben identificarse por un fallo real.
 
-`evidence/harness.log` y `evidence/sync.log` conservan el comando y error exactos.
+Los registros históricos `evidence/harness.log` y `evidence/sync.log` conservaron
+el comando y error exactos; se consultan en el historial Git.
 El harness termina con código no cero antes de migrar/iniciar el runtime cuando
-falla el sync. El build de fuentes separado está en `evidence/build.log`: su
-resultado no prueba que FastAPI/Pydantic puedan cargarse en WASM.
+falla el sync. El build de fuentes separado quedó registrado en
+`evidence/build.log`: su resultado no prueba que FastAPI/Pydantic puedan cargarse en WASM.
 
 ## Actualización al integrar main
 
@@ -113,11 +118,13 @@ esquemas reales desde el árbol preparado bajo CPython, sin cargar infraestructu
 PostgreSQL/AMQP. La preparación produce 42 fuentes, con 43 archivos idénticos en
 dos ejecuciones, incluido el manifiesto. Pasan de nuevo la unidad de contexto,
 Ruff y ambos Pyright (cero errores/advertencias); el build de esa integración **solo de
-fuentes** mide 81.65 KiB / gzip 15.75 KiB. Ver `evidence/quality.txt`.
+fuentes** mide 81.65 KiB / gzip 15.75 KiB. El resultado histórico se consulta
+en Git como `evidence/quality.txt`.
 
-`build.log` y `context-unit.log` contienen resultados refrescados de las fuentes
-integradas. `harness.log`, `sync.log` y la prueba de mutación conservan su evidencia
-histórica. No se reintentó el sync Pyodide ni se ejecutaron contratos nativos;
+Los registros históricos `build.log` y `context-unit.log` contienen resultados
+refrescados de las fuentes integradas; `harness.log`, `sync.log` y la prueba de
+mutación corresponden a las ejecuciones previas. Todos se consultan en Git.
+No se reintentó el sync Pyodide ni se ejecutaron contratos nativos;
 el gate y la aceptación Free siguen pendientes.
 
 ## Correcciones de auditoría de los sondeos
@@ -144,9 +151,9 @@ Se corrigieron dos falsos positivos posibles sin cerrar ninguna tarea del gate:
 Pasan 12 unidades CPython de orquestación/inyección de fallos y la unidad de
 contexto existente. Tres copias temporales mutadas —ack eliminado, ack movido
 tras la escritura y aceptación indiscriminada de excepciones del batch— producen
-fallos observables de tests. Ver `evidence/probe-units.txt` y
-`evidence/probe-mutations.txt`. Los dobles no simulan ni demuestran la atomicidad
-real de D1: se mantiene pendiente ejecutar el mismo helper en WASM/D1 oficial.
+fallos observables de tests. Sus registros históricos se consultan en Git como
+`evidence/probe-units.txt` y `evidence/probe-mutations.txt`. Los dobles no simulan
+ni demuestran la atomicidad real de D1: se mantiene pendiente ejecutar el mismo helper en WASM/D1 oficial.
 
 La preparación actual produce 44 fuentes/45 archivos idénticos entre ejecuciones;
 Ruff comprueba 14 archivos y ambos Pyright terminan con cero errores/advertencias.
@@ -232,8 +239,8 @@ node node_modules/wrangler/bin/wrangler.js deploy --config wrangler.spike.jsonc 
   tarea** la restauración del ContextVar tras éxito y excepción, con valor
   anterior y con `Context()` vacío. Este helper ya pasa en CPython: una copia
   temporal mutada eliminando `reset(token)` provoca el fallo esperado
-  (`evidence/context-mutation.log`). También se invoca dentro del runtime
-  nativo cuando pueda arrancar; la unidad CPython no acredita ASGI/D1/Queues.
+  (registro histórico `evidence/context-mutation.log`, consultable en Git).
+  También se invoca dentro del runtime nativo cuando pueda arrancar; la unidad CPython no acredita ASGI/D1/Queues.
 - D1 nativo ejecutará el helper `verify_d1_batch`: control positivo de tres
   sentencias, fallo de CHECK nombrado deliberado en la segunda sentencia del
   control negativo y cero filas tras el rollback; luego `json_each(?)` insertará
