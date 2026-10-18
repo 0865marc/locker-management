@@ -14,18 +14,26 @@ The map SHALL fill the visible viewport without surrounding page margins, header
 - **WHEN** the page opens on desktop or a 375-pixel-wide mobile viewport, or the viewport changes size
 - **THEN** the map fills that viewport, the parcel panel remains in its upper-left area and the zoom controls and attribution remain accessible
 
-### Requirement: Keep the upper-left menu focused on the parcel
+### Requirement: Switch accessibly between quotation and tracking
 
-The upper-left menu SHALL contain geographic search, parcel fields and live available/mapped counts. It SHALL omit the availability-success sentence, "Ver lockers", "Actualizar", last-read time, "Ver España" and informational note. Loading, empty, error/retry and tile warnings SHALL appear only when applicable. Labels, geographic suggestions and map attribution SHALL remain accessible.
+The menu heading SHALL be replaced by "Cotizar envío" and "Localizar paquete" tabs, initially selecting quotation. Only the active tab content SHALL be visible and interactive. Switching SHALL preserve local inputs and selected quotation destination, cancel pending geographic/quotation/tracking work and ignore late responses. Tabs SHALL expose selection and panel relationships and support keyboard navigation without navigating the map.
 
-#### Scenario: Successful load leaves a compact menu
-- **WHEN** lockers load successfully on desktop or a 375×480 viewport
-- **THEN** current counts and map markers appear without the removed controls or success section
-- **AND** removed elements leave no broken focus targets, accessibility references or handlers
+#### Scenario: Switch while work is pending
+- **WHEN** a visitor switches modes during suggestions, quotation polling or a tracking request
+- **THEN** inactive content becomes hidden and unfocusable, its pending work cannot reopen it, and returning retains input values without automatic submission
+- **AND** browser cancellation is not presented as cancellation of server-side quotation processing
+
+### Requirement: Keep the quotation menu compact
+
+The quotation tab SHALL contain pickup/delivery search, parcel fields and live available/mapped counts. It SHALL retain the removal of the availability-success sentence, "Ver lockers", "Actualizar", last-read time, "Ver España" and informational note. Loading, empty, error/retry and tile warnings SHALL appear only when applicable. Tracking SHALL not depend on a successful available-locker load.
+
+#### Scenario: Compact and independent modes
+- **WHEN** lockers load or fail and the visitor switches to tracking
+- **THEN** quotation counts remain truthful, retired controls stay absent and UUID lookup can operate independently of locker availability
 
 ### Requirement: Enter parcel measurements locally
 
-The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled length, width and height fields in centimetres and weight in kilograms. Fields SHALL start empty, permit empty values and accept positive decimal numbers. Nonpositive values SHALL be invalid. Editing SHALL remain local to the current page without submitting data, persisting values, filtering lockers or requesting quotations. It SHALL NOT move or zoom the map.
+The quotation tab SHALL contain visibly labelled length, width and height fields in centimetres and weight in kilograms. Fields SHALL start empty, permit empty values and accept positive decimal numbers. Nonpositive values SHALL be invalid. Editing SHALL remain local to the current page without submitting data, persisting values, filtering lockers or requesting quotations. It SHALL NOT move or zoom the map.
 
 #### Scenario: Edit dimensions and weight
 - **WHEN** a user enters 25.5, 15, 10 and 2.5 into the four labelled fields and navigates between them by keyboard
@@ -37,19 +45,32 @@ The parcel panel SHALL be titled "Tu paquete" and contain visibly labelled lengt
 - **THEN** those interactions operate on the panel without being interpreted as map navigation
 - **AND** opening or closing the quotation panel preserves entered parcel values
 
-### Requirement: Locate a Spanish address or postal code
+### Requirement: Search pickup and delivery areas independently
 
-A labelled "Dirección o código postal" field SHALL appear above parcel dimensions. After 350 ms without edits, queries of at least three trimmed characters SHALL search Spanish locations automatically. Five-digit postal codes SHALL preserve leading zeroes. One to five candidates SHALL appear below the field for selection; typing and receiving results SHALL NOT move the map. Selection SHALL fill the field, reveal the chosen position and close suggestions without another request.
+"Dirección de recogida" and "Dirección de entrega" SHALL appear above parcel dimensions. Each SHALL independently search Spanish locations after 350 ms without edits and at least three trimmed characters, retaining five-digit postal text. Each SHALL offer at most five safely rendered candidates requiring selection. Typing or receiving suggestions SHALL NOT move the map, select a locker or request a quotation.
 
-#### Scenario: Debounced address or postal-code search
-- **WHEN** the user types an address or "01001" with less than 350 ms between edits, then pauses for 350 ms
-- **THEN** one request is issued for the latest text in Spain, preserving postal text, without an Enter or search-button action
-- **AND** blank text or fewer than three trimmed characters issues no request and clears obsolete suggestions
+#### Scenario: Independent debounced suggestions
+- **WHEN** the visitor types in either field and pauses for 350 ms
+- **THEN** only that field's latest eligible query is requested, and the other field's value/state is not replaced
+- **AND** fewer than three characters sends no request; country ES, leading zeroes, timeout and stale-response handling are preserved
 
-#### Scenario: Select a single or ambiguous location
-- **WHEN** the provider returns one or more valid Spanish locations and the user chooses a displayed candidate
-- **THEN** up to five literal labels require selection even for a single match; choosing one fills the field, reveals its map marker and closes suggestions without another request
-- **AND** parcel values and locker availability/selection are preserved, the quotation panel is not forced open, and no visible "Ubicación localizada" sentence appears
+#### Scenario: Explore delivery lockers
+- **WHEN** a delivery suggestion is selected
+- **THEN** its label fills that field and the map reveals the area for nearby lockers, closing suggestions without another request
+- **AND** the visitor must still choose a locker explicitly; its selection and destination postal code are not changed or inferred from the search
+
+### Requirement: Populate origin postal code from structured pickup data
+
+Selecting a pickup suggestion SHALL fill origin postal code only from a valid structured five-digit Spanish postcode. Missing or invalid postcode SHALL leave origin entry available manually, without parsing a label or coordinates. Editing the selected pickup text SHALL clear its previously derived postcode and invalidate the previous quotation. Selecting another pickup SHALL replace the old postcode or clear it if unavailable.
+
+#### Scenario: Structured code and manual fallback
+- **WHEN** the pickup suggestion contains postcode "01001", then another selected suggestion has no usable postcode
+- **THEN** origin first becomes "01001", then requires manual postal entry instead of retaining the old derived value
+- **AND** selecting or editing pickup does not assign a destination locker or submit a quotation
+
+#### Scenario: Edit a selected pickup
+- **WHEN** a visitor edits pickup text after its structured postcode populated the origin field
+- **THEN** that derived code and obsolete quotation results are invalidated without another quotation POST
 
 ### Requirement: Animate and dismiss geographic suggestions accessibly
 
@@ -74,10 +95,10 @@ Geographic search SHALL have independent loading, no-results and error states, w
 
 ### Requirement: Select a locker as the shipping destination
 
-Selecting a locker marker SHALL open "Enviar a este locker", replacing the technical list/detail panel. The panel SHALL show its destination label/address and a compact selector of available lockers, including coincident or unmapped ones. A keyboard-accessible "Elegir destino y cotizar" link SHALL open the same selector. Closing or Escape SHALL restore focus to the opening control when possible, without resizing the map.
+In quotation mode, selecting a locker marker SHALL open "Enviar a este locker". The panel SHALL show its destination label/address and a compact selector of available lockers, including coincident or unmapped ones. A keyboard-accessible "Elegir destino y cotizar" link SHALL activate quotation mode and open the selector. Closing or Escape SHALL restore focus to the opening control when possible, without resizing the map.
 
 #### Scenario: Select individually without a technical catalogue
-- **WHEN** a visitor selects a marker or uses the destination selector, including lockers sharing a position or lacking coordinates
+- **WHEN** a visitor in quotation mode selects a marker or uses the destination selector, including lockers sharing a position or lacking coordinates
 - **THEN** the chosen locker becomes the destination and its recorded position is revealed when usable
 - **AND** the panel contains no technical catalogue, UUID/cell detail sheet or inherited general-list opening action
 
@@ -100,7 +121,7 @@ The browser SHALL load lockers directly from the configured API using GET withou
 
 ### Requirement: Derive general availability from current locker data
 
-The frontend SHALL consider a locker available exactly when active is true and at least one returned compartment is enabled and unoccupied. Only available lockers SHALL appear in the map/destination selector. Counts SHALL reflect the current successful load. Availability and shipping quotations SHALL NOT claim parcel fit, reserve capacity or create a shipment.
+The frontend SHALL consider a locker available exactly when active is true and at least one returned compartment is enabled and unoccupied. Only available lockers SHALL appear in the quotation marker layer/destination selector; tracking uses an independent layer. Counts SHALL reflect the current successful load. Availability and shipping quotations SHALL NOT claim parcel fit, reserve capacity or create a shipment.
 
 #### Scenario: Mixed capacity and operational states
 - **WHEN** data includes an active locker with enabled free cells, disabled or occupied cells, an inactive locker, a full locker and one without enabled cells
@@ -222,7 +243,7 @@ After accepted creation, the browser SHALL read that quotation sequentially abou
 
 ### Requirement: Invalidate obsolete quotation interaction
 
-Closing the panel, changing destination/postal/parcel input or leaving the page SHALL stop local polling and invalidate pending responses. Obsolete results SHALL NOT be shown for new input. Cancellation SHALL affect browser waiting only, without claiming to cancel persisted worker work or an actual shipment. Continuing a known quotation SHALL be allowed only for its unchanged input snapshot.
+Closing the panel, switching tabs, changing destination/postal/parcel input or leaving the page SHALL stop local polling and invalidate pending responses. Obsolete results SHALL NOT be shown for new input. Cancellation SHALL affect browser waiting only, without claiming to cancel persisted worker work or an actual shipment. Continuing a known quotation SHALL be allowed only for its unchanged input snapshot.
 
 #### Scenario: Edit or close during creation or polling
 - **WHEN** an older POST/GET completes after the visitor edits input, changes destination or closes the panel

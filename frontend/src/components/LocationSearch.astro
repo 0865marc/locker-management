@@ -1,0 +1,54 @@
+---
+interface Props {
+  id: string;
+  label: string;
+}
+const { id, label } = Astro.props;
+---
+
+<form
+  id={`${id}-search`}
+  class="location-search"
+  aria-label={label}
+  autocomplete="off"
+>
+  <label for={`${id}-query`}>{label}</label>
+  <div class="search-input-row">
+    <input
+      id={`${id}-query`}
+      type="search"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-haspopup="listbox"
+      aria-controls={`${id}-results`}
+      aria-expanded="false"
+      placeholder="Ej. Gran Vía, Madrid o 01001"
+    />
+  </div>
+  <div
+    id={`${id}-suggestions`}
+    class="search-suggestions"
+    aria-hidden="true"
+    inert
+    hidden
+  >
+    <div class="suggestions-content">
+      <div
+        id={`${id}-status`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        hidden
+      ></div>
+      <button id={`${id}-retry`} type="button" hidden>
+        Reintentar búsqueda
+      </button>
+      <ul
+        id={`${id}-results`}
+        data-search-results
+        role="listbox"
+        aria-label={`Ubicaciones de ${label.toLowerCase()}`}
+      ></ul>
+    </div>
+  </div>
+</form>

@@ -248,6 +248,7 @@ export function setupShipping(
   });
   window.addEventListener('pagehide', stop);
   return {
+    invalidate,
     setDestination(locker: AvailableLocker | null) {
       invalidate();
       destination = locker;

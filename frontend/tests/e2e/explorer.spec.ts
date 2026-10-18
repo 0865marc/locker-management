@@ -99,7 +99,7 @@ for (const viewport of [
     await expect(page.locator('#map-panels .panel')).toHaveCount(1);
     expect(
       await page
-        .locator('.parcel-panel')
+        .locator('#quote-view')
         .evaluate((node) =>
           node.lastElementChild?.classList.contains('metrics'),
         ),
@@ -123,14 +123,14 @@ for (const viewport of [
     });
     await page.getByRole('spinbutton', { name: 'Largo (cm)' }).fill('25.5');
     const query = page.getByRole('combobox', {
-      name: 'Dirección o código postal',
+      name: 'Dirección de entrega',
     });
     const before = await page
       .locator('.leaflet-map-pane')
       .getAttribute('style');
     await query.fill(' 01001 ');
     expect(geoReads).toBe(0);
-    await expect(page.locator('#search-results button')).toHaveCount(1);
+    await expect(page.locator('#delivery-results button')).toHaveCount(1);
     await expect(page.locator('.search-location')).toHaveCount(0);
     expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
       before,
@@ -144,17 +144,19 @@ for (const viewport of [
       path: `test-results/${viewport.name}-menu-suggestions.png`,
     });
     await query.press('ArrowDown');
-    await expect(page.locator('#search-results button').first()).toBeFocused();
+    await expect(
+      page.locator('#delivery-results button').first(),
+    ).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(query).toHaveValue('01001 Vitoria');
     await expect(query).toBeFocused();
     await expect(query).toHaveAttribute('aria-expanded', 'false');
     expect(
       await page
-        .locator('#search-suggestions')
+        .locator('#delivery-suggestions')
         .evaluate((node: HTMLElement) => node.inert),
     ).toBe(true);
-    await expect(page.locator('#search-suggestions')).toBeHidden();
+    await expect(page.locator('#delivery-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await expect(page.locator('#results')).toBeHidden();
     await page.waitForTimeout(400);
@@ -176,10 +178,10 @@ for (const viewport of [
       });
     });
     await query.fill('Plaza');
-    await expect(page.locator('#search-results button')).toHaveCount(5);
-    await page.locator('#search-results button').nth(1).click();
+    await expect(page.locator('#delivery-results button')).toHaveCount(5);
+    await page.locator('#delivery-results button').nth(1).click();
     await expect(query).toHaveValue('Plaza Mayor, Madrid');
-    await expect(page.locator('#search-suggestions')).toBeHidden();
+    await expect(page.locator('#delivery-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await expect(page.locator('#results')).toBeVisible();
     await expect(
@@ -205,7 +207,7 @@ test('autocomplete debounces edits, ignores short text and never duplicates Ente
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now() + 100));
   const query = page.getByRole('combobox', {
-    name: 'Dirección o código postal',
+    name: 'Dirección de entrega',
   });
   await query.fill('  ab ');
   await page.clock.fastForward(500);
@@ -218,7 +220,7 @@ test('autocomplete debounces edits, ignores short text and never duplicates Ente
   expect(requests).toBe(0);
   await page.clock.fastForward(1);
   await expect.poll(() => requests).toBe(1);
-  await expect(page.locator('#search-results button')).toHaveCount(1);
+  await expect(page.locator('#delivery-results button')).toHaveCount(1);
   await query.press('Enter');
   await page.clock.fastForward(700);
   expect(requests).toBe(1);
@@ -240,34 +242,37 @@ test('geographic errors, empty, malformed and timeout retain independent retry',
     return route.fulfill({ json: places(place('Madrid')) });
   });
   const query = page.getByRole('combobox', {
-    name: 'Dirección o código postal',
+    name: 'Dirección de entrega',
   });
   await query.fill('Madrid');
-  await expect(page.locator('#search-status')).toContainText('HTTP 503');
+  await expect(page.locator('#delivery-status')).toContainText('HTTP 503');
   await expect(page.locator('#status')).toBeHidden();
   await expect(page.locator('#available-count')).toHaveText('1');
   await page.getByRole('button', { name: 'Reintentar búsqueda' }).click();
-  await expect(page.locator('#search-status')).toContainText(
+  await expect(page.locator('#delivery-status')).toContainText(
     'No se han encontrado',
   );
   await query.fill('Madrid centro');
-  await expect(page.locator('#search-status')).toContainText(
+  await expect(page.locator('#delivery-status')).toContainText(
     'respuesta no válida',
   );
   await page.getByRole('button', { name: 'Reintentar búsqueda' }).focus();
   await page.keyboard.press('Enter');
   await expect(
-    page.getByRole('combobox', { name: 'Dirección o código postal' }),
+    page.getByRole('combobox', { name: 'Dirección de entrega' }),
   ).toBeFocused();
-  await expect(page.locator('#search-results button')).toHaveCount(1);
-  await page.locator('#search-results button').click();
+  await expect(page.locator('#delivery-results button')).toHaveCount(1);
+  await page.locator('#delivery-results button').click();
   await page.unroute(photon);
   await page.route(photon, () => {});
   await query.fill('Tardará');
-  await expect(page.locator('#search-status')).toContainText('cinco segundos', {
-    timeout: 7000,
-  });
-  await expect(page.locator('#search-retry')).toBeVisible();
+  await expect(page.locator('#delivery-status')).toContainText(
+    'cinco segundos',
+    {
+      timeout: 7000,
+    },
+  );
+  await expect(page.locator('#delivery-retry')).toBeVisible();
   await expect(page.locator('#available-count')).toHaveText('1');
   await expect(page.locator('#retry')).toBeHidden();
 });
@@ -309,35 +314,35 @@ test('Escape, blur and later edits discard even a transport that ignores cancell
     route.fulfill({ json: places(place('Última ubicación')) }),
   );
   const query = page.getByRole('combobox', {
-    name: 'Dirección o código postal',
+    name: 'Dirección de entrega',
   });
   const before = await page.locator('.leaflet-map-pane').getAttribute('style');
   for (const [index, close] of ['escape', 'blur'].entries()) {
     await query.fill(`Anterior ${index}`);
-    await expect(page.locator('#location-search')).toHaveAttribute(
+    await expect(page.locator('#delivery-search')).toHaveAttribute(
       'aria-busy',
       'true',
     );
     if (close === 'escape') await query.press('Escape');
     else await page.getByRole('spinbutton', { name: 'Largo (cm)' }).focus();
     await page.evaluate(() => Reflect.get(window, 'completeOldSearch')());
-    await expect(page.locator('#search-suggestions')).toBeHidden();
+    await expect(page.locator('#delivery-suggestions')).toBeHidden();
     await expect(query).toHaveAttribute('aria-expanded', 'false');
     expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
       before,
     );
   }
   await query.fill('Anterior otra');
-  await expect(page.locator('#location-search')).toHaveAttribute(
+  await expect(page.locator('#delivery-search')).toHaveAttribute(
     'aria-busy',
     'true',
   );
   await query.fill('Última');
-  await expect(page.locator('#search-results button')).toHaveText(
+  await expect(page.locator('#delivery-results button')).toHaveText(
     'Última ubicación',
   );
   await page.evaluate(() => Reflect.get(window, 'completeOldSearch')());
-  await expect(page.locator('#search-results button')).toHaveText(
+  await expect(page.locator('#delivery-results button')).toHaveText(
     'Última ubicación',
   );
   await expect(page.locator('.search-location')).toHaveCount(0);
@@ -353,21 +358,21 @@ test('suggestion animation can be interrupted and closed options immediately los
     }),
   );
   const query = page.getByRole('combobox', {
-    name: 'Dirección o código postal',
+    name: 'Dirección de entrega',
   });
   await query.fill('Madrid');
-  await expect(page.locator('#search-results button')).toHaveCount(2);
+  await expect(page.locator('#delivery-results button')).toHaveCount(2);
   await query.press('ArrowDown');
-  await expect(page.locator('#search-results button').first()).toBeFocused();
+  await expect(page.locator('#delivery-results button').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(query).toBeFocused();
   expect(
     await page
-      .locator('#search-suggestions')
+      .locator('#delivery-suggestions')
       .evaluate((node: HTMLElement) => node.inert),
   ).toBe(true);
   await page
-    .locator('#search-results button')
+    .locator('#delivery-results button')
     .first()
     .evaluate((node) => node.focus());
   await expect(query).toBeFocused();
@@ -376,21 +381,21 @@ test('suggestion animation can be interrupted and closed options immediately los
     page.getByRole('spinbutton', { name: 'Largo (cm)' }),
   ).toBeFocused();
   await query.fill('Madrid nuevo');
-  await expect(page.locator('#search-results button')).toHaveCount(2);
+  await expect(page.locator('#delivery-results button')).toHaveCount(2);
   await expect(query).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('#search-suggestions')).toHaveCSS('opacity', '1');
-  await expect(page.locator('#search-suggestions')).not.toHaveAttribute(
+  await expect(page.locator('#delivery-suggestions')).toHaveCSS('opacity', '1');
+  await expect(page.locator('#delivery-suggestions')).not.toHaveAttribute(
     'hidden',
   );
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('#search-suggestions')).toHaveCSS(
+  await expect(page.locator('#delivery-suggestions')).toHaveCSS(
     'transition-duration',
     '0s',
   );
   await query.press('Escape');
   expect(
     await page
-      .locator('#search-suggestions')
+      .locator('#delivery-suggestions')
       .evaluate((node: HTMLElement) => node.hidden && node.inert),
   ).toBe(true);
 });
@@ -413,14 +418,14 @@ test('touching a suggestion selects before blur and does not trigger another sea
       return route.fulfill({ json: places(place('Gran Vía, Madrid')) });
     });
     const query = page.getByRole('combobox', {
-      name: 'Dirección o código postal',
+      name: 'Dirección de entrega',
     });
     await query.fill('Gran Vía');
-    await expect(page.locator('#search-results button')).toHaveCount(1);
-    await page.locator('#search-results button').tap();
+    await expect(page.locator('#delivery-results button')).toHaveCount(1);
+    await page.locator('#delivery-results button').tap();
     await expect(query).toHaveValue('Gran Vía, Madrid');
     await expect(query).toBeFocused();
-    await expect(page.locator('#search-suggestions')).toBeHidden();
+    await expect(page.locator('#delivery-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await page.waitForTimeout(400);
     expect(requests).toBe(1);
@@ -439,13 +444,13 @@ test('duplicate suggestion labels retain the selected candidate coordinates', as
     }),
   );
   const query = page.getByRole('combobox', {
-    name: 'Dirección o código postal',
+    name: 'Dirección de entrega',
   });
   await query.fill('Centro');
-  await expect(page.locator('#search-results button')).toHaveCount(2);
-  await page.locator('#search-results button').nth(1).click();
+  await expect(page.locator('#delivery-results button')).toHaveCount(2);
+  await page.locator('#delivery-results button').nth(1).click();
   await expect(query).toHaveValue('Centro');
-  await expect(page.locator('#search-suggestions')).toBeHidden();
+  await expect(page.locator('#delivery-suggestions')).toBeHidden();
   expect(await markerHit(page)).toBe(true);
 });
 const address = {
@@ -959,4 +964,458 @@ test('unknown provider and service identities remain distinct literal text', asy
   await expect(
     page.locator('#quotation-offers img, #quotation-offers script'),
   ).toHaveCount(0);
+});
+const trackingId = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+function tracked(
+  n = 1001,
+  status = 'AWAITING_PICKUP',
+  kind = 'delivery',
+  relation = status === 'AWAITING_PICKUP' || status === 'AWAITING_CARRIER'
+    ? 'current'
+    : 'last_known',
+) {
+  return {
+    id: trackingId(n),
+    kind,
+    status,
+    locker_relation: relation,
+    locker_id: id(2),
+    locker: {
+      location_id: 'Locker de seguimiento',
+      address: null,
+      coordinates: { latitude: 40.4168, longitude: -3.7038 } as {
+        latitude: number;
+        longitude: number;
+      } | null,
+    },
+  };
+}
+async function track(page: Page, n: number) {
+  await page.locator('#tracking-id').fill(trackingId(n));
+  await page.locator('#tracking-id').press('Enter');
+}
+test('pickup derives only structured CP and delivery independently explores without selecting destination', async ({
+  page,
+}) => {
+  let posts = 0;
+  await data(page, [locker(1)]);
+  await page.route('**/quotations', (r) => {
+    posts++;
+    return r.abort();
+  });
+  await page.route(photon, (r) => {
+    const q = new URL(r.request().url()).searchParams.get('q');
+    const feature = place(q ?? '01001');
+    return r.fulfill({
+      json: places({
+        ...feature,
+        properties: {
+          ...feature.properties,
+          ...(q === 'Recogida' ? { postcode: '01001' } : {}),
+        },
+      }),
+    });
+  });
+  await page.locator('#destination-locker').selectOption(id(1));
+  await page.locator('#destination-postal').fill('08001');
+  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
+  await page.locator('#pickup-query').fill('Recogida');
+  await expect(page.locator('#pickup-results button')).toHaveCount(1);
+  await page.locator('#pickup-results button').click();
+  await expect(page.locator('#origin-postal')).toHaveValue('01001');
+  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+    before,
+  );
+  await expect(page.locator('#delivery-query')).toHaveValue('');
+  await page.locator('#delivery-query').fill('Entrega');
+  await expect(page.locator('#delivery-results button')).toHaveCount(1);
+  await page.locator('#delivery-results button').click();
+  await expect(page.locator('#pickup-query')).toHaveValue('Recogida, 01001');
+  await expect(page.locator('#origin-postal')).toHaveValue('01001');
+  await expect(page.locator('#destination-postal')).toHaveValue('08001');
+  await expect(page.locator('#destination-locker')).toHaveValue(id(1));
+  await page.locator('#pickup-query').fill('Recogida editada');
+  await expect(page.locator('#origin-postal')).toHaveValue('');
+  await page.locator('#origin-postal').fill('28001');
+  await page.locator('#pickup-query').fill('Sin código');
+  await expect(page.locator('#origin-postal')).toHaveValue('28001');
+  await expect(page.locator('#pickup-results button')).toHaveCount(1);
+  await page.locator('#pickup-results button').click();
+  await expect(page.locator('#origin-postal')).toHaveValue('');
+  expect(posts).toBe(0);
+});
+test('tabs have keyboard relationships, preserve inputs and cancel pending autocomplete and quotation', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = (input, init) =>
+      String(input).endsWith('/quotations')
+        ? new Promise((resolve) =>
+            Reflect.set(window, 'finishTabPost', () =>
+              resolve(
+                new Response(
+                  JSON.stringify({
+                    id: '00000000-0000-4000-8000-000000000101',
+                    status: 'PENDING',
+                  }),
+                  { status: 202 },
+                ),
+              ),
+            ),
+          )
+        : original(input, init);
+  });
+  await data(page, [locker(1)]);
+  await page.locator('#destination-locker').selectOption(id(1));
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#quote-tab').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#tracking-tab')).toBeFocused();
+  await expect(page.locator('#tracking-tab')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('#quote-view')).toBeHidden();
+  expect(
+    await page
+      .locator('#quote-view')
+      .evaluate((node: HTMLElement) => node.inert),
+  ).toBe(true);
+  await expect(page.locator('#results')).toBeHidden();
+  await page.evaluate(() => Reflect.get(window, 'finishTabPost')());
+  await page.locator('#tracking-id').fill(trackingId(1001));
+  await page.locator('#tracking-tab').focus();
+  await page.keyboard.press('Home');
+  await expect(page.locator('#quote-tab')).toBeFocused();
+  await expect(page.locator('#tracking-view')).toBeHidden();
+  await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
+  await expect(page.locator('#destination-locker')).toHaveValue(id(1));
+  await page.route(photon, () => {});
+  await page.locator('#pickup-query').fill('Pendiente');
+  await expect(page.locator('#pickup-search')).toHaveAttribute(
+    'aria-busy',
+    'true',
+  );
+  await page.locator('#tracking-tab').click();
+  await expect(page.locator('#pickup-query')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1001));
+  await page.locator('#skip-results').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#quote-tab')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('#results')).toBeVisible();
+  await expect(page.locator('#destination-locker')).toBeFocused();
+  await expect(page.locator('#quotation-status')).not.toContainText('Creando');
+});
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`tracking real CORS stays independent from availability ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await tiles(page);
+    const apiRequests: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().startsWith('http://127.0.0.1:8765/'))
+        apiRequests.push(`${r.method()} ${new URL(r.url()).pathname}`);
+    });
+    await page.goto('/');
+    await expect(page.locator('#available-count')).toHaveText('1');
+    await page.screenshot({
+      path: `test-results/tabs-${viewport.name}-quotation.png`,
+    });
+    await page.locator('#tracking-tab').click();
+    await page.locator('#tracking-id').fill('invalid');
+    await page.locator('#tracking-submit').click();
+    await expect(page.locator('#tracking-error')).toBeVisible();
+    expect(apiRequests.filter((r) => r.includes('/tracking/'))).toHaveLength(0);
+    const response = page.waitForResponse(
+      `http://127.0.0.1:8765/tracking/${trackingId(1001)}`,
+    );
+    await track(page, 1001);
+    expect((await response).headers()['access-control-allow-origin']).toBe(
+      'http://127.0.0.1:4321',
+    );
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Pendiente de recogida',
+    );
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Locker actual',
+    );
+    await expect(page.locator('.tracking-marker')).toHaveCount(1);
+    expect(
+      await page.locator('.tracking-marker').evaluate((node) => {
+        const b = node.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
+            ?.closest('.tracking-marker') === node
+        );
+      }),
+    ).toBe(true);
+    await page.locator('.tracking-marker').click();
+    await page
+      .locator('.locker-marker')
+      .evaluate((node) => (node as HTMLElement).click());
+    await expect(page.locator('#results')).toBeHidden();
+    await expect(page.locator('#tracking-tab')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.locator('#available-count')).toHaveText('1');
+    await expect(page.locator('#destination-locker')).toHaveValue('');
+    await page.locator('#tracking-result').scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/tabs-${viewport.name}-tracking-current.png`,
+    });
+    await track(page, 1002);
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Entregado al transportista',
+    );
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Último locker registrado',
+    );
+    await expect(page.locator('#tracking-result')).toContainText(
+      'ya ha salido',
+    );
+    await page.locator('#tracking-result').scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/tabs-${viewport.name}-tracking-last.png`,
+    });
+    for (const [n, label] of [
+      [1006, 'Recogido'],
+      [1007, 'Devuelto al transportista'],
+      [1008, 'Pendiente de entrega al transportista'],
+    ] as const) {
+      await track(page, n);
+      await expect(page.locator('#tracking-result h2')).toHaveText(label);
+    }
+    await track(page, 1003);
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Sin locker asignado',
+    );
+    await expect(page.locator('.tracking-marker')).toHaveCount(0);
+    await track(page, 1005);
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Datos del locker no disponibles',
+    );
+    await expect(page.locator('.tracking-marker')).toHaveCount(0);
+    await track(page, 9999);
+    await expect(page.locator('#tracking-status')).toContainText(
+      'No se ha encontrado',
+    );
+    await expect(page.locator('#tracking-retry')).toBeVisible();
+    await page.locator('#tracking-retry').focus();
+    const repeated = page.waitForResponse(
+      `http://127.0.0.1:8765/tracking/${trackingId(9999)}`,
+    );
+    await page.keyboard.press('Enter');
+    await repeated;
+    await expect(page.locator('#tracking-id')).toBeFocused();
+    await expect(page.locator('#tracking-status')).toContainText(
+      'No se ha encontrado',
+    );
+
+    await track(page, 1004);
+    await expect(page.locator('#tracking-status')).toContainText('ambiguo');
+    const requestCount = apiRequests.length;
+    await page.locator('#quote-tab').click();
+    await page.locator('#tracking-tab').click();
+    await expect(page.locator('#tracking-result')).toBeHidden();
+    await expect(page.locator('#tracking-status')).toBeEmpty();
+    await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1004));
+    expect(apiRequests.length).toBe(requestCount);
+    expect(
+      apiRequests.every(
+        (r) => r === 'GET /lockers' || r.startsWith('GET /tracking/'),
+      ),
+    ).toBe(true);
+    expect(apiRequests.filter((r) => r === 'GET /lockers')).toHaveLength(1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(viewport.width);
+    expect(await page.locator('#map').boundingBox()).toMatchObject({
+      x: 0,
+      y: 0,
+      width: viewport.width,
+      height: viewport.height,
+    });
+  });
+}
+test('tracking displays all five custody states and null coordinates despite availability/tile errors', async ({
+  page,
+}) => {
+  await tiles(page, true);
+  await page.route('**/lockers', (r) => r.fulfill({ status: 503, json: {} }));
+  await page.route('**/tracking/*', (r) => {
+    const n = Number(r.request().url().slice(-4));
+    const states = [
+      ['delivery', 'AWAITING_PICKUP'],
+      ['delivery', 'COLLECTED'],
+      ['delivery', 'RETURNED_TO_CARRIER'],
+      ['return', 'AWAITING_CARRIER'],
+      ['return', 'HANDED_OVER'],
+    ];
+    const [kind, status] = states[n - 2001]!;
+    const payload = tracked(n, status, kind);
+    payload.locker.coordinates = null;
+    return r.fulfill({ json: payload });
+  });
+  await page.goto('/');
+  await expect(page.locator('#retry')).toBeVisible();
+  await page.locator('#tracking-tab').click();
+  for (const [i, label] of [
+    'Pendiente de recogida',
+    'Recogido',
+    'Devuelto al transportista',
+    'Pendiente de entrega al transportista',
+    'Entregado al transportista',
+  ].entries()) {
+    await track(page, 2001 + i);
+    await expect(page.locator('#tracking-result h2')).toHaveText(label);
+    await expect(page.locator('#tracking-result')).toContainText(
+      'Ubicación no disponible',
+    );
+    await expect(page.locator('.tracking-marker')).toHaveCount(0);
+  }
+  await expect(page.locator('#tracking-tile-warning')).toBeVisible();
+});
+test('tracking cancels stale reads on edit/new attempt/tab change even when abort is ignored', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = (input, init) =>
+      String(input).includes('/tracking/')
+        ? new Promise((resolve) =>
+            Reflect.set(window, 'finishTracking', (payload: unknown) =>
+              resolve(new Response(JSON.stringify(payload))),
+            ),
+          )
+        : original(input, init);
+  });
+  await data(page, [locker(1)], false);
+  await page.locator('#tracking-tab').click();
+  for (const action of ['edit', 'new', 'tab']) {
+    await track(page, 1001);
+    await expect(page.locator('#tracking-form')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    const previous = await page
+      .locator('.leaflet-map-pane')
+      .getAttribute('style');
+    if (action === 'edit')
+      await page.locator('#tracking-id').fill(trackingId(1002));
+    if (action === 'new') {
+      await page.evaluate(() =>
+        Reflect.set(
+          window,
+          'finishOlderTracking',
+          Reflect.get(window, 'finishTracking'),
+        ),
+      );
+      await track(page, 1002);
+    }
+    if (action === 'tab') await page.locator('#quote-tab').click();
+    await page.evaluate(
+      ({ payload, older }) =>
+        Reflect.get(
+          window,
+          older ? 'finishOlderTracking' : 'finishTracking',
+        )(payload),
+      { payload: tracked(), older: action === 'new' },
+    );
+    await expect(page.locator('#tracking-result')).toBeHidden();
+    await expect(page.locator('.tracking-marker')).toHaveCount(0);
+    expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+      previous,
+    );
+    if (action === 'new') {
+      await page.evaluate(
+        (payload) => Reflect.get(window, 'finishTracking')(payload),
+        tracked(1002, 'COLLECTED'),
+      );
+      await expect(page.locator('#tracking-result')).toContainText('Recogido');
+    }
+    if (action === 'tab') {
+      await page.locator('#tracking-tab').click();
+      await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1001));
+      await expect(page.locator('#tracking-form')).not.toHaveAttribute(
+        'aria-busy',
+        'true',
+      );
+    }
+  }
+});
+test('late pickup suggestions cannot overwrite delivery candidates or a manual origin', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = (input, init) =>
+      String(input).includes('photon.komoot.io') &&
+      new URL(String(input)).searchParams.get('q') === 'Anterior recogida'
+        ? new Promise((resolve) =>
+            Reflect.set(window, 'finishPickup', () =>
+              resolve(
+                new Response(
+                  JSON.stringify({
+                    type: 'FeatureCollection',
+                    features: [
+                      {
+                        type: 'Feature',
+                        geometry: { type: 'Point', coordinates: [-2, 42] },
+                        properties: {
+                          name: 'Obsoleta',
+                          countrycode: 'ES',
+                          postcode: '01001',
+                        },
+                      },
+                    ],
+                  }),
+                ),
+              ),
+            ),
+          )
+        : original(input, init);
+  });
+  await data(page, [locker(1)]);
+  await page.locator('#origin-postal').fill('28001');
+  await page.route(photon, (r) =>
+    r.fulfill({ json: places(place('Entrega vigente')) }),
+  );
+  await page.locator('#pickup-query').fill('Anterior recogida');
+  await expect(page.locator('#pickup-search')).toHaveAttribute(
+    'aria-busy',
+    'true',
+  );
+  await page.locator('#delivery-query').fill('Entrega');
+  await expect(page.locator('#delivery-results button')).toHaveText(
+    'Entrega vigente',
+  );
+  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
+  await page.evaluate(() => Reflect.get(window, 'finishPickup')());
+  await expect(page.locator('#pickup-query')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+  await expect(page.locator('#delivery-results button')).toHaveText(
+    'Entrega vigente',
+  );
+  await expect(page.locator('#origin-postal')).toHaveValue('28001');
+  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
+    before,
+  );
 });

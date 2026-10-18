@@ -58,9 +58,20 @@ describe('unknown GeoJSON normalization', () => {
       {
         label: '<img src=x onerror=alert(1)>, 01001, Vitoria',
         position: [40.4, -3.7],
+        postalCode: '01001',
       },
     ]);
   });
+  it.each([undefined, null, 1001, '1001', '１２３４５', '01001', ' 01001 '])(
+    'accepts only structured five ASCII postal digits %j',
+    (postcode) => {
+      expect(
+        normalizePlaces(
+          collection(feature({ name: '01001 label', postcode })),
+        )[0]?.postalCode,
+      ).toBe(postcode === '01001' ? '01001' : null);
+    },
+  );
   it('retains at most five valid Spanish WGS84 points in provider order', () => {
     const invalid = [
       feature({ countrycode: 'FR' }),

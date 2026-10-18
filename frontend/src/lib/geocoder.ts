@@ -1,5 +1,6 @@
 export interface Place {
   label: string;
+  postalCode: string | null;
   position: [number, number];
 }
 export function isPostalCode(query: string): boolean {
@@ -66,7 +67,15 @@ export function normalizePlaces(payload: unknown): Place[] {
           typeof part === 'string' && part.trim() !== '',
       );
     const label = [...new Set(parts)].join(', ') || 'Ubicación en España';
-    places.push({ label, position: [latitude, longitude] });
+    places.push({
+      label,
+      position: [latitude, longitude],
+      postalCode:
+        typeof properties.postcode === 'string' &&
+        /^[0-9]{5}$/.test(properties.postcode)
+          ? properties.postcode
+          : null,
+    });
     if (places.length === 5) break;
   }
   return places;

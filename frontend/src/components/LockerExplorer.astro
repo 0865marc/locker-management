@@ -1,3 +1,7 @@
+---
+import LocationSearch from './LocationSearch.astro';
+---
+
 <section
   class="explorer"
   id="explorer"
@@ -6,120 +10,133 @@
 >
   <div id="map" aria-label="Mapa de España con lockers disponibles"></div>
   <div class="left-stack" id="map-panels">
-    <section class="parcel-panel panel" aria-labelledby="parcel-title">
-      <div class="parcel-heading">
-        <span class="parcel-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path
-              d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 0v9m9-4-9 4-9-4m9 4v10M7.5 5.5l9 5"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </span>
-        <div>
-          <p class="eyebrow">LOCALIZADOR DE LOCKERS</p>
-          <h2 id="parcel-title">Tu paquete</h2>
-        </div>
-      </div>
-      <form
-        id="location-search"
-        class="location-search"
-        aria-label="Buscar dirección o código postal"
-        autocomplete="off"
-      >
-        <label for="location-query">Dirección o código postal</label>
-        <div class="search-input-row">
-          <input
-            id="location-query"
-            type="search"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-haspopup="listbox"
-            aria-controls="search-results"
-            aria-expanded="false"
-            placeholder="Ej. Gran Vía, Madrid o 01001"
-          />
-        </div>
-        <div
-          id="search-suggestions"
-          class="search-suggestions"
-          aria-hidden="true"
-          inert
-          hidden
+    <section class="parcel-panel panel" aria-label="Consulta de paquetes">
+      <div class="mode-tabs" role="tablist" aria-label="Consulta de paquetes">
+        <button
+          id="quote-tab"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="quote-view"
+          tabindex="0"
         >
-          <div class="suggestions-content">
-            <div
-              id="search-status"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              hidden
-            ></div>
-            <button id="search-retry" type="button" hidden>
-              Reintentar búsqueda
-            </button>
-            <ul
-              id="search-results"
-              role="listbox"
-              aria-label="Ubicaciones encontradas"
-            ></ul>
-          </div>
-        </div>
-      </form>
-      <form id="parcel-form" aria-labelledby="parcel-title" autocomplete="off">
-        <div class="parcel-fields">
-          {[
-            ['length', 'Largo', 'cm'],
-            ['width', 'Ancho', 'cm'],
-            ['height', 'Alto', 'cm'],
-            ['weight', 'Peso', 'kg'],
-          ].map(([id, label, unit]) => (
-            <div class="parcel-field">
-              <label for={`parcel-${id}`}>
-                {label} <span>({unit})</span>
-              </label>
-              <div class="input-wrap">
-                <input
-                  id={`parcel-${id}`}
-                  name={id}
-                  type="number"
-                  inputmode="decimal"
-                  step="any"
-                  min="0"
-                  placeholder="—"
-                  aria-describedby={`parcel-${id}-error`}
-                />
-                <span aria-hidden="true">{unit}</span>
-              </div>
-              <span class="field-error" id={`parcel-${id}-error`} hidden>
-                Introduce un número mayor que cero.
-              </span>
-            </div>
-          ))}
-        </div>
-      </form>
-      <div class="availability-panel" role="group" aria-label="Disponibilidad">
-        <div id="status" role="status" aria-live="polite" aria-atomic="true">
-          Cargando lockers…
-        </div>
-        <button id="retry" type="button" hidden>
-          Reintentar consulta
+          Cotizar envío
         </button>
-        <p id="tile-warning" class="tile-warning" role="status" hidden>
-          No se ha podido cargar el fondo del mapa. Puedes consultar todos los
-          lockers en el selector de destino.
-        </p>
+        <button
+          id="tracking-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="tracking-view"
+          tabindex="-1"
+        >
+          Localizar paquete
+        </button>
       </div>
-      <div class="metrics">
-        <span>
-          <strong id="available-count">—</strong>{' '}
-          <span id="available-label">disponibles</span>
-        </span>
-        <span>
-          <strong id="positioned-count">—</strong> en el mapa
-        </span>
+      <div id="quote-view" role="tabpanel" aria-labelledby="quote-tab">
+        <LocationSearch id="pickup" label="Dirección de recogida" />
+        <LocationSearch id="delivery" label="Dirección de entrega" />
+        <form id="parcel-form" aria-labelledby="quote-tab" autocomplete="off">
+          <div class="parcel-fields">
+            {[
+              ['length', 'Largo', 'cm'],
+              ['width', 'Ancho', 'cm'],
+              ['height', 'Alto', 'cm'],
+              ['weight', 'Peso', 'kg'],
+            ].map(([id, label, unit]) => (
+              <div class="parcel-field">
+                <label for={`parcel-${id}`}>
+                  {label} <span>({unit})</span>
+                </label>
+                <div class="input-wrap">
+                  <input
+                    id={`parcel-${id}`}
+                    name={id}
+                    type="number"
+                    inputmode="decimal"
+                    step="any"
+                    min="0"
+                    placeholder="—"
+                    aria-describedby={`parcel-${id}-error`}
+                  />
+                  <span aria-hidden="true">{unit}</span>
+                </div>
+                <span class="field-error" id={`parcel-${id}-error`} hidden>
+                  Introduce un número mayor que cero.
+                </span>
+              </div>
+            ))}
+          </div>
+        </form>
+        <div
+          class="availability-panel"
+          role="group"
+          aria-label="Disponibilidad"
+        >
+          <div id="status" role="status" aria-live="polite" aria-atomic="true">
+            Cargando lockers…
+          </div>
+          <button id="retry" type="button" hidden>
+            Reintentar consulta
+          </button>
+          <p id="tile-warning" class="tile-warning" role="status" hidden>
+            No se ha podido cargar el fondo del mapa. Puedes consultar todos los
+            lockers en el selector de destino.
+          </p>
+        </div>
+        <div class="metrics">
+          <span>
+            <strong id="available-count">—</strong>{' '}
+            <span id="available-label">disponibles</span>
+          </span>
+          <span>
+            <strong id="positioned-count">—</strong> en el mapa
+          </span>
+        </div>
+      </div>
+      <div
+        id="tracking-view"
+        role="tabpanel"
+        aria-labelledby="tracking-tab"
+        hidden
+        inert
+      >
+        <form id="tracking-form" novalidate>
+          <label for="tracking-id">UUID del paquete</label>
+          <input
+            id="tracking-id"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="UUID de entrega o devolución"
+            aria-describedby="tracking-help tracking-error"
+          />
+          <p id="tracking-help" class="address">
+            Usa el identificador de una entrega o devolución, no la referencia
+            de cotización.
+          </p>
+          <span id="tracking-error" class="field-error" hidden></span>
+          <button id="tracking-submit" type="submit" class="primary">
+            Localizar paquete
+          </button>
+        </form>
+        <div
+          id="tracking-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+        <button id="tracking-retry" type="button" hidden>
+          Reintentar localización
+        </button>
+        <section
+          id="tracking-result"
+          aria-label="Resultado del seguimiento"
+          hidden
+        ></section>
+        <p id="tracking-tile-warning" class="tile-warning" hidden>
+          No se ha podido cargar el fondo del mapa. El resultado del seguimiento
+          sigue disponible.
+        </p>
       </div>
     </section>
   </div>

@@ -38,19 +38,30 @@ La vista inicial se acerca a la península. Usa la rueda sobre el mapa para
 acercar o alejar, o sus controles de zoom. Puedes navegar también a Baleares,
 Canarias, Ceuta y Melilla. Las cargas vacías conservan tu encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
 
-Un único panel reúne buscador, medidas del paquete y los contadores
-vivos de disponibles/en mapa al final. Escribe una **dirección o código postal**:
-con al menos tres caracteres aparecen sugerencias después de 350 ms sin cambios.
-No hay botón de envío; Enter no duplica la consulta. Los códigos de cinco dígitos
-se conservan como texto, incluidos ceros iniciales como `01001`.
+El panel ofrece dos pestañas: **Cotizar envío**, seleccionada al entrar, y
+**Localizar paquete**. Usa Tab, flechas izquierda/derecha o Home/End para navegar.
+El contenido inactivo queda oculto y sin foco. Cambiar de pestaña conserva valores
+y destino, cierra sugerencias/cotizador y detiene las esperas locales; no vuelve
+a consultar automáticamente ni cancela trabajos persistidos del worker.
 
-Elige uno de hasta cinco resultados, incluso si solo hay uno. La elección rellena
-el campo, sitúa el punto azul en el área libre del mapa y cierra las sugerencias
-sin otra petición. Puedes usar Tab o las flechas y Enter/Espacio; Escape cierra
-y devuelve el foco al campo. Salir del buscador también cierra y cancela trabajo
-pendiente. La apertura/cierre se anima brevemente, respetando la preferencia de
-movimiento reducido. Buscar no filtra lockers, cambia su disponibilidad
-ni utiliza las medidas del paquete; tampoco geocodifica lockers sin coordenadas.
+Cotización contiene **Dirección de recogida** y **Dirección de entrega**, medidas
+y contadores vivos al final. Cada buscador tiene sus propias sugerencias, errores,
+petición y cancelación: al menos tres caracteres y 350 ms sin cambios, sin botón
+Buscar ni consultas duplicadas por Enter. Cinco dígitos ASCII usan búsqueda
+postal estructurada, conservando ceros iniciales como `01001`.
+
+Selecciona siempre un resultado, incluso si solo aparece uno. Recogida rellena
+el CP de origen únicamente desde `properties.postcode` español de cinco dígitos;
+si falta, requiere entrada manual. Editar esa recogida borra solo el CP derivado:
+un CP introducido manualmente se conserva hasta elegir otra recogida. Elegir
+otra recogida reemplaza el CP o lo vacía si no dispone de uno, e invalida ofertas
+anteriores. No mueve la zona de entrega ni elige locker.
+
+Entrega sitúa el punto azul y encuadra la zona para explorar lockers, sin elegir
+uno automáticamente ni modificar su CP. Los dos campos conservan el texto ajeno,
+no filtran lockers ni envían medidas. Las sugerencias admiten flechas, Enter,
+click o toque; Escape devuelve foco al campo y salir cierra/cancela. La animación
+breve respeta movimiento reducido y las respuestas obsoletas no reabren listas.
 
 La consulta se envía directamente desde tu navegador al servicio público
 [Photon](https://photon.komoot.io/), basado en datos de OpenStreetMap, con país
@@ -196,6 +207,40 @@ Las pruebas controlan teselas y Photon; el recorrido CORS de cotización usa la
 aplicación FastAPI real con repositorios y publicación de prueba, sin interceptar
 las peticiones de lockers o cotizaciones. No demuestra conectividad del proveedor
 externo ni la integración del worker real.
+
+### Localizar un paquete
+
+En **Localizar paquete**, introduce el **UUID de una entrega o devolución** y
+pulsa su botón o Enter. El UUID de una cotización no identifica un paquete.
+La validación se realiza antes de HTTP; cada intento hace un único
+`GET /tracking/{id}` directo, sin credenciales, caché, polling ni escrituras.
+Editar, intentar de nuevo o cambiar de pestaña cancela/invalida la lectura local,
+con límite de cinco segundos. Errores, ausencia y ambigüedad tienen mensajes y
+reintento explícito. Al salir se retira el resultado y marcador, conservando UUID.
+
+El estado guardado distingue pendiente de recogida, recogido, devuelto al
+transportista, pendiente de entrega al transportista y entregado al transportista.
+**Locker actual** indica custodia pendiente con asignación; **Último locker
+registrado** indica una asignación de la que ya salió el paquete. No es ubicación
+en tiempo real ni una instantánea histórica de la dirección: se muestran los datos
+registrados actuales del locker. Sin asignación, metadata o coordenadas se indica
+su ausencia y nunca se infiere o geocodifica una ubicación.
+
+El marcador oscuro de seguimiento es independiente de destinos disponibles:
+puede mostrar un locker lleno o inactivo, sin cambiar contadores, destino o CP de
+cotización. Pulsar marcadores en seguimiento no abre el cotizador ni cambia modo.
+El resultado textual funciona aunque fallen disponibilidad o teselas.
+
+`GET /tracking/{id}` devuelve exclusivamente
+`{id, kind, status, locker_relation, locker_id, locker}`. `kind` es `delivery` o
+`return`; `locker_relation` es `current`, `last_known` o `unassigned`. `locker` es
+null o `{location_id, address, coordinates}`, con los mismos campos públicos de
+dirección/coordenadas de lockers. Sin asignación ambos campos de locker son null;
+si falta metadata, conserva `locker_id` y la relación con `locker: null`.
+Devuelve 404 sin coincidencia, 422 para UUID inválido y 409 si existe en ambos
+flujos. No enumera paquetes ni expone nombres, teléfonos, tracking del
+transportista o compartimentos; no altera custodia ni cotizaciones. Utiliza GET
+con la política CORS existente, que no es autorización.
 
 ### Generar lockers sintéticos de demostración
 
