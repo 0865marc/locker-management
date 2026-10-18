@@ -17,7 +17,7 @@ from adapters.database.d1.core import (
     statement,
     text,
 )
-from adapters.database.d1.lockers import choose_cell, snapshot
+from adapters.database.d1.selection import select
 from application.persistence import PersistenceError
 from domain.lockers import Dimensions
 
@@ -73,14 +73,13 @@ class CustodyStore:
     ) -> UUID:
         db = self.provider()
         for _ in range(3):
-            state = await snapshot(db, locker_id)
-            cell = choose_cell(state, dimensions)
+            selection = await select(db, locker_id, dimensions)
             token = mutation_token()
-            guard = guard_values(locker_id, state.revision, token)
+            guard = guard_values(locker_id, selection.revision, token)
             results = await batch(
                 db,
                 [
-                    cas(db, locker_id, state.revision, token),
+                    cas(db, locker_id, selection.revision, token),
                     self.insert(db, values, guard),
                     statement(
                         db,
@@ -89,7 +88,7 @@ class CustodyStore:
                 SELECT ?,?,?,?,?,?,? WHERE """
                         + GUARD,
                         str(uuid4()),
-                        str(cell.id),
+                        str(selection.compartment_id),
                         str(parcel_id),
                         *dimensions.axes,
                         assigned_at,
@@ -101,7 +100,7 @@ class CustodyStore:
                 continue
             if results[0].changes != 1:
                 raise PersistenceError()
-            return cell.id
+            return selection.compartment_id
         raise PersistenceError()
 
     async def exit(
