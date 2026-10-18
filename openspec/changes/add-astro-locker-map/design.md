@@ -2,7 +2,7 @@
 
 ## Context
 
-Ver `proposal.md`. El frontend estático y las cotizaciones asíncronas existen. Las dos pestañas y el seguimiento mínimo por UUID están implementados. La selección por rol ya está implementada. El usuario ha aprobado retirar ambos campos CP y usar «Locker de origen»/«Locker de destino» en la interfaz, derivando los códigos exclusivamente de los registros seleccionados. `shipping-quotes` y `asynchronous-shipping-quotations` definen los contratos que se reutilizan; API/worker ya componen tres proveedores simulados.
+Ver `proposal.md`. El frontend estático, las selecciones por rol con CP derivados, las cotizaciones asíncronas y el seguimiento por UUID están implementados. El usuario ha limitado esta ampliación a una línea directa entre origen y destino; excluye crear Shipment. `shipping-quotes` y `asynchronous-shipping-quotations` conservan sus contratos y los tres proveedores simulados.
 
 ## Goals / Non-Goals
 
@@ -132,7 +132,7 @@ Conservar alias `DEMO-<seed>-<índice>`, active true y seis celdas habilitadas d
 
 ### 9. Verificación
 
-Conservar las 47 tareas/evidencias previas. Para este ajuste, probar ausencia de campos CP (también ocultos), nombres públicos nuevos en selectores/popup/mensajes, CP exactos derivados de ambos lockers con ceros iniciales, selección sin CP que bloquea sin POST y recuperación al elegir un registro completo. Mantener invalidación por UUID aunque comparta CP, cancelación, conservación de estado al volver a pestañas y geobúsqueda independiente. Los errores/foco deben apuntar a selectores existentes, sin referencias ARIA huérfanas.
+Conservar las 49 tareas/evidencias previas. Verificar línea y extremos contra las coordenadas reales, identificación de roles, encuadre visible entre overlays y foco tras selección por menú/popup; cambio de UUID, invalidación, posición ausente, puntos coincidentes y par península/islas. Probar ocultación/restauración por pestaña, independencia de tracking y geobúsqueda, navegación manual y ausencia de nuevas peticiones. Mantener CP derivados, contadores, popup, reapertura de resultados y un POST nuevo por cada comparación explícita habilitada.
 
 Actualizar únicamente pruebas frontend afectadas y README. Ejecutar `npm run check`, `npm test`, build con API apagada y E2E afectados en escritorio/375×480, incluido el fixture de CORS real existente, sin otro stack Docker ni repetir seed. Desde `backend/`, ejecutar `uv run --extra dev pyright --project .. --warnings` con cero errores y advertencias, validar OpenSpec estricto y obtener revisión independiente. Backend, contratos y servicios no cambian; teselas/Photon siguen controlados en pruebas.
 
@@ -168,8 +168,19 @@ Reutilizar `validateShipping` pasando los CP de los lockers y los cuatro valores
 
 Modificar `frontend/src/components/LockerSelector.astro`, `LockerExplorer.astro`, `src/scripts/shipping-panel.ts`, textos de `src/scripts/locker-map.ts`, estilos postales sin uso en `src/styles/global.css`, E2E afectados y README. El helper de cotización puede conservar su validación; no cambiar backend, seed, catálogo, dependencias o Compose. Esta decisión sustituye el suplemento manual de fases anteriores; la evidencia histórica sigue en tareas.
 
+### 14. Trayecto visual entre los lockers seleccionados
+
+Proyectar las selecciones vigentes recibidas por `selectRole` en una capa local de Leaflet: una `polyline` directa y una identificación legible de origen/destino, sin depender solo del color. Mantener los marcadores y popups existentes operables; los adornos del trayecto no interceptan su interacción ni se cuentan como nuevos lockers. Usar las posiciones registradas sin jitter. Una línea discontinua y la indicación breve «Trayecto orientativo» comunican que no representa carretera, distancia, ETA ni itinerario del transportista. No añadir servicios, dependencias ni llamadas HTTP.
+
+Al completar o cambiar el par en cotización, encuadrar ambos extremos con padding calculado desde los overlays visibles y el tamaño de sus indicadores. Reutilizar o extraer solo la geometría útil de `revealPosition`; un encuadre del viewport completo ocultaría posiciones tras el menú. Limitar el zoom de encuadre a 14 y conservar el foco de selección; no ejecutar un segundo centrado individual que deshaga el encuadre conjunto. Si las posiciones coinciden, mostrar ambas funciones en el punto común, sin forzar longitud visible ni separar coordenadas. Con solo un rol, conservar la navegación actual a ese locker. Con dos roles y una posición ausente, retirar el trayecto anterior y anunciar qué rol no puede situarse; no cambiar la validación postal o de cotización.
+
+Invalidar la capa en cuanto se borre una selección, incluida su retirada al recargar disponibilidad. Ocultar línea e indicadores al entrar en seguimiento y restaurarlos al volver a cotización, encuadrando el par si es posicionable. Las lecturas/marcador de seguimiento siguen independientes. Encajar la selección en esos eventos, no continuamente al mover el mapa: Photon y navegación manual pueden cambiar la vista sin borrar roles ni sufrir un recentrado automático. Mantener «Localizar paquete», «Ver comparación existente» y el comportamiento de Comparar: cada envío explícito habilitado crea una cotización nueva; la lectura/reapertura de una referencia conocida sigue siendo una acción diferente.
+
+Cambios previstos: `frontend/src/scripts/locker-map.ts`; `frontend/src/components/LockerExplorer.astro` y `frontend/src/styles/global.css` solo si hacen falta para aviso/identificación; `frontend/tests/e2e/explorer.spec.ts` y nota de uso en `README.md`. Un helper pequeño y su prueba unitaria son opcionales si simplifican geometría o estado. Sin backend, migraciones, cambios de datos, Compose, creación de envíos o nuevos controles.
+
 ## Risks / Trade-offs
 
+- La línea puede cruzar mar o terrenos sin conexión vial -> identificarla como orientativa y no calcular ruta, distancia o tiempo; posiciones ausentes/coincidentes se comunican sin inventar trazado.
 - Los registros antiguos pueden carecer de CP -> aviso por rol y comparación bloqueada hasta elegir otro locker; no se rellenan automáticamente.
 - El catálogo describe estaciones, no lockers, y puede envejecer o repetir ubicaciones -> atribución/fecha y alias DEMO explícitos, pares inseparables y sin prometer verificación física.
 - El worker puede dejar PENDING/PROCESSING indefinidamente -> espera local acotada y lectura manual del mismo UUID, sin falsas garantías de cancelación o reenvío.
@@ -180,4 +191,4 @@ Modificar `frontend/src/components/LockerSelector.astro`, `LockerExplorer.astro`
 
 ## Migration Plan
 
-El usuario ha aprobado retirar campos CP y renombrar los roles visibles a origen/destino. Reconstruir únicamente assets/frontend; no hay migraciones ni cambios de backend. Los lockers existentes sin CP continúan visibles, pero no pueden cotizar hasta elegir otros con datos completos. Conservar tareas/evidencia histórica y no sincronizar, archivar ni publicar como parte de esta implementación.
+El usuario ha autorizado únicamente el trayecto visual entre las selecciones existentes. Reconstruir assets/frontend; no hay migraciones ni cambios de backend o datos. Se conservan los botones, nombres y contratos actuales. Conservar tareas/evidencia histórica y no sincronizar, archivar ni publicar como parte de esta implementación.

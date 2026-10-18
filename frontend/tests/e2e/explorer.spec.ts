@@ -1979,3 +1979,221 @@ test('postal request uses the selected origin and destination records with leadi
     destination_postal_code: '01001',
   });
 });
+
+async function routeGeometry(page: Page, labels: string[]) {
+  const badges = page.locator('.route-endpoint');
+  await expect(badges).toHaveCount(labels.length);
+  for (const [index, label] of labels.entries()) {
+    const geometry = await badges.nth(index).evaluate((node, title) => {
+      const box = node.getBoundingClientRect();
+      const menu = document
+        .querySelector('#map-panels')!
+        .getBoundingClientRect();
+      const pin = document
+        .querySelector(`.locker-marker[title="${title}"]`)!
+        .getBoundingClientRect();
+      return {
+        x: box.x,
+        right: box.right,
+        y: box.y,
+        bottom: box.bottom,
+        menuRight: menu.right,
+        width: innerWidth,
+        height: innerHeight,
+        dx: Math.abs((box.left + box.right) / 2 - (pin.left + pin.right) / 2),
+        dy: Math.abs((box.top + box.bottom) / 2 - pin.bottom),
+        interactive: getComputedStyle(node).pointerEvents,
+      };
+    }, label);
+    expect(geometry.x).toBeGreaterThanOrEqual(geometry.menuRight);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.width);
+    expect(geometry.y).toBeGreaterThanOrEqual(90);
+    expect(geometry.bottom).toBeLessThanOrEqual(geometry.height - 16);
+    expect(geometry.dx).toBeLessThanOrEqual(1);
+    expect(geometry.dy).toBeLessThanOrEqual(1);
+    expect(geometry.interactive).toBe('none');
+  }
+  const ends = await page.locator('.locker-route').evaluate((node) => {
+    const path = node as SVGPathElement,
+      matrix = path.getScreenCTM()!;
+    return [0, path.getTotalLength()].map((length) => {
+      const point = path.getPointAtLength(length).matrixTransform(matrix);
+      return { x: point.x, y: point.y };
+    });
+  });
+  const centers = await badges.evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const box = node.getBoundingClientRect();
+      return { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+    }),
+  );
+  for (const end of ends)
+    expect(centers.some((c) => Math.hypot(end.x - c.x, end.y - c.y) <= 2)).toBe(
+      true,
+    );
+}
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`illustrative route preserves real endpoints and independent navigation ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const records = [
+      locker(1, 'Origen visual'),
+      locker(2, 'Destino visual', { latitude: 28.1248, longitude: -15.43 }),
+      locker(3, 'Sin ubicación', null),
+      locker(4, 'Mismo punto'),
+      locker(5, 'Cercano', { latitude: 40.416801, longitude: -3.703801 }),
+      locker(6, 'Separables', { latitude: 40.4168, longitude: -3.7028 }),
+    ];
+    let reads = 0,
+      writes = 0;
+    await tiles(page);
+    await page.route('**/lockers', (r) => {
+      reads++;
+      return r.fulfill({ json: records });
+    });
+    await page.route('**/tracking/*', (r) => r.fulfill({ json: tracked() }));
+    await page.route('**/quotations', (r) => {
+      writes++;
+      return r.fulfill({ status: 500, json: {} });
+    });
+    await page.route(photon, (r) =>
+      r.fulfill({ json: places(place('Barcelona', 2.17, 41.39)) }),
+    );
+    await page.goto('/');
+    await expect(page.locator('#available-count')).toHaveText('6');
+    await selectRole(page, 'pickup', 1);
+    await expect(page.locator('.locker-route')).toHaveCount(0);
+    // An open inspection must not fight the subsequent pair framing.
+    const pin = page.locator('.locker-marker[title="Origen visual"]');
+    await pin.focus();
+    await pin.press('Enter');
+    await selectRole(page, 'delivery', 2);
+    await expect(page.locator('.leaflet-popup')).toHaveCount(0);
+    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expect(page.locator('#route-status')).toHaveText(
+      'Trayecto orientativo · O origen · D destino',
+    );
+    await routeGeometry(page, ['Origen visual', 'Destino visual']);
+    await expect(page.locator('.route-endpoint').first()).toHaveAccessibleName(
+      'Origen: Origen visual',
+    );
+    await expect(page.locator('.route-endpoint').last()).toHaveAccessibleName(
+      'Destino: Destino visual',
+    );
+    await page.screenshot({ path: `test-results/route-${viewport.name}.png` });
+    const origin = page.locator('.route-endpoint').first();
+    const beforePan = await origin.boundingBox();
+    await page.mouse.move(viewport.width - 35, viewport.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(viewport.width - 35, viewport.height / 2 + 60, {
+      steps: 8,
+    });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const afterPan = await origin.boundingBox();
+    expect(afterPan).not.toEqual(beforePan);
+    await page.waitForTimeout(200);
+    expect(await origin.boundingBox()).toEqual(afterPan);
+    await page.locator('#location-query').fill('Barcelona');
+    await page.locator('#location-results button').click();
+    await expect(page.locator('.search-location')).toHaveCount(1);
+    await expect(page.locator('.locker-route')).toHaveCount(1);
+    const afterGeo = await origin.boundingBox();
+    await page.waitForTimeout(200);
+    expect(await origin.boundingBox()).toEqual(afterGeo);
+    await page.locator('#tracking-tab').click();
+    await expect(page.locator('.route-endpoint,.locker-route')).toHaveCount(0);
+    await track(page, 1001);
+    await expect(page.locator('.tracking-marker')).toHaveCount(1);
+    await page.locator('#quote-tab').click();
+    await routeGeometry(page, ['Origen visual', 'Destino visual']);
+    await expect(page.locator('.tracking-marker')).toHaveCount(0);
+    await selectRole(page, 'delivery', 3);
+    await expect(page.locator('.route-endpoint,.locker-route')).toHaveCount(0);
+    await expect(page.locator('#route-status')).toContainText(
+      'locker de destino',
+    );
+    await fillShipping(page);
+    await expect(page.locator('#compare-shipping')).toBeEnabled();
+    await selectRole(page, 'delivery', 4);
+    await routeGeometry(page, ['Mismo punto']);
+    await expect(page.locator('.route-endpoint')).toHaveAccessibleName(
+      'Origen y destino en el mismo punto',
+    );
+    const zooms = await page
+      .locator('.leaflet-tile')
+      .evaluateAll((nodes) =>
+        nodes.map((node) =>
+          Number((node as HTMLImageElement).src.match(/\.org\/(\d+)\//)?.[1]),
+        ),
+      );
+    expect(Math.max(...zooms)).toBeLessThanOrEqual(14);
+    await selectRole(page, 'delivery', 5);
+    await expect(page.locator('.route-endpoint')).toHaveText('O/D');
+    await expect(page.locator('.route-endpoint')).toHaveAccessibleName(
+      'Origen y destino agrupados en esta vista',
+    );
+    await expect(page.locator('#route-status')).toContainText(
+      'origen y destino agrupados en esta vista',
+    );
+    await expect(page.locator('#route-status')).not.toContainText(
+      'mismo punto',
+    );
+    await page.screenshot({
+      path: `test-results/route-close-${viewport.name}.png`,
+    });
+    await selectRole(page, 'delivery', 6);
+    await expect(page.locator('.route-endpoint')).toHaveText('O/D');
+    await page
+      .getByRole('button', { name: 'Acercar mapa', exact: true })
+      .click();
+    await expect(page.locator('.leaflet-map-pane')).toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await page
+      .getByRole('button', { name: 'Acercar mapa', exact: true })
+      .click();
+    await expect(page.locator('.leaflet-map-pane')).toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await expect(page.locator('.route-endpoint')).toHaveText(['O', 'D']);
+    await page
+      .getByRole('button', { name: 'Alejar mapa', exact: true })
+      .click();
+    await expect(page.locator('.leaflet-map-pane')).toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await page
+      .getByRole('button', { name: 'Alejar mapa', exact: true })
+      .click();
+    await expect(page.locator('.leaflet-map-pane')).toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
+      /leaflet-zoom-anim/,
+    );
+    await expect(page.locator('.route-endpoint')).toHaveText('O/D');
+    await page.locator('#delivery-locker').fill('');
+    await expect(page.locator('.route-endpoint,.locker-route')).toHaveCount(0);
+    await expect(page.locator('#route-status')).toBeHidden();
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    expect(reads).toBe(1);
+    expect(writes).toBe(0);
+  });
+}

@@ -939,3 +939,24 @@ select:focus-visible {
   padding: 8px;
   line-height: 1.4;
 }
+
+/* Non-interactive role badges leave the existing locker popups operable. */
+.route-endpoint {
+  display: grid;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #145b78;
+  color: white;
+  font:
+    700 10px/1 system-ui,
+    sans-serif;
+  box-shadow: 0 1px 5px #18354a66;
+  pointer-events: none !important;
+}
+.route-status {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #496374;
+}

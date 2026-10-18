@@ -41,6 +41,13 @@ import LockerSelector from './LockerSelector.astro';
         <form id="shipping-form" novalidate autocomplete="off">
           <LockerSelector role="pickup" label="Locker de origen" />
           <LockerSelector role="delivery" label="Locker de destino" />
+          <p
+            id="route-status"
+            class="route-status"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></p>
           <div id="parcel-form" role="group" aria-label="Medidas del paquete">
             <div class="parcel-fields">
               {[

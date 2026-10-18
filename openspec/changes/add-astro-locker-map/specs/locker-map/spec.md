@@ -180,6 +180,33 @@ The map SHALL initially frame mainland Spain closely. Mainland, Balearic, Canary
 - **WHEN** a locker has valid coordinates but no address
 - **THEN** it keeps its stored map position without receiving an invented address or postal code
 
+### Requirement: Connect selected lockers with an illustrative line
+
+In quotation mode, two selected lockers with valid positions SHALL show a straight illustrative line using their recorded coordinates, with origin and destination identifiable without color alone. Completing or changing the pair SHALL frame both endpoints outside visible overlays without changing focus. The line SHALL require no routing requests and SHALL NOT claim a road route, distance, travel time or shipment creation.
+
+#### Scenario: Complete or change the selected pair
+- **WHEN** a visitor selects origin and destination through either selector or popup, then replaces one with another positioned locker
+- **THEN** the line connects only the current pair and both identified endpoints are visible on desktop and at 375×480, with existing selection focus preserved
+- **AND** no additional API or geographic request occurs, availability counts and parcel input remain unchanged, and changing the pair still invalidates obsolete quotations
+
+#### Scenario: Invalidate or lose a selected role
+- **WHEN** either role is cleared by editing its text or invalidated by a new availability load
+- **THEN** its previous line and endpoint indicators disappear immediately without retaining a stale connection or altering the other selection
+
+#### Scenario: Missing or coincident positions
+- **WHEN** both roles are selected but one lacks usable coordinates, or both share the same recorded position
+- **THEN** a missing position produces no line and an accessible explanation identifying the affected role, without inferring coordinates or changing quotation eligibility
+- **AND** coincident positions remain unchanged, communicate both roles at that point and use a bounded zoom rather than inventing a visible separation or route
+
+### Requirement: Isolate the illustrative line from other map workflows
+
+The line and its role indicators SHALL be hidden in tracking mode and restored from current selections on return to quotation. They SHALL NOT change tracking data, markers or counts. Geographic search and manual navigation SHALL remain usable without changing the pair or being overridden by continuous route framing. Existing quotation submission, reopening and tracking controls SHALL remain unchanged.
+
+#### Scenario: Switch modes and explore another location
+- **WHEN** a visitor with a selected pair enters tracking, locates a parcel, returns to quotation and chooses a geographic search result
+- **THEN** tracking shows no quotation line or role indicators; returning restores the current connection, and the geographic result can subsequently move the map without clearing the pair or being recentered onto it
+- **AND** no automatic quotation or tracking request is triggered by drawing or restoring the connection
+
 ### Requirement: Retain available lockers without usable coordinates
 
 Available lockers with missing or invalid coordinates SHALL remain selectable for either role, with an indication that their map position is unavailable. They SHALL NOT receive invented positions or be geocoded. Counts SHALL distinguish all available lockers from mapped ones.

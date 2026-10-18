@@ -176,6 +176,14 @@ cierran el popup y enfocan su campo. El popup conserva su anclaje al mover o ace
 el mapa y al cambiar el tamaño de la pantalla. Escape o el botón de cierre devuelve
 foco al marcador. No reserva capacidad ni crea envíos.
 
+Al elegir ambos lockers con coordenadas, el mapa los encuadra y muestra una
+línea discontinua **Trayecto orientativo**, con extremos O (origen) y D (destino).
+Es una relación visual directa, sin ruta por carretera, distancia ni tiempo.
+Los indicadores se agrupan como O/D al solaparse en pantalla, sin mover sus
+posiciones; se distingue ese caso de dos puntos coincidentes. Si falta una posición se indica el rol afectado, sin impedir cotizar con CP válido.
+Editar un rol retira el trayecto; seguimiento lo oculta y volver a cotización lo
+restaura. Buscar una dirección o navegar manualmente sigue siendo independiente.
+
 Cada CP procede exclusivamente del locker seleccionado, como texto de cinco
 dígitos ASCII de país ES, conservando ceros iniciales. La dirección registrada
 permanece visible; no hay campos de CP independientes ni suplemento manual,

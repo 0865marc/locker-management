@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import { loadLockers } from '../lib/locker-api';
 import { setupAutocomplete } from './autocomplete';
 import { setupTracking } from './tracking-panel';
+import { setupLockerRoute } from './locker-route';
 import { setupLockerSelector, type LockerRole } from './locker-selector';
 import type { AvailableLocker } from '../lib/lockers';
 import { setupShipping } from './shipping-panel';
@@ -129,12 +130,32 @@ if (inspection) {
   map.on('move zoom viewreset', syncInspection);
   syncInspection();
 }
+const route = setupLockerRoute(map, element('route-status'), () => {
+  const menu = element('map-panels').getBoundingClientRect();
+  const panel = results.hidden ? null : results.getBoundingClientRect();
+  const size = map.getSize();
+  return {
+    left: menu.right + 6,
+    right: window.matchMedia('(max-width: 760px)').matches
+      ? size.x - 8
+      : panel
+        ? panel.left - 12
+        : size.x - 16,
+    top: (zoom.getContainer()?.getBoundingClientRect().bottom ?? 80) + 12,
+    bottom:
+      panel && window.matchMedia('(max-width: 760px)').matches
+        ? panel.top - 12
+        : size.y - 28,
+  };
+});
 function selectRole(role: LockerRole, locker: AvailableLocker | null) {
   shipping.setRole(role, locker);
-  if (!locker?.position) return;
   map.closePopup();
+  const pairFramed = route.select(role, locker);
+  if (!locker?.position) return;
   for (const marker of markers.values()) marker.setZIndexOffset(0);
   markers.get(locker.id)?.setZIndexOffset(1000);
+  if (pairFramed) return;
   map.setView(locker.position, 14, { animate: false });
   revealPosition(locker.position);
 }
@@ -442,6 +463,7 @@ function setMode(mode: 'quote' | 'tracking') {
     view.hidden = !selected;
     view.inert = !selected;
   }
+  route.setVisible(mode === 'quote');
 }
 const tabs = [
   element<HTMLButtonElement>('quote-tab'),
