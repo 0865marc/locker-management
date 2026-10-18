@@ -487,7 +487,10 @@ class HttpRequest:
             self.base_url + path,
             method=method,
             data=None if body is None else json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "LockerManagementAcceptance/0.1",
+            },
         )
         try:
             client = (
