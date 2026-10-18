@@ -365,3 +365,29 @@ local no acredita entrega nativa de Queues ni aceptación Free.
 
 La revisión independiente no encontró hallazgos y
 `openspec validate add-cloudflare-free-deployment --strict` terminó correctamente.
+
+
+## Integración de main y del frontend
+
+El 18 de octubre de 2026 se integró `main` en `31dfa8c`, conservando el frontend
+Astro, mapa, geocodificador, seed, Compose y sus contratos CORS. Las entradas
+permanecen agrupadas en `entrypoints/server` y `entrypoints/cloudflare`, y la
+distribución sigue en `deploy/cloudflare`.
+
+Server valida `CORS_ALLOWED_ORIGINS` del entorno antes de crear infraestructura.
+Cloudflare usa el binding de texto del mismo nombre por evento, sin consultarlo
+al importar; valida la allowlist antes del handler. Ambos conservan orígenes
+exactos, ausencia de credenciales y preflight GET/POST con `Content-Type`.
+
+| Comprobación de integración | Resultado |
+| --- | --- |
+| Unidades backend | 127 pruebas correctas |
+| Pyright raíz y proyecto Cloudflare | Cero errores y cero advertencias en ambos |
+| Ruff lint y formato | Correctos en 131 archivos |
+| Fuentes Workers preparadas | 59 módulos, incluido el adaptador CORS |
+| Unidades frontend | 146 pruebas correctas |
+| Astro check | 35 archivos; cero errores y cero advertencias |
+| Playwright frontend | 51 de 51 pruebas correctas en 1.6 min con Chromium local, build estático con la API apagada y servidor CORS de fixtures |
+| `scripts/cloudflare/check.sh --d1-only` | 33 pruebas correctas; campaña de 421 peticiones, máximo de 8 sentencias D1 y 13 parámetros |
+| Build de fuentes Wrangler sin publicación | 59 módulos con nombres y hashes coincidentes; 132.19 KiB, 24.76 KiB gzip |
+| Migraciones y locks | Nueve archivos idénticos byte a byte respecto al HEAD anterior a la integración |

@@ -7,7 +7,7 @@ import unittest
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from starlette.types import Message, Receive, Scope, Send
 
@@ -20,6 +20,7 @@ from entrypoints.cloudflare.consumer import consume_batch
 from entrypoints.cloudflare.runtime import (
     EventBindings,
     event_scope,
+    get_cors_origins,
     get_database,
     get_environment,
     get_queue,
@@ -70,6 +71,7 @@ class Queue:
 class Environment:
     DB: Database
     QUOTATIONS: Queue
+    CORS_ALLOWED_ORIGINS: str = ""
 
 
 async def receive() -> Message:
@@ -153,6 +155,149 @@ class CloudflareContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.DB.queries, ["/failure-before", "/failure-after"])
         with event_scope(first):
             self.assertIs(get_database(), first.DB)
+
+    async def test_cors_isolates_origins_and_preserves_preflight_and_error_responses(
+        self,
+    ) -> None:
+        import httpx
+
+        from application.lockers.ports import LockerRepository
+        from composition import create_application
+
+        first = Environment(Database(), Queue(), "https://first.example")
+        second = Environment(Database(), Queue(), "https://second.example")
+        entered = 0
+        ready = asyncio.Event()
+
+        async def unavailable(location_id: str | None = None) -> None:
+            nonlocal entered
+            environment = get_environment()
+            entered += 1
+            if entered == 2:
+                ready.set()
+            await asyncio.wait_for(ready.wait(), timeout=2)
+            self.assertIs(get_environment(), environment)
+            raise PersistenceError()
+
+        lockers = AsyncMock(spec=LockerRepository)
+        lockers.list_all.side_effect = unavailable
+        application = create_application(
+            AsyncMock(),
+            AsyncMock(),
+            lockers,
+            AsyncMock(),
+            AsyncMock(),
+            cors_origins=get_cors_origins,
+        )
+        wrapped = EventBindings(application)
+
+        async def invoke(environment: Environment) -> None:
+            async def event(scope: Scope, receive: Receive, send: Send) -> None:
+                scope["env"] = environment
+                await wrapped(scope, receive, send)
+
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=event), base_url="http://worker"
+            ) as client:
+                origin = environment.CORS_ALLOWED_ORIGINS
+                preflight = await client.options(
+                    "/quotations",
+                    headers={
+                        "Origin": origin,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "content-type",
+                    },
+                )
+                self.assertEqual(preflight.status_code, 200)
+                self.assertEqual(
+                    preflight.headers["access-control-allow-origin"], origin
+                )
+                response = await client.get("/lockers", headers={"Origin": origin})
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json(), {"detail": "Persistence unavailable"})
+                self.assertEqual(
+                    response.headers["access-control-allow-origin"], origin
+                )
+                self.assertNotIn("access-control-allow-credentials", response.headers)
+            with self.assertRaises(PersistenceError):
+                get_environment()
+
+        await asyncio.gather(invoke(first), invoke(second))
+
+    async def test_invalid_event_cors_rejects_before_io_and_next_event_recovers(
+        self,
+    ) -> None:
+        import httpx
+
+        from composition import create_application
+
+        @dataclass
+        class ConfiguredEnvironment:
+            DB: Database
+            QUOTATIONS: Queue
+            CORS_ALLOWED_ORIGINS: object
+
+        database = Database()
+        queue = AsyncMock(spec=Queue)
+        environment = ConfiguredEnvironment(database, queue, "*")
+        application = create_application(
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            cors_origins=get_cors_origins,
+        )
+        handler = AsyncMock()
+
+        @application.get("/probe")
+        async def probe() -> dict[str, bool]:
+            await handler()
+            get_database().prepare("handler reached")
+            await get_queue().send({"probe": "reached"})
+            return {"ok": True}
+
+        wrapped = EventBindings(application)
+
+        async def event(scope: Scope, receive: Receive, send: Send) -> None:
+            scope["env"] = environment
+            await wrapped(scope, receive, send)
+
+        allowed = "https://valid.example"
+        with patch.dict("os.environ", {"CORS_ALLOWED_ORIGINS": allowed}):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=event), base_url="http://worker"
+            ) as client:
+                invalid_values: tuple[object, ...] = (
+                    "https://valid.example/path",
+                    "*",
+                    123,
+                )
+                for invalid in invalid_values:
+                    environment.CORS_ALLOWED_ORIGINS = invalid
+                    for headers in ({}, {"Origin": allowed}):
+                        with self.subTest(value=invalid, headers=headers):
+                            with self.assertRaisesRegex(
+                                ValueError, "CORS_ALLOWED_ORIGINS"
+                            ):
+                                await client.get("/probe", headers=headers)
+                            handler.assert_not_awaited()
+                            self.assertEqual(database.queries, [])
+                            queue.send.assert_not_awaited()
+                            with self.assertRaises(PersistenceError):
+                                get_environment()
+                environment.CORS_ALLOWED_ORIGINS = allowed
+                response = await client.get("/probe", headers={"Origin": allowed})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"ok": True})
+                self.assertEqual(
+                    response.headers["access-control-allow-origin"], allowed
+                )
+                handler.assert_awaited_once()
+                self.assertEqual(database.queries, ["handler reached"])
+                queue.send.assert_awaited_once_with({"probe": "reached"})
+                with self.assertRaises(PersistenceError):
+                    get_environment()
 
     async def test_native_boundary_preserves_results_and_only_translates_binding_errors(
         self,
@@ -289,6 +434,17 @@ async def check_delegate():
     assert cloudflare_api.app is application
     assert cloudflare_api.processor.repository is cloudflare_api.quotation_repository
 asyncio.run(check_delegate())
+from fastapi.testclient import TestClient
+async def bound_request(scope, receive, send):
+    scope['env'] = types.SimpleNamespace(CORS_ALLOWED_ORIGINS='https://worker.example')
+    await cloudflare_api.event_app(scope, receive, send)
+with TestClient(bound_request) as client:
+    response = client.options('/quotations', headers={
+        'Origin':'https://worker.example', 'Access-Control-Request-Method':'POST',
+        'Access-Control-Request-Headers':'content-type'})
+    assert response.status_code == 200, response.text
+    assert response.headers['access-control-allow-origin'] == 'https://worker.example'
+    assert 'access-control-allow-credentials' not in response.headers
 for name in ('entrypoints.server.api','entrypoints.server.consumer','sqlmodel','asyncpg','alembic','aio_pika'):
     assert name not in sys.modules, name
 """
@@ -304,7 +460,7 @@ for name in ('entrypoints.server.api','entrypoints.server.consumer','sqlmodel','
         script = """
 import sys
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from application.quotations.ports import QuotationRepository
 from entrypoints.cloudflare.consumer import create_processor
 repository = AsyncMock(spec=QuotationRepository)

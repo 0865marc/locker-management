@@ -1,5 +1,7 @@
 # !reset requires Docker Compose 2.24.0 or newer.
 services:
+  frontend:
+    ports: !reset []
   api:
     ports: !reset []
   db:

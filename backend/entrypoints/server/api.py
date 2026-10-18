@@ -8,6 +8,7 @@ from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
 from adapters.database.sqlmodel.lockers import SqlModelLockerRepository
 from adapters.database.sqlmodel.quotations import SqlModelQuotationRepository
 from adapters.database.sqlmodel.returns import SqlModelReturnRepository
+from adapters.http.cors import get_cors_allowed_origins
 from adapters.queue.rabbitmq import RabbitMQ, get_rabbitmq_url
 from application.quotations.ports import QuotationPublisher
 from composition import create_application
@@ -18,6 +19,7 @@ def create_app(
     database_url: str | None = None, *, publisher: QuotationPublisher | None = None
 ) -> FastAPI:
     """Punto de composición: conecta adaptadores, servicios y recursos."""
+    cors_allowed_origins = get_cors_allowed_origins()
     engine, sessions = create_database(database_url or get_database_url())
 
     broker: RabbitMQ | None = None
@@ -46,6 +48,7 @@ def create_app(
         publisher,
         clock=utc_now,
         lifespan=lifespan,
+        cors_origins=lambda: cors_allowed_origins,
     )
 
 

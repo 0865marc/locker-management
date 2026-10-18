@@ -8,6 +8,7 @@ from typing import Protocol, cast
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from adapters.database.d1.bindings import D1Database
+from adapters.http.cors import parse_cors_allowed_origins
 from adapters.queue.cloudflare import QueueBinding
 from application.persistence import PersistenceError
 
@@ -45,6 +46,13 @@ def get_database() -> D1Database:
 
 def get_queue() -> QueueBinding:
     return get_environment().QUOTATIONS
+
+
+def get_cors_origins() -> list[str]:
+    value: object = getattr(get_environment(), "CORS_ALLOWED_ORIGINS", "")
+    if not isinstance(value, str):
+        raise ValueError("CORS_ALLOWED_ORIGINS must be a string")
+    return parse_cors_allowed_origins(value)
 
 
 class EventBindings:

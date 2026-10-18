@@ -1,0 +1,204 @@
+---
+import LocationSearch from './LocationSearch.astro';
+import LockerSelector from './LockerSelector.astro';
+---
+
+<section
+  class="explorer"
+  id="explorer"
+  aria-label="Mapa y consulta de lockers"
+  data-results-open="false"
+>
+  <div id="map" aria-label="Mapa de España con lockers disponibles"></div>
+  <div class="left-stack" id="map-panels">
+    <section class="geography-panel panel" aria-label="Buscar en el mapa">
+      <LocationSearch id="location" label="Dirección o código postal" />
+    </section>
+    <section class="parcel-panel panel" aria-label="Consulta de paquetes">
+      <div class="mode-tabs" role="tablist" aria-label="Consulta de paquetes">
+        <button
+          id="quote-tab"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="quote-view"
+          tabindex="0"
+        >
+          Cotizar envío
+        </button>
+        <button
+          id="tracking-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="tracking-view"
+          tabindex="-1"
+        >
+          Localizar paquete
+        </button>
+      </div>
+      <div id="quote-view" role="tabpanel" aria-labelledby="quote-tab">
+        <form id="shipping-form" novalidate autocomplete="off">
+          <LockerSelector role="pickup" label="Locker de origen" />
+          <LockerSelector role="delivery" label="Locker de destino" />
+          <p
+            id="route-status"
+            class="route-status"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></p>
+          <div id="parcel-form" role="group" aria-label="Medidas del paquete">
+            <div class="parcel-fields">
+              {[
+                ['length', 'Largo', 'cm'],
+                ['width', 'Ancho', 'cm'],
+                ['height', 'Alto', 'cm'],
+                ['weight', 'Peso', 'kg'],
+              ].map(([id, label, unit]) => (
+                <div class="parcel-field">
+                  <label for={`parcel-${id}`}>
+                    {label} <span>({unit})</span>
+                  </label>
+                  <div class="input-wrap">
+                    <input
+                      id={`parcel-${id}`}
+                      name={id}
+                      type="number"
+                      inputmode="decimal"
+                      step="any"
+                      min="0"
+                      placeholder="—"
+                      aria-describedby={`parcel-${id}-error`}
+                    />
+                    <span aria-hidden="true">{unit}</span>
+                  </div>
+                  <span class="field-error" id={`parcel-${id}-error`} hidden>
+                    Introduce un número mayor que cero.
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button id="compare-shipping" class="primary" type="submit" disabled>
+            Comparar envíos
+          </button>
+        </form>
+        <button id="reopen-results" type="button" hidden>
+          Ver comparación existente
+        </button>
+        <div
+          class="availability-panel"
+          role="group"
+          aria-label="Disponibilidad"
+        >
+          <div id="status" role="status" aria-live="polite" aria-atomic="true">
+            Cargando lockers…
+          </div>
+          <button id="retry" type="button" hidden>
+            Reintentar consulta
+          </button>
+          <p id="tile-warning" class="tile-warning" role="status" hidden>
+            No se ha podido cargar el fondo del mapa. Puedes elegir los lockers
+            en los selectores del menú.
+          </p>
+        </div>
+        <div class="metrics">
+          <span>
+            <strong id="available-count">—</strong>{' '}
+            <span id="available-label">disponibles</span>
+          </span>
+          <span>
+            <strong id="positioned-count">—</strong> en el mapa
+          </span>
+        </div>
+      </div>
+      <div
+        id="tracking-view"
+        role="tabpanel"
+        aria-labelledby="tracking-tab"
+        hidden
+        inert
+      >
+        <form id="tracking-form" novalidate>
+          <label for="tracking-id">UUID del paquete</label>
+          <input
+            id="tracking-id"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="UUID de entrega o devolución"
+            aria-describedby="tracking-help tracking-error"
+          />
+          <p id="tracking-help" class="address">
+            Usa el identificador de una entrega o devolución, no la referencia
+            de cotización.
+          </p>
+          <span id="tracking-error" class="field-error" hidden></span>
+          <button id="tracking-submit" type="submit" class="primary">
+            Localizar paquete
+          </button>
+        </form>
+        <div
+          id="tracking-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+        <button id="tracking-retry" type="button" hidden>
+          Reintentar localización
+        </button>
+        <section
+          id="tracking-result"
+          aria-label="Resultado del seguimiento"
+          hidden
+        ></section>
+        <p id="tracking-tile-warning" class="tile-warning" hidden>
+          No se ha podido cargar el fondo del mapa. El resultado del seguimiento
+          sigue disponible.
+        </p>
+      </div>
+    </section>
+  </div>
+  <section
+    id="results"
+    class="results-panel panel"
+    aria-labelledby="results-title"
+    hidden
+  >
+    <div class="results-heading">
+      <div>
+        <p class="eyebrow">COTIZADOR DEMO</p>
+        <h2 id="results-title" tabindex="-1">
+          Opciones de envío
+        </h2>
+      </div>
+      <button id="close-results" type="button" aria-label="Cerrar resultados">
+        ×
+      </button>
+    </div>
+    <div class="results-scroll">
+      <p class="demo-note">
+        Simulación demo: proveedores, precios y plazos simulados. No reserva
+        lockers ni crea un envío.
+      </p>
+      <div
+        id="quotation-status"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      ></div>
+      <button id="quotation-resume" type="button" hidden>
+        Seguir consultando
+      </button>
+      <div id="quotation-offers" aria-label="Resultados de cotización"></div>
+    </div>
+  </section>
+</section>
+<noscript>
+  <p class="noscript">
+    Activa JavaScript para consultar disponibilidad y utilizar el mapa.
+  </p>
+</noscript>
+<script>
+  import '../scripts/locker-map';
+</script>

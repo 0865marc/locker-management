@@ -16,6 +16,7 @@ from entrypoints.cloudflare.consumer import consume_batch, create_processor
 from entrypoints.cloudflare.runtime import (
     EventBindings,
     WorkerEnvironment,
+    get_cors_origins,
     get_database,
     get_queue,
 )
@@ -32,6 +33,7 @@ app = create_application(
     D1LockerRepository(native_database),
     quotation_repository,
     CloudflareQuotationPublisher(get_queue),
+    cors_origins=get_cors_origins,
 )
 event_app = EventBindings(app)
 processor = create_processor(quotation_repository, utc_now)

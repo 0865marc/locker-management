@@ -43,6 +43,35 @@ class CompositionTests(unittest.TestCase):
             engine.dispose.assert_not_awaited()
         engine.dispose.assert_awaited_once_with()
 
+    def test_tracking_is_absent_without_touching_infrastructure(self) -> None:
+        from entrypoints.server.api import create_app
+
+        engine = AsyncMock()
+        with patch(
+            "entrypoints.server.api.create_database", return_value=(engine, object())
+        ):
+            app = create_app(
+                "postgresql+asyncpg://unused/unused", publisher=AsyncMock()
+            )
+        self.assertFalse(hasattr(app.state, "tracking_service"))
+        with TestClient(app) as client:
+            schema = client.get("/openapi.json").json()
+            self.assertFalse(
+                any(path.startswith("/tracking") for path in schema["paths"])
+            )
+            for name in ("TrackingResponse", "TrackingLockerResponse"):
+                self.assertNotIn(name, schema["components"]["schemas"])
+            for path in ("/lockers", "/deliveries", "/returns", "/quotations"):
+                self.assertIn(path, schema["paths"])
+            for identifier in ("00000000-0000-4000-8000-000000001001", "invalid"):
+                with self.subTest(identifier=identifier):
+                    response = client.get(f"/tracking/{identifier}")
+                    self.assertEqual(response.status_code, 404)
+                    self.assertEqual(response.json(), {"detail": "Not Found"})
+        engine.connect.assert_not_called()
+        engine.begin.assert_not_called()
+        engine.dispose.assert_awaited_once_with()
+
     def test_lifespan_does_not_create_or_migrate_tables(self) -> None:
         from entrypoints.server.api import create_app
 

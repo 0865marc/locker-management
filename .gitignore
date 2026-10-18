@@ -73,3 +73,9 @@ Thumbs.db
 /deploy/cloudflare/.production/
 /deploy/cloudflare/.dev.vars
 /deploy/cloudflare/.dev.vars.*
+# Frontend tools and browser test artifacts
+/frontend/node_modules/
+/frontend/.astro/
+/frontend/dist/
+/frontend/test-results/
+/frontend/playwright-report/
