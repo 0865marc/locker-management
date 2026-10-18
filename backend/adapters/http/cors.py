@@ -2,12 +2,20 @@
 
 import os
 import re
+from collections.abc import Callable
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
+from starlette.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
+
 
 def get_cors_allowed_origins() -> list[str]:
-    value = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+    return parse_cors_allowed_origins(os.getenv("CORS_ALLOWED_ORIGINS", ""))
+
+
+def parse_cors_allowed_origins(value: str) -> list[str]:
+    value = value.strip()
     if not value:
         return []
 
@@ -52,3 +60,24 @@ def get_cors_allowed_origins() -> list[str]:
         if origin not in origins:
             origins.append(origin)
     return origins
+
+
+class EventCorsMiddleware:
+    """Resolve each event's policy without sharing mutable middleware state."""
+
+    def __init__(self, app: ASGIApp, origins: Callable[[], list[str]]) -> None:
+        self.app = app
+        self.origins = origins
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        policy = CORSMiddleware(
+            self.app,
+            allow_origins=self.origins(),
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type"],
+            allow_credentials=False,
+        )
+        await policy(scope, receive, send)

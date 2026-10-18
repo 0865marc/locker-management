@@ -100,9 +100,17 @@ its CLI before assuming OpenSpec needs to be installed again.
 
 - Keep `domain/` independent of FastAPI and persistence frameworks.
 - Keep `application/` focused on use cases and domain ports; adapters implement
-  HTTP and database concerns. Use `main.py` as the composition root.
-- Define migrations through Alembic and follow the repository README for their
-  preparation and verification.
+  HTTP and database concerns. Use `entrypoints/server/api.py` as the CPython API
+  root and `entrypoints/server/consumer.py` for its RabbitMQ consumer. The server
+  profile runs inside or outside Docker. Use `entrypoints/cloudflare/api.py` as
+  the single Workers platform entry, delegating queue handling to
+  `entrypoints/cloudflare/consumer.py`; shared event context belongs in
+  `entrypoints/cloudflare/runtime.py`. The three entrypoint package initializers
+  stay empty, and adapters must not import entrypoints. `composition.py` shares
+  HTTP/service composition from the backend root.
+- Define PostgreSQL migrations through Alembic and D1 migrations through the
+  separate SQL/Wrangler history in `deploy/cloudflare/migrations/`. Follow the repository
+  README for preparation and verification; neither runtime migrates on startup.
 - Validate the selected change with
   `openspec validate <change-name> --strict`. Document validation is separate
   from proving that the implementation satisfies its requirements.

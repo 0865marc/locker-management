@@ -20,31 +20,31 @@ The documented unit-test command SHALL discover and execute domain, application,
 
 ### Requirement: Require PostgreSQL for integration and full execution
 
-Integration SHALL use only PostgreSQL through an explicit postgresql+asyncpg TEST_DATABASE_URL. Missing or invalid configuration, unavailable PostgreSQL and insufficient setup permissions SHALL fail integration and full-suite execution with nonzero status and a clear diagnostic, without exposing credentials. Database-dependent tests SHALL not be skipped because their environment is missing.
+La suite PostgreSQL y la ejecución completa existente SHALL requerir TEST_DATABASE_URL explícita postgresql+asyncpg. Configuración ausente/inválida, servidor inaccesible o permisos insuficientes SHALL fallar con estado no cero y diagnóstico sin credenciales, sin omitir pruebas ni sustituir PostgreSQL por SQLite/D1. La verificación Cloudflare SHALL ejecutarse por separado y añadirse a la evidencia completa de los dos perfiles.
 
 #### Scenario: Missing integration configuration
-- **WHEN** integration or the complete suite runs without TEST_DATABASE_URL
-- **THEN** setup fails clearly, the process exits nonzero and the result cannot be reported as successful tests skipped
+- **WHEN** la integración PostgreSQL o la suite completa existente corre sin TEST_DATABASE_URL
+- **THEN** falla claramente con estado no cero, sin presentarse como éxito con pruebas omitidas
 
 #### Scenario: Wrong backend or unreachable server
-- **WHEN** TEST_DATABASE_URL selects another driver or PostgreSQL cannot be reached
-- **THEN** execution fails with a configuration or connection diagnostic instead of falling back to another URL or SQLite
+- **WHEN** TEST_DATABASE_URL selecciona otro driver o PostgreSQL no es accesible
+- **THEN** falla con diagnóstico de configuración/conexión sin cambiar a otra URL, SQLite o D1
 
 #### Scenario: Configured integration
-- **WHEN** a dedicated PostgreSQL test database is reachable with the required schema permissions
-- **THEN** integration and the complete suite execute their applicable scenarios without database-environment skips
+- **WHEN** la base PostgreSQL dedicada es accesible con permisos de esquema
+- **THEN** se ejecutan sus escenarios aplicables sin omisiones por entorno
 
 ### Requirement: Isolate integration data and clean up resources
 
-Every integration case SHALL use its own generated PostgreSQL schema and SHALL leave public and unrelated schemas unchanged. Preparation SHALL use the migration history, except cases intentionally testing an unprepared schema. Cleanup SHALL close clients, connections and engines and remove the generated schema after success or failure, including partial setup failures.
+Cada caso de integración PostgreSQL SHALL usar un esquema generado propio, sin alterar public ni otros esquemas. Su preparación SHALL usar migraciones salvo pruebas explícitas de esquema ausente. La limpieza SHALL cerrar clientes/conexiones/motores y retirar el esquema después de éxito, fallo o setup parcial. Los casos D1 SHALL usar almacenamiento local o remoto de prueba aislado y limpiar solo recursos creados por el caso.
 
 #### Scenario: Test fails after schema creation
-- **WHEN** setup or execution fails after creating the case's schema
-- **THEN** registered cleanup removes that schema and closes its resources without deleting another case's data
+- **WHEN** setup o ejecución falla tras crear el esquema PostgreSQL del caso
+- **THEN** la limpieza registrada elimina ese esquema y cierra recursos sin borrar datos ajenos
 
 #### Scenario: Persistence across application instances
-- **WHEN** one application writes and closes and another application opens against the same case's schema
-- **THEN** the second observes the committed records and both instances remain isolated from public tables
+- **WHEN** una instancia escribe/cierra y otra abre el almacenamiento del mismo caso
+- **THEN** la segunda observa datos confirmados y ambas permanecen aisladas de otros casos
 
 ### Requirement: Preserve database behavior coverage on PostgreSQL
 
@@ -60,11 +60,11 @@ The integration suite SHALL retain the existing repository, HTTP, rollback, cons
 
 ### Requirement: Remove the active SQLite test dependency without rewriting history
 
-Development dependency resolution and active test fixtures SHALL no longer require or invoke aiosqlite or SQLite. Migration files 0001, 0002 and 0003 SHALL remain unchanged, including inert historical dialect options. API behavior, data and runtime database URL precedence SHALL remain unchanged; this change SHALL not require a new schema migration.
+La resolución CPython y los fixtures PostgreSQL SHALL seguir sin aiosqlite ni SQLite como sustituto del servidor real. Las migraciones históricas 0001–0005 SHALL permanecer intactas, incluidas opciones inertes de dialecto. La nueva suite Cloudflare SHALL comprobar D1 mediante su runtime oficial, de forma independiente, sin cambiar el comportamiento o la precedencia de URL PostgreSQL.
 
 #### Scenario: Install and verify with historical migrations retained
-- **WHEN** the updated dependencies are installed and PostgreSQL verification runs
-- **THEN** aiosqlite is absent from declared/resolved dependencies, current tests use PostgreSQL or doubles, historical migrations are unchanged and existing API contracts still pass
+- **WHEN** se instalan dependencias y se ejecutan las verificaciones PostgreSQL y Cloudflare
+- **THEN** PostgreSQL conserva sus fixtures y ausencia de aiosqlite, D1 se comprueba por separado y las revisiones históricas no cambian
 
 ### Requirement: Verify provider extensibility and cancellation
 
@@ -104,15 +104,15 @@ Affected existing and new functions SHALL have standard Python annotations for p
 
 ### Requirement: Run a reproducible backend type check
 
-The locked development dependencies SHALL provide Pyright with shared root configuration for CLI and Pylance. Analysis SHALL include backend production and tests, targeting Python 3.11 with backend/.venv. Domain, application, adapters, main and the worker entry point SHALL use strict mode; tests SHALL use standard mode. Only environments/caches and historical migrations 0001–0003 SHALL be excluded. Migrations 0004, 0005 and the migration environment SHALL remain checked.
+Las dependencias bloqueadas SHALL proporcionar el chequeo Pyright compartido con cero errores/advertencias. SHALL conservar Python 3.11 para código compartido, strict en dominio/aplicación/adaptadores/composición/entradas y el análisis de tests, migraciones 0004/0005 y entorno Alembic. Fuentes exclusivas Workers podrán tener un entorno de análisis 3.13 sin rebajar lo anterior; SHALL no excluirse producción nueva ni ocultarse tipos con Any o supresiones.
 
 #### Scenario: Check without services
-- **WHEN** `uv run --extra dev pyright --project .. --warnings` runs from backend with the development dependencies installed and no database configuration
-- **THEN** it analyzes the configured backend and returns success only with zero errors and zero warnings, without connecting to a database or broker
+- **WHEN** `uv run --extra dev pyright --project .. --warnings` se ejecuta desde backend con las dependencias declaradas y sin servicios
+- **THEN** analiza el alcance existente y nuevo y solo termina con éxito con cero errores y cero advertencias, sin conexiones de infraestructura
 
 #### Scenario: Correct the entire analyzed scope
-- **WHEN** diagnostics occur in production, tests or migration code included in analysis
-- **THEN** their real causes are corrected without hiding them through broad exclusions, disabled rules, generalized Any or untruthful narrowing
+- **WHEN** aparecen diagnósticos en producción, tests o migraciones incluidas
+- **THEN** se corrigen sus causas sin exclusiones amplias, reglas desactivadas, Any generalizado o anotaciones falsas
 
 ### Requirement: Require type evidence before completing a spec
 
@@ -145,3 +145,107 @@ The messaging smoke SHALL use explicit TEST_RABBITMQ_URL and TEST_DATABASE_URL, 
 #### Scenario: Queue to comparison to storage
 - **WHEN** the smoke submits a quotation with controlled successful and failing providers
 - **THEN** the worker acknowledges before execution, stores the mixed result set and makes no automatic second attempt or requeue, then the test cleans up only its resources
+
+### Requirement: Verify D1 contracts on the native runtime
+
+La suite Cloudflare SHALL ejecutar los contratos HTTP/persistencia aplicables mediante Workers y bindings D1 oficiales, con migraciones reales, fixtures aislados y fallo explícito si falta el entorno requerido. SHALL comprobar concurrencia, rollback, integridad, precisión y lotes máximos. Dobles o SQLite CPython SHALL no sustituir esa evidencia.
+
+#### Scenario: Exercise custody concurrency and rollback
+- **WHEN** se ejecutan las carreras de última celda, configuración contra recepción, salidas concurrentes, fallo de batch y reocupación segura
+- **THEN** se verifican los mismos resultados de negocio que PostgreSQL, además de pérdida de CAS sin escrituras y contención agotada 503
+
+#### Scenario: Verify maxima and the query budget
+- **WHEN** se crean/amplían 1000 celdas, se consultan configuraciones acumuladas y se prueban dimensiones máximas y fechas con microsegundos
+- **THEN** se conservan precisión y atomicidad, sin truncar listas, exceder parámetros o superar el presupuesto D1 definido en el diseño
+
+### Requirement: Supplement native evidence with a local D1 test bridge
+
+Los adaptadores Python reales SHALL probarse desde el entorno CPython bloqueado de Cloudflare contra D1 local de Miniflare mediante un puente JavaScript/HTTP exclusivo de tests, con migraciones reales y recursos aislados que se limpian tras éxito o fallo. El puente SHALL preservar batches atómicos y excluirse de producción. Esta evidencia SHALL informarse por separado y no sustituir Python/WASM, eventos/Queues nativos ni aceptación Free.
+
+#### Scenario: Exercise real adapters against local D1
+- **WHEN** el harness CPython ejecuta los adaptadores reales mediante el puente local
+- **THEN** sus consultas y batches se ejecutan en D1 de Miniflare, permitiendo comprobar contratos, CAS y rollback sin copiar reglas de negocio ni SQL en el puente
+- **AND** el batch se envía como una sola operación al binding, sin commits parciales ni reintentos añadidos por el transporte de tests
+
+#### Scenario: Preserve pending native evidence
+- **WHEN** el puente pasa pero el runtime Python Workers no puede ejecutarse
+- **THEN** solo se acredita la integración CPython/D1 local, las comprobaciones nativas ausentes siguen pendientes y el check nativo no se presenta como aprobado
+
+#### Scenario: Verify the Cloudflare dependency resolution
+- **WHEN** se ejecutan las suites complementarias HTTP/D1/aceptación mediante `scripts/cloudflare/check.sh`
+- **THEN** usan `deploy/cloudflare/.venv` con las dependencias bloqueadas del perfil Cloudflare, aunque el entorno backend tenga otras versiones
+- **AND** comprueban los contratos existentes de validación y serialización sin sustituirlos por tests que solo comparan pins
+
+#### Scenario: Reject a missing Cloudflare environment
+- **WHEN** falta el intérprete del entorno Cloudflare requerido por el ejecutor
+- **THEN** el comando falla con diagnóstico de instalación bloqueada y no recurre al entorno backend ni instala dependencias automáticamente
+
+### Requirement: Verify Cloudflare messaging and event isolation
+
+Pruebas unitarias y nativas SHALL cubrir publicación confirmada/fallida, ack previo, ack fallido, duplicados, resultados atómicos y ausencia de reejecución. SHALL verificar aislamiento de bindings entre eventos concurrentes y cleanup en error, manteniendo el smoke RabbitMQ existente. La emulación SHALL identificarse como evidencia local, no de cuotas Free remotas.
+
+#### Scenario: Duplicate and failed deliveries
+- **WHEN** se inyectan duplicados, un error de ack y un fallo posterior al reconocimiento
+- **THEN** el primer caso compara como máximo una vez, el segundo no inicia trabajo y el tercero no provoca retry/republicación automática
+
+#### Scenario: Complete from the wrong state
+- **WHEN** se intenta persistir resultados desde un estado distinto de PROCESSING
+- **THEN** se observa rechazo sin estado o resultados parciales y no un éxito silencioso
+
+#### Scenario: Bindings are not leaked between events
+- **WHEN** dos eventos con bases/colas de prueba distintas se intercalan y uno termina por excepción
+- **THEN** cada escritura se limita a su entorno y el evento siguiente no reutiliza bindings anteriores
+
+### Requirement: Identify the Cloudflare acceptance HTTP client
+
+El cliente HTTP de aceptación Cloudflare SHALL enviar `User-Agent: LockerManagementAcceptance/0.1` en todas sus peticiones. SHALL conservar métodos, cuerpos, Content-Type, proxies, verificación TLS, timeout y presupuesto de peticiones existentes.
+
+#### Scenario: Identify reads and writes consistently
+- **WHEN** la campaña envía una petición GET o una petición con cuerpo mediante su cliente HTTP
+- **THEN** incluye el identificador propio estable y conserva el método, el cuerpo y las restantes opciones de transporte
+- **AND** superar un GET de diagnóstico no acredita la campaña completa ni las cuotas Free
+
+### Requirement: Report startup clock limitations honestly
+
+El spike SHALL arrancar sin exigir un origen positivo del reloj y conservar la medición iniciada antes de importar la aplicación. Sus medidas internas sin avance SHALL indicarse como no disponibles con motivo explícito. Las medidas internas y de pared del host SHALL distinguirse de CPU y no acreditar cuotas Free.
+
+#### Scenario: A zero clock origin is valid
+- **WHEN** el reloj inicial devuelve cero durante la importación del spike
+- **THEN** la aplicación se carga después de tomar esa muestra sin abortar por el origen del reloj
+
+#### Scenario: The runtime clock does not advance
+- **WHEN** el reloj no avanza entre las muestras de importación, validación, construcción o serialización
+- **THEN** la medida correspondiente se informa como no disponible, sin presentarla como cero tiempo consumido ni como CPU
+
+#### Scenario: Distinguish a clock delta from CPU evidence
+- **WHEN** una medida interna tiene un delta positivo y el host mide una petición
+- **THEN** se conservan ambas medidas con su procedencia y ninguna se presenta como consumo CPU o aceptación Free
+
+### Requirement: Bound and diagnose native startup probes
+
+Los ejecutores del spike y del perfil Cloudflare SHALL tolerar desconexiones HTTP transitorias durante su plazo de arranque sin ampliarlo. SHALL fallar ante plazo agotado, salida del proceso o error inesperado, mostrando causa, estado previo a la limpieza y un extracto acotado del log. SHALL limpiar sus procesos y recursos aislados tanto en éxito como en fallo.
+
+#### Scenario: Recover from a transient disconnect
+- **WHEN** el servidor cierra una conexión de sondeo sin respuesta y luego responde correctamente dentro del plazo
+- **THEN** el ejecutor continúa esperando y solo inicia las pruebas nativas tras la respuesta válida
+
+#### Scenario: Exhaust the startup deadline
+- **WHEN** las desconexiones continúan hasta agotar el plazo de arranque
+- **THEN** el ejecutor termina con fallo, identifica el plazo y el último error y muestra el estado y extracto del log antes de limpiar sus recursos
+
+#### Scenario: Report a process exit accurately
+- **WHEN** el proceso termina antes de estar listo
+- **THEN** el diagnóstico muestra su código de salida observado y el log disponible, sin atribuirle el código de una señal enviada después para limpiar
+
+#### Scenario: Preserve unexpected failures
+- **WHEN** aparece un error de decodificación o un fallo inesperado durante el sondeo
+- **THEN** no se convierte en un reintento transitorio ni en éxito; se conserva su causa y se ejecuta la limpieza aunque el log no esté disponible
+
+### Requirement: Verify startup probes without the native runtime
+
+Las regresiones de reloj y sondeo SHALL ejecutarse sin descargar Python Workers ni usar servicios o datos reales. El ejecutor del spike SHALL incluirlas automáticamente antes de sincronizar el runtime. Su éxito SHALL informarse como evidencia unitaria y no completar comprobaciones nativas o remotas ausentes.
+
+#### Scenario: Exercise failure paths before native synchronization
+- **WHEN** se ejecutan las unidades o el ejecutor del spike con el runtime nativo aún ausente
+- **THEN** se comprueban reloj cero/congelado, recuperación de desconexión, plazo agotado, salida del proceso y errores inesperados con recursos controlados
+- **AND** superar esas unidades no presenta Python/WASM, Queues ni Free como verificados

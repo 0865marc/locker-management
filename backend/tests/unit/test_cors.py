@@ -13,7 +13,7 @@ from application.quotations.ports import QuotationRepository
 
 class CorsTests(unittest.TestCase):
     def make_app(self, origins: str | None) -> FastAPI:
-        from main import create_app
+        from entrypoints.server.api import create_app
 
         repository = AsyncMock(spec=LockerRepository)
         repository.list_all.return_value = []
@@ -21,10 +21,16 @@ class CorsTests(unittest.TestCase):
         self.publisher = AsyncMock()
         with (
             patch.dict("os.environ", {}, clear=False),
-            patch("main.create_database", return_value=(AsyncMock(), object())),
-            patch("main.SqlModelLockerRepository", return_value=repository),
             patch(
-                "main.SqlModelQuotationRepository",
+                "entrypoints.server.api.create_database",
+                return_value=(AsyncMock(), object()),
+            ),
+            patch(
+                "entrypoints.server.api.SqlModelLockerRepository",
+                return_value=repository,
+            ),
+            patch(
+                "entrypoints.server.api.SqlModelQuotationRepository",
                 return_value=self.quotation_repository,
             ),
         ):
@@ -261,12 +267,12 @@ class CorsTests(unittest.TestCase):
             "https://-example.org",
         )
         for value in invalid:
-            from main import create_app
+            from entrypoints.server.api import create_app
 
             with (
                 self.subTest(value=value),
                 patch.dict("os.environ", {"CORS_ALLOWED_ORIGINS": value}),
-                patch("main.create_database") as database,
+                patch("entrypoints.server.api.create_database") as database,
             ):
                 with self.assertRaisesRegex(ValueError, "CORS_ALLOWED_ORIGINS"):
                     create_app(
