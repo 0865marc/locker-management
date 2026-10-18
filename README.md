@@ -272,41 +272,24 @@ los datos y teselas controlados miden navegador local, no red real ni FPS
 universales. La API sigue descargando todos los lockers; esta mejora reduce
 representación y trabajo del navegador.
 
-### Localizar un paquete
+### Localizar un paquete (integración pendiente)
 
-En **Localizar paquete**, introduce el **UUID de una entrega o devolución** y
-pulsa su botón o Enter. El UUID de una cotización no identifica un paquete.
-La validación se realiza antes de HTTP; cada intento hace un único
-`GET /tracking/{id}` directo, sin credenciales, caché, polling ni escrituras.
-Editar, intentar de nuevo o cambiar de pestaña cancela/invalida la lectura local,
-con límite de cinco segundos. Errores, ausencia y ambigüedad tienen mensajes y
-reintento explícito. Al salir se retira el resultado y marcador, conservando UUID.
+La pestaña **Localizar paquete** y su interfaz se conservan, pero el backend
+actual no ofrece `GET /tracking/{id}`. El seguimiento no está operativo: no se
+puede consultar un estado ni localizar un locker mediante el UUID de una entrega
+o devolución. Los registros y operaciones existentes de entregas y devoluciones
+siguen disponibles en sus endpoints habituales.
 
-El estado guardado distingue pendiente de recogida, recogido, devuelto al
-transportista, pendiente de entrega al transportista y entregado al transportista.
-**Locker actual** indica custodia pendiente con asignación; **Último locker
-registrado** indica una asignación de la que ya salió el paquete. No es ubicación
-en tiempo real ni una instantánea histórica de la dirección: se muestran los datos
-registrados actuales del locker. Sin asignación, metadata o coordenadas se indica
-su ausencia y nunca se infiere o geocodifica una ubicación.
+El cliente conserva la validación del UUID, la cancelación de lecturas y el
+tratamiento de errores para una futura integración. Al enviar un UUID válido
+contra este backend recibe un 404 de ruta inexistente y muestra su mensaje actual
+de resultado no encontrado; ese mensaje no demuestra que el registro no exista.
+No hay un servicio alternativo ni datos de seguimiento simulados en producción.
 
-El marcador oscuro de seguimiento es independiente de destinos disponibles:
-puede mostrar un locker lleno o inactivo, sin cambiar contadores, destino o CP de
-cotización. Inspeccionar un marcador no cambia modo. Solo si corresponde a un
-locker actualmente disponible ofrece acciones explícitas para elegir un rol y
-activar cotización; el marcador exclusivo lleno/inactivo permanece informativo.
-El resultado textual funciona aunque fallen disponibilidad o teselas.
-
-`GET /tracking/{id}` devuelve exclusivamente
-`{id, kind, status, locker_relation, locker_id, locker}`. `kind` es `delivery` o
-`return`; `locker_relation` es `current`, `last_known` o `unassigned`. `locker` es
-null o `{location_id, address, coordinates}`, con los mismos campos públicos de
-dirección/coordenadas de lockers. Sin asignación ambos campos de locker son null;
-si falta metadata, conserva `locker_id` y la relación con `locker: null`.
-Devuelve 404 sin coincidencia, 422 para UUID inválido y 409 si existe en ambos
-flujos. No enumera paquetes ni expone nombres, teléfonos, tracking del
-transportista o compartimentos; no altera custodia ni cotizaciones. Utiliza GET
-con la política CORS existente, que no es autorización.
+Las pruebas del navegador verifican ese 404 real y que el mapa y la cotización
+siguen utilizables. Las pruebas de presentación que reciben respuestas
+interceptadas solo cubren la interfaz conservada, no un servicio de seguimiento
+implementado.
 
 ### Generar lockers sintéticos de demostración
 

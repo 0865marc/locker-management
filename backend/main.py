@@ -17,7 +17,6 @@ from application.lockers.use_cases import LockerService
 from application.quotations.ports import QuotationPublisher
 from application.quotations.use_cases import QuotationService
 from application.returns.use_cases import ReturnService
-from application.tracking.use_cases import TrackingService
 
 
 def utc_now() -> datetime:
@@ -30,15 +29,9 @@ def create_app(
     """Punto de composición: conecta adaptadores, servicios y recursos."""
     cors_allowed_origins = get_cors_allowed_origins()
     engine, sessions = create_database(database_url or get_database_url())
-    delivery_repository = SqlModelDeliveryRepository(sessions)
-    locker_repository = SqlModelLockerRepository(sessions)
-    return_repository = SqlModelReturnRepository(sessions)
-    delivery_service = DeliveryService(delivery_repository, utc_now)
-    locker_service = LockerService(locker_repository)
-    return_service = ReturnService(return_repository, utc_now)
-    tracking_service = TrackingService(
-        delivery_repository, return_repository, locker_repository
-    )
+    delivery_service = DeliveryService(SqlModelDeliveryRepository(sessions), utc_now)
+    locker_service = LockerService(SqlModelLockerRepository(sessions))
+    return_service = ReturnService(SqlModelReturnRepository(sessions), utc_now)
 
     broker: RabbitMQ | None = None
     if publisher is None:
@@ -71,14 +64,9 @@ def create_app(
     app.state.locker_service = locker_service
     app.state.delivery_service = delivery_service
     app.state.return_service = return_service
-    app.state.tracking_service = tracking_service
     app.include_router(
         create_router(
-            delivery_service,
-            return_service,
-            locker_service,
-            quotation_service,
-            tracking_service,
+            delivery_service, return_service, locker_service, quotation_service
         )
     )
     return app

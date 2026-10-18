@@ -983,11 +983,12 @@ for (const viewport of [
   { width: 1280, height: 800, name: 'desktop' },
   { width: 375, height: 480, name: 'mobile-short' },
 ]) {
-  test(`tracking real CORS stays independent from availability ${viewport.name}`, async ({
+  test(`removed tracking returns a real CORS-readable 404 ${viewport.name}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
     await tiles(page);
+    knownLabels.set(id(1), 'Locker CORS');
     const apiRequests: string[] = [];
     page.on('request', (r) => {
       if (r.url().startsWith('http://127.0.0.1:8765/'))
@@ -995,112 +996,51 @@ for (const viewport of [
     });
     await page.goto('/');
     await expect(page.locator('#available-count')).toHaveText('1');
-    await page.screenshot({
-      path: `test-results/tabs-${viewport.name}-quotation.png`,
-    });
+    await fillShipping(page);
     await page.locator('#tracking-tab').click();
     await page.locator('#tracking-id').fill('invalid');
     await page.locator('#tracking-submit').click();
     await expect(page.locator('#tracking-error')).toBeVisible();
     expect(apiRequests.filter((r) => r.includes('/tracking/'))).toHaveLength(0);
-    const response = page.waitForResponse(
-      `http://127.0.0.1:8765/tracking/${trackingId(1001)}`,
-    );
+    const url = `http://127.0.0.1:8765/tracking/${trackingId(1001)}`;
+    const response = page.waitForResponse(url);
     await track(page, 1001);
-    expect((await response).headers()['access-control-allow-origin']).toBe(
+    const missing = await response;
+    expect(missing.status()).toBe(404);
+    expect(missing.headers()['access-control-allow-origin']).toBe(
       'http://127.0.0.1:4321',
     );
-    await expect(page.locator('#tracking-result')).toContainText(
-      'Pendiente de recogida',
-    );
-    await expect(page.locator('#tracking-result')).toContainText(
-      'Locker actual',
-    );
-    await expect(page.locator('.tracking-marker')).toHaveCount(1);
-    expect(
-      await page.locator('.tracking-marker').evaluate((node) => {
-        const b = node.getBoundingClientRect();
-        return (
-          document
-            .elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)
-            ?.closest('.tracking-marker') === node
-        );
-      }),
-    ).toBe(true);
-    await page.locator('.tracking-marker').click();
-    await page
-      .locator('.locker-marker')
-      .evaluate((node) => (node as HTMLElement).click());
-    await expect(page.locator('#results')).toBeHidden();
-    await expect(page.locator('#tracking-tab')).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-    await expect(page.locator('#available-count')).toHaveText('1');
-    await expect(page.locator('#delivery-locker')).toHaveAttribute(
-      'data-selected-id',
-      '',
-    );
-    await page.locator('#tracking-result').scrollIntoViewIfNeeded();
-    await page.screenshot({
-      path: `test-results/tabs-${viewport.name}-tracking-current.png`,
-    });
-    await track(page, 1002);
-    await expect(page.locator('#tracking-result')).toContainText(
-      'Entregado al transportista',
-    );
-    await expect(page.locator('#tracking-result')).toContainText(
-      'Último locker registrado',
-    );
-    await expect(page.locator('#tracking-result')).toContainText(
-      'ya ha salido',
-    );
-    await page.locator('#tracking-result').scrollIntoViewIfNeeded();
-    await page.screenshot({
-      path: `test-results/tabs-${viewport.name}-tracking-last.png`,
-    });
-    for (const [n, label] of [
-      [1006, 'Recogido'],
-      [1007, 'Devuelto al transportista'],
-      [1008, 'Pendiente de entrega al transportista'],
-    ] as const) {
-      await track(page, n);
-      await expect(page.locator('#tracking-result h2')).toHaveText(label);
-    }
-    await track(page, 1003);
-    await expect(page.locator('#tracking-result')).toContainText(
-      'Sin locker asignado',
-    );
-    await expect(page.locator('.tracking-marker')).toHaveCount(0);
-    await track(page, 1005);
-    await expect(page.locator('#tracking-result')).toContainText(
-      'Datos del locker no disponibles',
-    );
-    await expect(page.locator('.tracking-marker')).toHaveCount(0);
-    await track(page, 9999);
+    expect(await missing.json()).toEqual({ detail: 'Not Found' });
     await expect(page.locator('#tracking-status')).toContainText(
       'No se ha encontrado',
     );
-    await expect(page.locator('#tracking-retry')).toBeVisible();
+    await expect(page.locator('#tracking-result')).toBeHidden();
+    await expect(page.locator('.tracking-marker')).toHaveCount(0);
+    await expect(page.locator('#available-count')).toHaveText('1');
     await page.locator('#tracking-retry').focus();
-    const repeated = page.waitForResponse(
-      `http://127.0.0.1:8765/tracking/${trackingId(9999)}`,
-    );
+    const repeated = page.waitForResponse(url);
     await page.keyboard.press('Enter');
-    await repeated;
+    expect((await repeated).status()).toBe(404);
     await expect(page.locator('#tracking-id')).toBeFocused();
     await expect(page.locator('#tracking-status')).toContainText(
       'No se ha encontrado',
     );
-
-    await track(page, 1004);
-    await expect(page.locator('#tracking-status')).toContainText('ambiguo');
     const requestCount = apiRequests.length;
     await page.locator('#quote-tab').click();
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
+    await expect(page.locator('#compare-shipping')).toBeEnabled();
     await page.locator('#tracking-tab').click();
     await expect(page.locator('#tracking-result')).toBeHidden();
     await expect(page.locator('#tracking-status')).toBeEmpty();
-    await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1004));
+    await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1001));
     expect(apiRequests.length).toBe(requestCount);
     expect(
       apiRequests.every(
@@ -1109,14 +1049,8 @@ for (const viewport of [
     ).toBe(true);
     expect(apiRequests.filter((r) => r === 'GET /lockers')).toHaveLength(1);
     expect(
-      await page.evaluate(() => document.documentElement.scrollWidth),
-    ).toBe(viewport.width);
-    expect(await page.locator('#map').boundingBox()).toMatchObject({
-      x: 0,
-      y: 0,
-      width: viewport.width,
-      height: viewport.height,
-    });
+      apiRequests.filter((r) => r.startsWith('GET /tracking/')),
+    ).toHaveLength(2);
   });
 }
 test('tracking displays all five custody states and null coordinates despite availability/tile errors', async ({
@@ -2663,6 +2597,9 @@ test('tracking edit removes its shared inspection popup immediately', async ({
   await page.setViewportSize({ width: 375, height: 480 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await tiles(page);
+  const parcel = tracked();
+  parcel.locker.location_id = 'Locker de seguimiento';
+  await page.route('**/tracking/*', (route) => route.fulfill({ json: parcel }));
   await page.goto('/');
   await page.locator('#tracking-tab').click();
   await track(page, 1001);
