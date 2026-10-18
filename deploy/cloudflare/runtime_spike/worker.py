@@ -223,7 +223,9 @@ class Default(WorkerEntrypoint):
     async def fetch(self, request: WorkerRequest) -> object:
         return await asgi.fetch(contextual_app, request, self.env, self.ctx)
 
-    async def queue(self, batch: MessageBatch) -> None:
+    async def queue(
+        self, batch: MessageBatch, _env: object = None, _ctx: object = None
+    ) -> None:
         environment = cast(Environment, self.env)
         token = current_environment.set(environment)
         try:

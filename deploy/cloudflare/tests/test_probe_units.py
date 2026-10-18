@@ -1,7 +1,11 @@
 """CPython orchestration/fault checks; these do not emulate native D1 or Queues."""
 
+import os
+import subprocess
+import sys
 import unittest
 from collections.abc import Sequence
+from pathlib import Path
 
 from bindings import Statement
 from d1_probe import EXPECTED_CHECK, INSERT_CELL, verify_d1_batch
@@ -122,6 +126,89 @@ class QueueProbeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AssertionError):
             await process_spike_message(message, database)
         self.assertEqual(database.events, ["ack", "body"])
+
+
+class QueueEntrypointTests(unittest.TestCase):
+    def test_actual_callback_forms_keep_instance_bindings_ack_order_and_context(
+        self,
+    ) -> None:
+        script = """
+import asyncio, sys, types
+workers = types.ModuleType('workers')
+workers.WorkerEntrypoint = type('WorkerEntrypoint', (), {})
+workers.Request = type('Request', (), {})
+workers.asgi = types.ModuleType('workers.asgi')
+sys.modules['workers'] = workers
+from test_probe_units import RecordingDatabase, RecordingMessage
+import worker
+from event_context import current_environment
+async def check():
+    entrypoint = worker.Default()
+    for complete in (False, True):
+        for outcome in ('success', 'ack-failure', 'process-failure'):
+            database = RecordingDatabase()
+            raw_database = RecordingDatabase()
+            environment = types.SimpleNamespace(DB=database, QUOTATIONS=object(), LABEL='instance')
+            raw_environment = types.SimpleNamespace(DB=raw_database, QUOTATIONS=object(), LABEL='raw-callback')
+            entrypoint.env = environment
+            marker = 'fail-unit' if outcome == 'process-failure' else 'success-unit'
+            class ScopedMessage(RecordingMessage):
+                def ack(self):
+                    assert current_environment.get() is environment
+                    super().ack()
+                @property
+                def body(self):
+                    assert current_environment.get() is environment
+                    return super().body
+            message = ScopedMessage(database.events, {'marker':marker})
+            if outcome == 'ack-failure':
+                message.ack_error = OSError('ack failed')
+            batch = types.SimpleNamespace(messages=[message])
+            prior = object()
+            token = current_environment.set(prior)
+            try:
+                try:
+                    if complete:
+                        await entrypoint.queue(batch, raw_environment, object())
+                    else:
+                        await entrypoint.queue(batch)
+                except (OSError, RuntimeError):
+                    assert outcome != 'success'
+                else:
+                    assert outcome == 'success'
+                assert current_environment.get() is prior
+                assert database.events == (['ack'] if outcome == 'ack-failure' else ['ack','body','prepare','bind','write'])
+                assert raw_database.events == []
+            finally:
+                current_environment.reset(token)
+            try:
+                current_environment.get()
+            except LookupError:
+                pass
+            else:
+                raise AssertionError('event context leaked')
+asyncio.run(check())
+"""
+        root = Path(__file__).resolve().parents[3]
+        environment = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                (
+                    str(root / "deploy/cloudflare/runtime_spike"),
+                    str(root / "deploy/cloudflare/tests"),
+                    str(root / "backend"),
+                )
+            ),
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class D1ProbeControlTests(unittest.IsolatedAsyncioTestCase):

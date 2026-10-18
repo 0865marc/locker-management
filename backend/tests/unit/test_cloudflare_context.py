@@ -428,9 +428,53 @@ async def check_delegate():
     batch = object()
     with patch.object(cloudflare_api, 'consume_batch', new_callable=AsyncMock) as consume:
         await worker.queue(batch)
-        await worker.queue(batch)
+        await worker.queue(batch, object(), object())
         assert consume.await_count == 2
         consume.assert_awaited_with(batch, environment, cloudflare_api.processor)
+    events = []
+    environment = types.SimpleNamespace(DB=object(), QUOTATIONS=object())
+    worker.env = environment
+    callback_environment = object()
+    prior = object()
+    class Message:
+        def ack(self):
+            assert context.get_environment() is environment
+            events.append('ack')
+            if outcome == 'ack-failure':
+                raise OSError('ack failed')
+        @property
+        def body(self):
+            events.append('body')
+            return {'quotation_id':'00000000-0000-0000-0000-000000000001'}
+    async def process(identifier):
+        assert context.get_environment() is environment
+        events.append('process')
+        if outcome == 'process-failure':
+            raise ValueError('processing failed')
+    for complete in (False, True):
+        for outcome in ('success', 'ack-failure', 'process-failure'):
+            events.clear()
+            message_batch = types.SimpleNamespace(messages=[Message()])
+            with patch.object(cloudflare_api.processor, 'process', side_effect=process) as processing:
+                with context.event_scope(prior):
+                    try:
+                        if complete:
+                            await worker.queue(message_batch, callback_environment, object())
+                        else:
+                            await worker.queue(message_batch)
+                    except (OSError, ValueError):
+                        assert outcome != 'success'
+                    else:
+                        assert outcome == 'success'
+                    assert context.get_environment() is prior
+                assert events == (['ack'] if outcome == 'ack-failure' else ['ack','body','process'])
+                assert processing.await_count == (0 if outcome == 'ack-failure' else 1)
+            try:
+                context.get_environment()
+            except context.PersistenceError:
+                pass
+            else:
+                raise AssertionError('event context leaked')
     assert cloudflare_api.app is application
     assert cloudflare_api.processor.repository is cloudflare_api.quotation_repository
 asyncio.run(check_delegate())

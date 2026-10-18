@@ -43,5 +43,7 @@ class Default(WorkerEntrypoint):
     async def fetch(self, request: Request) -> object:
         return await asgi.fetch(event_app, request, self.env, self.ctx)
 
-    async def queue(self, batch: QueueBatch) -> None:
+    async def queue(
+        self, batch: QueueBatch, _env: object = None, _ctx: object = None
+    ) -> None:
         await consume_batch(batch, cast(WorkerEnvironment, self.env), processor)
