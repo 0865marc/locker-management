@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   matchingLockers,
+  prepareLockerSearch,
   lockerSuggestionState,
 } from '../src/lib/locker-selection';
 import type { AvailableLocker } from '../src/lib/lockers';
@@ -48,20 +49,20 @@ describe('local locker candidates', () => {
       lockers[1],
       lockers[2],
     ]);
-    expect(matchingLockers(lockers, '')).toEqual(lockers);
-    expect(matchingLockers(lockers, '   ')).toEqual(lockers);
+    expect(matchingLockers(lockers, '')).toEqual([]);
+    expect(matchingLockers(lockers, '   ')).toEqual([]);
   });
   it('does not treat UUIDs or arbitrary geographic text as a selected locker', () => {
     expect(matchingLockers(lockers, 'uuid-one')).toEqual([]);
     expect(matchingLockers(lockers, 'unregistered address')).toEqual([]);
   });
-  it('returns every candidate without truncating or mutating the input', () => {
+  it('stops at sentinel 21 without mutating the input', () => {
     const many = Array.from({ length: 30 }, (_, index) => ({
       ...lockers[0]!,
       id: String(index),
     }));
     const before = structuredClone(many);
-    expect(matchingLockers(many, 'centro')).toHaveLength(30);
+    expect(matchingLockers(many, 'centro')).toHaveLength(21);
     expect(many).toEqual(before);
   });
 });
@@ -79,4 +80,25 @@ describe('bounded suggestion gate', () => {
   ])('gates query %j and count %s', (query, count, state) =>
     expect(lockerSuggestionState(String(query), Number(count))).toBe(state),
   );
+});
+
+it('prepares normalized fields once per collection, without reading them on each query', () => {
+  let reads = 0;
+  const items = [
+    {
+      ...lockers[0]!,
+      get label() {
+        reads++;
+        return 'Álava';
+      },
+    },
+  ];
+  expect(matchingLockers(items, '')).toEqual([]);
+  expect(reads).toBe(0);
+  prepareLockerSearch(items);
+  const prepared = reads;
+  expect(matchingLockers(items, 'alava')).toHaveLength(1);
+  expect(matchingLockers(items, '01001')).toHaveLength(1);
+  prepareLockerSearch(items);
+  expect(reads).toBe(prepared);
 });

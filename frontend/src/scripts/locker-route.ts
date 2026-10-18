@@ -45,6 +45,8 @@ export function setupLockerRoute(
     }
   }
   function render(frame: boolean) {
+    map.getContainer().closest<HTMLElement>('.explorer')!.dataset.routeVisible =
+      'false';
     layer.clearLayers();
     message.hidden = true;
     message.textContent = '';
@@ -59,6 +61,8 @@ export function setupLockerRoute(
       message.textContent = `Sin ubicación para el locker de ${missing.join(' y ')}. No se puede mostrar el trayecto.`;
       return false;
     }
+    map.getContainer().closest<HTMLElement>('.explorer')!.dataset.routeVisible =
+      'true';
     message.textContent = 'Trayecto orientativo · O origen · D destino';
     L.polyline([origin, destination], {
       className: 'locker-route',

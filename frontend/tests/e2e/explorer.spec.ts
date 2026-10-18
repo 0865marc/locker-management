@@ -665,15 +665,19 @@ for (const viewport of [
     await page.screenshot({
       path: `test-results/shipping-${viewport.name}-offers.png`,
     });
-    const beforeChange = await basePosition(page, 'Madrid · 1');
+    const beforeChange = await page
+      .locator('.leaflet-map-pane')
+      .getAttribute('style');
     await selectRole(page, 'delivery', 1);
     await expect(page.locator('#quotation-offers')).toBeEmpty();
     await expect(page.locator('.locker-route,.route-endpoint')).toHaveCount(0);
     await expect(page.locator('#route-status')).toContainText(
       'locker de origen',
     );
-    await expectPositionStopped(page, 'Madrid · 1');
-    expect(await basePosition(page, 'Madrid · 1')).toEqual(beforeChange);
+    await page.waitForTimeout(450);
+    expect(
+      await page.locator('.leaflet-map-pane').getAttribute('style'),
+    ).toEqual(beforeChange);
     await expect(page.locator('#results')).toBeHidden();
   });
 }
@@ -765,12 +769,17 @@ test('availability failure and tile warning are independent; retry clears stale 
 });
 test('wheel zoom stays isolated from the parcel menu', async ({ page }) => {
   await data(page, [locker(1)], false);
-  const marker = page.locator('.locker-marker');
-  const initial = await marker.boundingBox();
+  const tileState = () =>
+    page
+      .locator('.leaflet-tile-container')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => (node as HTMLElement).style.transform),
+      );
+  const initial = await tileState();
   await page.mouse.move(700, 500);
   await page.mouse.wheel(0, -400);
   await page.waitForTimeout(400);
-  expect(await marker.boundingBox()).not.toEqual(initial);
+  expect(await tileState()).not.toEqual(initial);
   const before = await page.locator('.leaflet-map-pane').getAttribute('style');
   await page.locator('.parcel-panel').hover();
   await page.mouse.wheel(0, 300);
@@ -1789,6 +1798,7 @@ for (const viewport of [
         ],
         false,
       );
+      if (kind === 'available') await selectRole(page, 'pickup', 1);
       const selector =
         kind === 'available'
           ? '.locker-marker[title="Geometría segura"]'
@@ -1922,7 +1932,8 @@ for (const viewport of [
         ).toHaveCount(0);
         await expect(
           page.locator('.leaflet-marker-pane .locker-marker'),
-        ).toHaveCount(2);
+        ).toHaveCount(0);
+        await expect(page.locator('.locker-cluster')).toHaveText('2');
       } else {
         await page.locator('#quote-tab').click();
         await expect(
@@ -1992,27 +2003,42 @@ async function routeGeometry(page: Page, labels: string[]) {
   const badges = page.locator('.route-endpoint');
   await expect(badges).toHaveCount(labels.length);
   for (const [index, label] of labels.entries()) {
-    const geometry = await badges.nth(index).evaluate((node, title) => {
-      const box = node.getBoundingClientRect();
-      const menu = document
-        .querySelector('#map-panels')!
-        .getBoundingClientRect();
-      const pin = document
-        .querySelector(`.locker-marker[title="${title}"]`)!
-        .getBoundingClientRect();
-      return {
-        x: box.x,
-        right: box.right,
-        y: box.y,
-        bottom: box.bottom,
-        menuRight: menu.right,
-        width: innerWidth,
-        height: innerHeight,
-        dx: Math.abs((box.left + box.right) / 2 - (pin.left + pin.right) / 2),
-        dy: Math.abs((box.top + box.bottom) / 2 - pin.bottom),
-        interactive: getComputedStyle(node).pointerEvents,
-      };
-    }, label);
+    const readGeometry = () =>
+      badges.nth(index).evaluate((node, title) => {
+        const box = node.getBoundingClientRect();
+        const menu = document
+          .querySelector('#map-panels')!
+          .getBoundingClientRect();
+        const pin = document
+          .querySelector(`.locker-marker[title="${title}"]`)!
+          .getBoundingClientRect();
+        return {
+          x: box.x,
+          right: box.right,
+          y: box.y,
+          bottom: box.bottom,
+          menuRight: menu.right,
+          width: innerWidth,
+          height: innerHeight,
+          dx: Math.abs((box.left + box.right) / 2 - (pin.left + pin.right) / 2),
+          dy: Math.abs((box.top + box.bottom) / 2 - pin.bottom),
+          interactive: getComputedStyle(node).pointerEvents,
+        };
+      }, label);
+    await expect
+      .poll(async () => {
+        const g = await readGeometry();
+        return (
+          g.x >= g.menuRight &&
+          g.right <= g.width &&
+          g.y >= 90 &&
+          g.bottom <= g.height - 16 &&
+          g.dx <= 1 &&
+          g.dy <= 1
+        );
+      })
+      .toBe(true);
+    const geometry = await readGeometry();
     expect(geometry.x).toBeGreaterThanOrEqual(geometry.menuRight);
     expect(geometry.right).toBeLessThanOrEqual(geometry.width);
     expect(geometry.y).toBeGreaterThanOrEqual(90);
@@ -2214,9 +2240,17 @@ async function basePosition(page: Page, label: string) {
   });
 }
 async function expectPositionStopped(page: Page, label: string) {
-  const before = await basePosition(page, label);
+  const reference = (await page.locator('.search-location').count())
+    ? page.locator('.search-location')
+    : page.locator(`.locker-marker[title="${label}"]`);
+  const position = () =>
+    reference.evaluate((node) => {
+      const r = node.getBoundingClientRect();
+      return { x: r.x, y: r.y };
+    });
+  const before = await position();
   await page.waitForTimeout(450);
-  const after = await basePosition(page, label);
+  const after = await position();
   expect(
     Math.hypot(after.x - before.x, after.y - before.y),
   ).toBeLessThanOrEqual(1);
@@ -2390,8 +2424,8 @@ for (const viewport of [
       await page.locator('#location-results button').click();
       await expect(page.locator('.search-location')).toHaveCount(1);
       await expectPositionStopped(page, 'Origen animado');
-      await marker.focus();
-      await marker.press('Enter');
+      await other.focus();
+      await other.press('Enter');
       await page.mouse.move(viewport.width - 16, viewport.height * 0.55);
       await page.mouse.down();
       await page.mouse.move(viewport.width - 16, viewport.height * 0.55 + 20, {
@@ -2400,11 +2434,277 @@ for (const viewport of [
       await page.mouse.up();
       await page.waitForTimeout(350);
       await expectPositionStopped(page, 'Origen animado');
-      await marker.focus();
-      await marker.press('Enter');
+      await other.focus();
+      await other.press('Enter');
       await page.locator('#tracking-tab').click();
       await expect(page.locator('.leaflet-popup')).toHaveCount(0);
       await expectPositionStopped(page, 'Origen animado');
     });
   }
 }
+
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`dense viewport clusters retain full collection and role emphasis ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const records = Array.from({ length: 5000 }, (_, n) =>
+      locker(n + 1, `Denso ${String(n + 1).padStart(5, '0')}`, {
+        latitude: 36 + Math.floor(n / 100) * 0.15,
+        longitude: -9 + (n % 100) * 0.12,
+      }),
+    );
+    await data(page, records, false);
+    await expect(page.locator('#available-count')).toHaveText('5000');
+    await expect(page.locator('#positioned-count')).toHaveText('5000');
+    await expect(page.locator('.locker-cluster').first()).toBeAttached();
+    expect(
+      await page.locator('.locker-marker,.locker-cluster').count(),
+    ).toBeLessThan(500);
+    const represented = () =>
+      page
+        .locator('.locker-marker,.locker-cluster')
+        .evaluateAll((nodes) =>
+          nodes.reduce(
+            (sum, node) =>
+              sum +
+              (node.classList.contains('locker-cluster')
+                ? Number(node.textContent)
+                : 1),
+            0,
+          ),
+        );
+    expect(await represented()).toBe(5000);
+    await selectRole(page, 'pickup', 1);
+    await expect(page.locator('.locker-marker.is-role')).toHaveCount(1);
+    expect(await represented()).toBe(5000);
+    await selectRole(page, 'delivery', 5000);
+    await expect(page.locator('.locker-marker.is-role')).toHaveCount(2);
+    await expect(page.locator('.locker-cluster').first()).toHaveCSS(
+      'opacity',
+      '0.3',
+    );
+    for (const pin of await page.locator('.locker-marker.is-role').all()) {
+      await expect(pin).toHaveCSS('opacity', '1');
+      await expect(pin.locator('svg')).toHaveCount(1);
+      await expect(pin.locator('svg g rect')).toHaveAttribute('x', '10');
+    }
+    await expect(page.locator('.route-endpoint')).toHaveCount(2);
+    await page.screenshot({
+      path: `test-results/clusters-${viewport.name}-route.png`,
+    });
+    const group = page.locator('.locker-cluster').first();
+    await group.focus();
+    await group.press('Escape');
+    await expect(group).toHaveCSS('opacity', '1');
+    await page.locator('#tracking-tab').click();
+    await expect(page.locator('.locker-cluster').first()).toHaveCSS(
+      'opacity',
+      '1',
+    );
+    await page.locator('#quote-tab').click();
+    await expect(page.locator('.locker-cluster').first()).toHaveCSS(
+      'opacity',
+      '0.3',
+    );
+    await page.locator('#pickup-clear').click();
+    await expect(page.locator('.locker-cluster').first()).toHaveCSS(
+      'opacity',
+      '1',
+    );
+    await expect(page.locator('#available-count')).toHaveText('5000');
+    expect(
+      await page.locator('.locker-marker,.locker-cluster').count(),
+    ).toBeLessThan(500);
+  });
+  test(`coincident groups expose every UUID in bounded pages with safe current actions ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const records = Array.from({ length: 45 }, (_, n) =>
+      locker(n + 1, '<img src=x> Repetido'),
+    );
+    let reads = 0;
+    await tiles(page);
+    await page.route('**/lockers', (r) => {
+      reads++;
+      return r.fulfill({ json: records });
+    });
+    await page.goto('/');
+    await expect(page.locator('#available-count')).toHaveText('45');
+    await expect(page.locator('.locker-cluster')).toHaveText('45');
+    await expect(page.locator('.locker-marker')).toHaveCount(0);
+    await page.locator('.locker-cluster').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.cluster-members')).toHaveCount(0);
+    await page.locator('.locker-cluster').focus();
+    await page.keyboard.press(' ');
+    await expect(page.locator('.cluster-member-list button')).toHaveCount(20);
+    await page.locator('.leaflet-popup-close-button').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.cluster-members')).toHaveCount(0);
+    await expect(page.locator('.locker-cluster')).toBeFocused();
+    await page.keyboard.press('Enter');
+    const ids: string[] = [];
+    for (let pageNumber = 1; pageNumber <= 3; pageNumber++) {
+      await expect(page.locator('.cluster-members')).toContainText(
+        `Página ${pageNumber} de 3`,
+      );
+      ids.push(
+        ...(await page
+          .locator('.cluster-member-list button')
+          .evaluateAll((nodes) =>
+            nodes.map((n) => (n as HTMLElement).dataset.id!),
+          )),
+      );
+      if (pageNumber < 3)
+        await page
+          .getByRole('button', { name: 'Siguiente', exact: true })
+          .click();
+    }
+    expect(new Set(ids).size).toBe(45);
+    expect(new Set(ids)).toEqual(new Set(records.map((x) => x.id)));
+    await expect(page.locator('.cluster-member-list button')).toHaveCount(5);
+    await expect(
+      page.locator('.cluster-members img,.cluster-members script'),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: `test-results/clusters-${viewport.name}-members.png`,
+    });
+    const last = page.locator('.cluster-member-list button').last(),
+      firstId = await last.getAttribute('data-id');
+    await last.click();
+    await expect(page.locator('.locker-popup strong')).toContainText(
+      '<img src=x> Repetido',
+    );
+    await page.keyboard.press('Escape');
+    await expect(
+      page.locator(`.locker-marker[data-id="${firstId}"]`),
+    ).toBeFocused();
+    await expect(page.locator('.locker-cluster')).toHaveText('44');
+    await page.keyboard.press('Enter');
+    await page
+      .getByRole('button', { name: 'Locker de origen', exact: true })
+      .click();
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      firstId!,
+    );
+    await page.locator('.locker-cluster').focus();
+    await page.keyboard.press('Enter');
+    const second = page.locator('.cluster-member-list button').first(),
+      secondId = await second.getAttribute('data-id');
+    expect(secondId).not.toBe(firstId);
+    await second.click();
+    await page
+      .getByRole('button', { name: 'Locker de destino', exact: true })
+      .click();
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      secondId!,
+    );
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      firstId!,
+    );
+    await expect(page.locator('.locker-marker.is-role')).toHaveCount(2);
+    await expect(page.locator('.locker-cluster')).toHaveText('43');
+    const openMembers = async () => {
+      await page.locator('.locker-cluster').focus();
+      await page.keyboard.press('Enter');
+      if (!(await page.locator('.cluster-members').count())) {
+        await page.locator('.locker-cluster').focus();
+        await page.keyboard.press('Enter');
+      }
+      await expect(page.locator('.cluster-members')).toHaveCount(1);
+    };
+    await openMembers();
+    await expect(
+      page.locator('.cluster-member-list button').first(),
+    ).toBeFocused();
+    await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '1');
+    await page.locator('.leaflet-popup-close-button').focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.locker-cluster')).toBeFocused();
+    await page.locator('#parcel-weight').focus();
+    await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '0.3');
+    await openMembers();
+    await page.locator('#tracking-tab').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.cluster-members')).toHaveCount(0);
+    await page.locator('#quote-tab').click();
+    await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '0.3');
+    await openMembers();
+    await page.mouse.click(viewport.width - 5, viewport.height - 55);
+    await expect(page.locator('.cluster-members')).toHaveCount(0);
+    await page.locator('#parcel-weight').focus();
+    await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '0.3');
+    await page.locator('#pickup-clear').click();
+    await expect(page.locator('.locker-cluster')).toHaveText('44');
+    await openMembers();
+    const currentIds = await page
+      .locator('.cluster-member-list button')
+      .evaluateAll((nodes) => nodes.map((n) => (n as HTMLElement).dataset.id));
+    expect(currentIds).not.toContain(secondId);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.locker-cluster')).toBeFocused();
+    expect(reads).toBe(1);
+  });
+}
+
+test('tracking edit removes its shared inspection popup immediately', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 480 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await tiles(page);
+  await page.goto('/');
+  await page.locator('#tracking-tab').click();
+  await track(page, 1001);
+  await page.locator('.tracking-marker').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.locker-popup')).toContainText(
+    'Locker de seguimiento',
+  );
+  await page.locator('#tracking-id').fill('');
+  await expect(page.locator('.leaflet-popup,.tracking-marker')).toHaveCount(0);
+  await expect(page.locator('#tracking-id')).toBeFocused();
+});
+test('viewport eviction recreates keyboard activation without selecting a role', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await data(page, [locker(1, 'Reentrada')], false);
+  await page.route(photon, (r) =>
+    r.fulfill({
+      json: places(
+        new URL(r.request().url()).searchParams.get('q') === 'Canarias'
+          ? place('Canarias', -15.43, 28.12)
+          : place('Madrid', -3.7038, 40.4168),
+      ),
+    }),
+  );
+  await expect(page.locator('.locker-marker')).toHaveCount(1);
+  await page.locator('#location-query').fill('Canarias');
+  await page.locator('#location-results button').click();
+  await expect(page.locator('.locker-marker')).toHaveCount(0);
+  await page.locator('#location-query').fill('Madrid');
+  await page.locator('#location-results button').click();
+  await expect(page.locator('.locker-marker')).toHaveCount(1);
+  await page.locator('.locker-marker').focus();
+  await page.keyboard.press(' ');
+  await expect(page.locator('.locker-popup strong')).toHaveText('Reentrada');
+  await expect(page.locator('#pickup-locker')).toHaveAttribute(
+    'data-selected-id',
+    '',
+  );
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    '',
+  );
+});

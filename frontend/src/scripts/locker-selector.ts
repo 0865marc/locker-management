@@ -1,5 +1,6 @@
 import {
   matchingLockers,
+  prepareLockerSearch,
   lockerSuggestionState,
 } from '../lib/locker-selection';
 import type { AvailableLocker } from '../lib/lockers';
@@ -186,6 +187,7 @@ export function setupLockerSelector(
     close,
     setLockers(next: AvailableLocker[]) {
       lockers = next;
+      prepareLockerSearch(next);
       if (selected && !lockers.some((locker) => locker.id === selected?.id))
         choose(null);
       close();

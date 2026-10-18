@@ -172,6 +172,18 @@ conservando el otro locker y las medidas. El enlace de teclado **Elegir lockers 
 cotizar** activa cotización y
 enfoca origen (su X si ya está seleccionado) sin abrir resultados.
 
+El mapa agrupa puntos cercanos en burbujas con su cantidad. Clic, Enter o Espacio
+acerca el grupo; al máximo zoom, las coincidencias se exploran en páginas de hasta
+20 lockers, sin desplazar posiciones. Elegir un miembro abre su popup; asignar
+origen/destino sigue siendo una acción explícita. Los roles seleccionados,
+inspección y seguimiento permanecen individuales. Las búsquedas y «disponibles»
+incluyen la colección completa, también lockers sin coordenadas. «En el mapa»
+cuenta todos los posicionables, independientemente de los nodos visibles; el mapa
+solo materializa la vista con margen. Los pines SVG tienen el pictograma centrado.
+Con trayecto visible, otros pines/grupos se atenúan aproximadamente al 30%; los
+roles, la inspección y el foco permanecen legibles. Quitar el trayecto o entrar en
+seguimiento restaura la intensidad.
+
 Un marcador abre un popup de nombre/dirección por encima del icono, con separación
 visible y movimiento suave, sin seleccionar ni cambiar modo. Con movimiento
 reducido, el encuadre es inmediato. Bajo **Seleccionar como:**, los botones
@@ -242,6 +254,23 @@ Las pruebas controlan teselas y Photon; el recorrido CORS de cotización usa la
 aplicación FastAPI real con repositorios y publicación de prueba, sin interceptar
 las peticiones de lockers o cotizaciones. No demuestra conectividad del proveedor
 externo ni la integración del worker real.
+
+Para repetir las mediciones locales del mapa, desde `frontend/` compila con
+`PUBLIC_API_BASE_URL=http://127.0.0.1:8765 npm run build` (sin necesitar la API) y
+sirve `dist` con `python3 -m http.server 4328 --bind 127.0.0.1 --directory dist`.
+En otra terminal:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium node tests/performance/map-benchmark.mjs http://127.0.0.1:4328 current > /tmp/map-current.jsonl
+```
+
+La variable de Chromium es opcional si Playwright tiene su navegador instalado.
+`BENCH_COUNTS`, `BENCH_PATTERNS` y `BENCH_RUNS` permiten ajustar datos y repeticiones.
+`map-interactions.mjs` con el mismo servidor permite medir selección, grupos y
+retención. Compara medianas con un baseline en la misma máquina y condiciones:
+los datos y teselas controlados miden navegador local, no red real ni FPS
+universales. La API sigue descargando todos los lockers; esta mejora reduce
+representación y trabajo del navegador.
 
 ### Localizar un paquete
 

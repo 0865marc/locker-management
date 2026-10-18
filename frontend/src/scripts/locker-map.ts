@@ -5,6 +5,7 @@ import { setupAutocomplete } from './autocomplete';
 import { setupTracking } from './tracking-panel';
 import { setupMapCamera } from './map-camera';
 import { setupLockerRoute } from './locker-route';
+import { setupLockerMarkers } from './locker-markers';
 import { setupLockerSelector, type LockerRole } from './locker-selector';
 import type { AvailableLocker } from '../lib/lockers';
 import { setupShipping } from './shipping-panel';
@@ -125,7 +126,7 @@ function revealPosition(position: [number, number]): boolean {
   });
   return right - left >= 280;
 }
-const markers = new Map<string, L.Marker>();
+const roleIds: Partial<Record<LockerRole, string>> = {};
 let lockers: AvailableLocker[] = [];
 let busy = false;
 // Render inspection above the HTML overlays without lifting the map itself.
@@ -142,6 +143,9 @@ if (inspection) {
   map.on('move zoom viewreset', syncInspection);
   syncInspection();
 }
+const markerView = setupLockerMarkers(map, camera, (marker, locker) =>
+  showInspection(marker, locker.label, locker.address, locker),
+);
 const route = setupLockerRoute(map, camera, element('route-status'), () => {
   const menu = element('map-panels').getBoundingClientRect();
   const panel = results.hidden ? null : results.getBoundingClientRect();
@@ -165,8 +169,9 @@ function selectRole(role: LockerRole, locker: AvailableLocker | null) {
   map.closePopup();
   camera.cancel();
   route.select(role, locker);
-  for (const marker of markers.values()) marker.setZIndexOffset(0);
-  if (locker) markers.get(locker.id)?.setZIndexOffset(1000);
+  if (locker) roleIds[role] = locker.id;
+  else delete roleIds[role];
+  markerView.roles(Object.values(roleIds));
 }
 function text(tag: string, value: string) {
   const node = document.createElement(tag);
@@ -228,18 +233,35 @@ function fitInspection() {
   fittingInspection = false;
 }
 map.on('moveend zoomend resize', fitInspection);
+let sharedPopup: L.Popup | null = null;
+let inspectionHandlersCleanup = () => {};
+let promoted: { icon: HTMLElement; parent: HTMLElement } | null = null;
 map.on('popupclose', (event) => {
-  if (inspected?.popup === event.popup) {
-    inspected = null;
-    camera.cancel();
-  }
+  if (inspected?.popup !== event.popup) return;
+  const marker = inspected.marker;
+  inspectionHandlersCleanup();
+  inspectionHandlersCleanup = () => {};
+  const closedNode = event.popup.getElement();
+  if (closedNode) closedNode.inert = true;
+  closedNode?.remove();
+  if (promoted && marker.getElement() === promoted.icon)
+    promoted.parent.append(promoted.icon);
+  promoted = null;
+  marker.getElement()?.classList.remove('is-inspected');
+  inspected = null;
+  markerView.inspect(null);
+  camera.cancel();
 });
-function bindInspection(
+function showInspection(
   marker: L.Marker,
   label: string,
   address: string | null,
   available: AvailableLocker | null,
 ) {
+  camera.cancel();
+  map.closePopup();
+  markerView.closeMembers();
+  if (available) markerView.inspect(available.id);
   const content = document.createElement('div');
   content.className = 'locker-popup';
   content.append(
@@ -251,7 +273,6 @@ function bindInspection(
     caption.className = 'popup-role-label';
     const actions = document.createElement('div');
     actions.className = 'popup-role-actions';
-    content.append(caption, actions);
     for (const [role, label] of [
       ['pickup', 'Locker de origen'],
       ['delivery', 'Locker de destino'],
@@ -262,121 +283,99 @@ function bindInspection(
       button.addEventListener('click', () => chooseRole(role, available));
       actions.append(button);
     }
+    content.append(caption, actions);
   }
   L.DomEvent.disableClickPropagation(content);
   L.DomEvent.disableScrollPropagation(content);
-  const popup = L.popup({
+  const popup = (sharedPopup ??= L.popup({
     pane: 'inspection',
     autoPan: false,
     maxWidth: 260,
     minWidth: 220,
     closeOnEscapeKey: false,
-  }).setContent(content);
-  marker.bindPopup(popup);
-  const open = () => {
-    camera.cancel();
-    for (const other of markers.values()) other.setZIndexOffset(0);
-    marker.setZIndexOffset(1000);
-    inspected = { marker, popup };
-    marker.openPopup();
-    const size = map.getSize();
-    const point = map.latLngToContainerPoint(marker.getLatLng());
-    const menu = element('map-panels').getBoundingClientRect();
-    const panel = results.hidden ? null : results.getBoundingClientRect();
-    const desired = matchMedia('(max-width:760px)').matches
-      ? L.point(size.x / 2, Math.min(size.y - 52, Math.max(250, size.y * 0.78)))
-      : L.point(
-          (menu.right + 12 + (panel ? panel.left - 12 : size.x - 24)) / 2,
-          size.y / 2,
-        );
-    const popupBox = popup.getElement()!.getBoundingClientRect();
-    const iconBox = marker.getElement()!.getBoundingClientRect();
-    const painted =
-      marker.getElement()?.querySelector('span')?.getBoundingClientRect() ??
-      iconBox;
-    const tip =
-      popup
-        .getElement()
-        ?.querySelector('.leaflet-popup-tip-container')
-        ?.getBoundingClientRect() ?? popupBox;
-    const left = Math.min(popupBox.left, iconBox.left, painted.left);
-    const right = Math.max(popupBox.right, iconBox.right, painted.right);
-    const top = Math.min(popupBox.top, iconBox.top, painted.top);
-    const bottom = Math.max(
-      popupBox.bottom,
-      tip.bottom,
-      iconBox.bottom,
-      painted.bottom,
-    );
-    const dx = Math.max(
-      12 - left,
-      Math.min(desired.x - point.x, size.x - 12 - right),
-    );
-    const dy = Math.max(
-      12 - top,
-      Math.min(desired.y - point.y, size.y - 12 - bottom),
-    );
-    camera.panBy([-dx, -dy]);
-    const popupNode = popup.getElement();
-    const focus = popupNode?.querySelector<HTMLElement>('button, a');
-    focus?.focus({ preventScroll: true });
+  }));
+  popup.options.offset = L.point(
+    0,
+    marker.getElement()?.classList.contains('tracking-marker') ? -28 : -48,
+  );
+  inspected = { marker, popup };
+  popup.setLatLng(marker.getLatLng()).setContent(content).openOn(map);
+  const icon = marker.getElement();
+  if (icon?.parentElement && inspection && icon.parentElement !== inspection) {
+    promoted = { icon, parent: icon.parentElement };
+    inspection.append(icon);
+  }
+  icon?.classList.add('is-inspected');
+  const size = map.getSize();
+  const point = map.latLngToContainerPoint(marker.getLatLng());
+  const menu = element('map-panels').getBoundingClientRect();
+  const panel = results.hidden ? null : results.getBoundingClientRect();
+  const desired = matchMedia('(max-width:760px)').matches
+    ? L.point(size.x / 2, Math.min(size.y - 52, Math.max(250, size.y * 0.78)))
+    : L.point(
+        (menu.right + 12 + (panel ? panel.left - 12 : size.x - 24)) / 2,
+        size.y / 2,
+      );
+  const popupBox = popup.getElement()!.getBoundingClientRect();
+  const iconBox = marker.getElement()!.getBoundingClientRect();
+  const painted =
+    marker.getElement()?.querySelector('span')?.getBoundingClientRect() ??
+    iconBox;
+  const tip =
+    popup
+      .getElement()
+      ?.querySelector('.leaflet-popup-tip-container')
+      ?.getBoundingClientRect() ?? popupBox;
+  const left = Math.min(popupBox.left, iconBox.left, painted.left);
+  const right = Math.max(popupBox.right, iconBox.right, painted.right);
+  const top = Math.min(popupBox.top, iconBox.top, painted.top);
+  const bottom = Math.max(
+    popupBox.bottom,
+    tip.bottom,
+    iconBox.bottom,
+    painted.bottom,
+  );
+  const dx = Math.max(
+    12 - left,
+    Math.min(desired.x - point.x, size.x - 12 - right),
+  );
+  const dy = Math.max(
+    12 - top,
+    Math.min(desired.y - point.y, size.y - 12 - bottom),
+  );
+  camera.panBy([-dx, -dy]);
+  const popupNode = popup.getElement();
+  if (popupNode) popupNode.inert = false;
+  const focus = popupNode?.querySelector<HTMLElement>('button, a');
+  focus?.focus({ preventScroll: true });
+
+  const close = () => {
+    map.closePopup();
+    marker.getElement()?.focus({ preventScroll: true });
   };
-  // Own keyboard/click activation so inspection never implies selecting a role.
-  marker.off('click');
-  marker.on('click', open);
-  marker.getElement()?.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      event.stopPropagation();
-      open();
-    }
-  });
-  content.addEventListener('keydown', (event) => {
+  const closeButton = popupNode?.querySelector('.leaflet-popup-close-button');
+  const onKey = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      marker.closePopup();
-      marker.getElement()?.focus({ preventScroll: true });
+      close();
     }
-  });
-  let promoted: { icon: HTMLElement; parent: HTMLElement } | null = null;
-  marker.on('popupclose', () => {
-    if (promoted && marker.getElement() === promoted.icon)
-      promoted.parent.append(promoted.icon);
-    promoted = null;
-  });
-  marker.on('popupopen', () => {
-    // Keep just the inspected icon visible beside its popup above the menu.
-    const icon = marker.getElement();
-    if (
-      icon?.parentElement &&
-      inspection &&
-      icon.parentElement !== inspection
-    ) {
-      promoted = { icon, parent: icon.parentElement };
-      inspection.append(icon);
-    }
-
-    const close = popup
-      .getElement()
-      ?.querySelector<HTMLElement>('.leaflet-popup-close-button');
-    close?.addEventListener('click', () =>
-      marker.getElement()?.focus({ preventScroll: true }),
-    );
-    popup.getElement()?.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        marker.closePopup();
-        marker.getElement()?.focus({ preventScroll: true });
-      }
-    });
-  });
+  };
+  popupNode?.addEventListener('keydown', onKey);
+  const onClose = (event: Event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    close();
+  };
+  closeButton?.addEventListener('click', onClose, true);
+  inspectionHandlersCleanup = () => {
+    popupNode?.removeEventListener('keydown', onKey);
+    closeButton?.removeEventListener('click', onClose, true);
+  };
 }
 function clear() {
   map.closePopup();
-  for (const marker of markers.values()) marker.remove();
-  markers.clear();
+  markerView.load([]);
   pickup.setLockers([]);
   delivery.setLockers([]);
 }
@@ -389,23 +388,7 @@ function render() {
   );
   pickup.setLockers(lockers);
   delivery.setLockers(lockers);
-  for (const locker of lockers) {
-    if (!locker.position) continue;
-    const marker = L.marker(locker.position, {
-      title: locker.label,
-      autoPanOnFocus: false,
-      alt: `Ver ${locker.label}`,
-      icon: L.divIcon({
-        className: 'locker-marker',
-        html: '<span aria-hidden="true">▦</span>',
-        iconSize: [34, 40],
-        iconAnchor: [17, 40],
-        popupAnchor: [0, -62],
-      }),
-    }).addTo(map);
-    markers.set(locker.id, marker);
-    bindInspection(marker, locker.label, locker.address, locker);
-  }
+  markerView.load(lockers);
 }
 async function update() {
   if (busy) return;
@@ -462,8 +445,14 @@ const geography = setupAutocomplete('location', {
 });
 let trackingMarker: L.Marker | null = null;
 const tracking = setupTracking(element, (parcel) => {
+  if (trackingMarker && inspected?.marker === trackingMarker) map.closePopup();
   trackingMarker?.remove();
   trackingMarker = null;
+  markerView.tracking(
+    activeMode === 'tracking' && parcel?.locker?.position
+      ? parcel.lockerId
+      : null,
+  );
   if (activeMode !== 'tracking' || !parcel?.locker?.position) return;
   const label =
     parcel.relation === 'current'
@@ -483,12 +472,21 @@ const tracking = setupTracking(element, (parcel) => {
   }).addTo(map);
   const marker = trackingMarker;
   const available = lockers.find((item) => item.id === parcel.lockerId) ?? null;
-  bindInspection(
-    marker,
-    `${label}: ${parcel.locker.label}`,
-    parcel.locker.address,
-    available,
-  );
+  const open = () =>
+    showInspection(
+      marker,
+      `${label}: ${parcel.locker!.label}`,
+      parcel.locker!.address,
+      available,
+    );
+  marker.on('click', open);
+  marker.getElement()?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      open();
+    }
+  });
   map.setView(parcel.locker.position, 14, { animate: false });
   revealPosition(parcel.locker.position);
 });

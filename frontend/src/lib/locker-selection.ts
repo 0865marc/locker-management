@@ -5,16 +5,39 @@ function fold(value: string) {
     .replace(/\p{Diacritic}/gu, '')
     .toLocaleLowerCase('es');
 }
+const indexes = new WeakMap<
+  AvailableLocker[],
+  { locker: AvailableLocker; text: string }[]
+>();
 export function matchingLockers(
   lockers: AvailableLocker[],
   query: string,
 ): AvailableLocker[] {
   const needle = fold(query.trim());
-  return lockers.filter((locker) =>
-    fold(
-      [locker.label, locker.address ?? '', locker.postalCode ?? ''].join(' '),
-    ).includes(needle),
-  );
+  if (!needle) return [];
+  const index = getIndex(lockers);
+  const matches: AvailableLocker[] = [];
+  for (const entry of index) {
+    if (entry.text.includes(needle)) matches.push(entry.locker);
+    if (matches.length === 21) break;
+  }
+  return matches;
+}
+function getIndex(lockers: AvailableLocker[]) {
+  let index = indexes.get(lockers);
+  if (!index) {
+    index = lockers.map((locker) => ({
+      locker,
+      text: fold(
+        [locker.label, locker.address ?? '', locker.postalCode ?? ''].join(' '),
+      ),
+    }));
+    indexes.set(lockers, index);
+  }
+  return index;
+}
+export function prepareLockerSearch(lockers: AvailableLocker[]) {
+  getIndex(lockers);
 }
 
 export function lockerSuggestionState(

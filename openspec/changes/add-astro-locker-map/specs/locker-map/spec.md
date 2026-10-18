@@ -147,6 +147,54 @@ Inspection popups SHALL appear above the top of their associated icon with a vis
 - **THEN** the popup and its pointer remain above and separated from the icon, and its content/actions remain reachable
 - **AND** role selection, Escape and focus restoration retain their existing behavior
 
+### Requirement: Present centered pins and emphasize the visible route
+
+Individual locker pins SHALL use a symmetric shape with an upright, centered locker symbol and a geographic anchor consistent with the visible tip. While a quotation route is visible, origin/destination SHALL remain fully opaque and other pins/groups SHALL be approximately 30% opaque. Focused or inspected controls SHALL remain legible. Removing the route or entering tracking SHALL restore normal opacity without changing selection or counts.
+
+#### Scenario: Centered drawing and route emphasis
+- **WHEN** the visitor views pins and then completes or changes a positioned origin/destination pair
+- **THEN** the symbol is centered within the pin body, stored positions and popup separation are preserved, and only the current route endpoints retain normal emphasis alongside focused/inspected controls
+- **AND** O/D identification remains available without relying solely on color, including coincident endpoints
+
+#### Scenario: Restore and interact with background lockers
+- **WHEN** the visitor focuses or inspects a dimmed locker/group, clears a route role, selects a pair without usable positions or switches to tracking
+- **THEN** background controls remain operable, focus/inspection is readable and normal opacity returns whenever no quotation route is visible
+- **AND** geographic and tracking markers remain independently identifiable
+
+### Requirement: Group nearby lockers without losing individual access
+
+Nearby positioned lockers SHALL appear as count-labelled groups appropriate to the visible map area and zoom. Group activation by pointer or keyboard SHALL expand the area; groups that cannot separate SHALL expose all members in pages of at most 20. Positioned origin, destination, inspected and tracked lockers SHALL remain individually represented outside groups. Grouping SHALL NOT alter UUIDs, stored coordinates, availability or quotation state.
+
+#### Scenario: Explore a group
+- **WHEN** a visitor activates a group with click, Enter or Space and more detail can reveal its members
+- **THEN** the map approaches that group with the existing motion preference, without assigning a role or requesting API data
+- **AND** individual lockers retain the existing popup actions, readonly/X selection and focus behavior
+
+#### Scenario: Coincident or inseparable members
+- **WHEN** multiple lockers remain together at the supported zoom limit or share coordinates
+- **THEN** an accessible contextual member list provides page navigation and access to every UUID, including duplicate labels, without truncation or moving positions apart
+- **AND** choosing a member opens its individual inspection without automatically assigning a role; Escape/close restores meaningful focus
+
+#### Scenario: Viewport changes preserve the collection and interaction
+- **WHEN** the visitor pans, zooms, resizes or changes selected roles with thousands of lockers loaded
+- **THEN** visible groups/pins update without duplicating or losing records, and selectors still search every available locker including those outside the view or without coordinates
+- **AND** available and "en el mapa" counts retain their full-collection meanings, independent of rendered control counts
+- **AND** selected, inspected, focused and tracking controls are not discarded in a way that loses their state or keyboard focus
+
+### Requirement: Keep large collections responsive
+
+The frontend SHALL support controlled collections of 250, 1,000 and 5,000 lockers with viewport-appropriate map controls and on-demand inspection content. Repeated inspection and navigation SHALL NOT accumulate abandoned popup controls or listeners. Verification SHALL compare loading, DOM retention, click handling and animation responsiveness against the recorded baseline under the same conditions, without claiming universal FPS or network performance.
+
+#### Scenario: Repeated navigation with a large collection
+- **WHEN** 5,000 distributed or densely concentrated records are loaded and the visitor repeatedly inspects, groups, pans and selects roles
+- **THEN** individual records remain reachable while rendered controls follow the view/grouping rather than one persistent control and popup per record
+- **AND** inspection, cancellation and selection remain correct without repeated growth in obsolete retained UI resources
+
+#### Scenario: Controlled before and after measurements
+- **WHEN** the same fixtures, browser, viewports and repeated measurements are run before and after optimization
+- **THEN** the report records materially reduced retained nodes, click work and frame delays for the large dataset, alongside load timings and the smaller-case regression results
+- **AND** real tile/network speed and performance on untested devices are not inferred from the controlled benchmark
+
 ### Requirement: Animate deliberate locker framing smoothly
 
 Opening a locker popup by pointer or keyboard SHALL use a brief smooth camera transition when repositioning is needed, keeping popup and icon visible without a final snap. Deliberate route framing SHALL use the same motion preference. Reduced-motion users SHALL receive immediate positioning. Newer interactions SHALL cancel obsolete camera work so late callbacks cannot restore an older target or steal focus.
@@ -256,7 +304,7 @@ Locker identity SHALL remain independent of its label and coordinates. Public la
 
 #### Scenario: Coincident or identically labelled lockers
 - **WHEN** two lockers share a position or label
-- **THEN** both role selectors permit choosing each distinct locker without changing its stored position
+- **THEN** both role selectors and any inseparable group's paginated inspection permit choosing each distinct locker without changing its stored position
 
 #### Scenario: Missing or untrusted labels
 - **WHEN** alias/address is absent or contains markup-like text
