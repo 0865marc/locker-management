@@ -45,17 +45,17 @@ Una vez más, esto muestra uno de los grandes beneficios de la arquitectura hexa
 
 La figura es un esquema conceptual de las capas y sus dependencias. Para interpretar la conexión con los proveedores, los casos de uso los llaman mediante puertos de salida; la flecha del esquema no representa la dirección de esas llamadas.
 
-Estas capas permiten construir un backend con tecnologías intercambiables:
+Estas capas permiten construir un backend con tecnologías intercambiables y con una clara separación de responsabilidades:
 
 - **Dominio:** contiene las entidades y sus reglas de negocio esenciales.
 - **Aplicación:** coordina los casos de uso apoyándose en el dominio y en interfaces (puertos), sin conocer las tecnologías concretas que hay detrás.
-- **Infraestructura y adaptadores:** los adaptadores de entrada, como HTTP o el consumidor de la cola, invocan los casos de uso. Los de salida implementan los puertos de persistencia, mensajería y proveedores. Por ejemplo, los adaptadores SQLModel y D1 ofrecen implementaciones diferentes de los mismos puertos de persistencia.
+- **Infraestructura/adaptadores:** los adaptadores de entrada, como HTTP o el consumidor de la cola, invocan los casos de uso. Los de salida implementan los puertos de persistencia, mensajería y proveedores. Por ejemplo, los adaptadores SQLModel y D1 ofrecen implementaciones diferentes de los mismos puertos de persistencia.
 
 La aplicación depende de esas interfaces y el punto de composición conecta los adaptadores concretos. Esta inversión de dependencias hace que las piezas sean intercambiables.
 
 En el perfil `server`, puedo ejecutar la aplicación dentro o fuera de Docker Compose con PostgreSQL/SQLModel y RabbitMQ. En el perfil `cloudflare`, utilizo los adaptadores de Cloudflare. Ambos comparten el dominio y los casos de uso.
 
-## Integración continua (CI)
+## Integración continua (CI/CD)
 
 Como el proyecto creció más de lo previsto, incorporé CI para comprobar automáticamente las prácticas de desarrollo:
 
@@ -74,3 +74,17 @@ OpenSpec organiza la creación y el seguimiento de especificaciones. Sus artefac
 En `.codex/agents/` se definen agentes con distintos modelos y responsabilidades para las fases de SDD. Con esta distribución busco mejorar el rendimiento y la eficiencia del trabajo. El directorio `.agents/skills/` enseña a los agentes cómo seguir el proceso, qué deben hacer en cada fase y qué herramientas tienen a su disposición.
 
 Esta metodología documenta las especificaciones de principio a fin. Las especificaciones vigentes quedan en `openspec/specs/` y el historial de cambios archivados en `openspec/changes/archive/`. El check de cierre de CI comprueba que no queden directorios de cambios activos; no valida el contenido de sus tareas ni certifica que la implementación esté terminada.
+
+
+## TO-DOS
+
+Soy plenamente consciente de que hay muchas cuestiones de seguridad y funcionalidad y que el producto esta incompleto, algunos ejemplos son:
+
+* Autenticación/permisos/roles
+* Paginación en algunos endpoints de la API
+* Idempotencia/Deduplicación en algunos procesos
+* Funcionalidades en el frontend como terminar (simulado) el proceso de crear envio, funcionalidad "Localizar paquete" en el frontend, etc..
+
+
+
+# https://locker-demo.mteixido.dev/
