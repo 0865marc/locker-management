@@ -1,0 +1,416 @@
+# Locker Map Spec Delta
+
+## Purpose
+
+Let people locate available lockers across Spain and compare shipping quotations between selected origin and destination lockers through an accessible static frontend backed by existing APIs.
+
+## ADDED Requirements
+
+### Requirement: Fill the viewport with the map
+
+The map SHALL fill the visible viewport without surrounding page margins, header or footer reducing its area. A compact parcel-entry panel SHALL appear over its upper-left area. Other controls and panels SHALL overlay the map without resizing it. At desktop and 375-pixel mobile widths, inputs, map controls and attribution SHALL remain accessible without page-level horizontal overflow or overlapping controls.
+
+#### Scenario: Full-screen initial view and resizing
+- **WHEN** the page opens on desktop or a 375-pixel-wide mobile viewport, or the viewport changes size
+- **THEN** the map fills that viewport, the parcel panel remains in its upper-left area and the zoom controls and attribution remain accessible
+
+### Requirement: Switch accessibly between quotation and tracking
+
+The menu SHALL retain accessible "Cotizar envío" and "Localizar paquete" tabs, initially selecting quotation. Only active content SHALL be visible and interactive. Switching SHALL preserve local inputs and both locker selections, cancel pending work and ignore late responses. The separate geographic search SHALL remain available above both tabs. Tabs SHALL support keyboard navigation without navigating the map.
+
+#### Scenario: Switch while work is pending
+- **WHEN** a visitor switches modes during suggestions, quotation polling or tracking
+- **THEN** inactive content becomes hidden and unfocusable, pending work cannot reopen it, and inputs remain without automatic submission
+- **AND** browser cancellation is not presented as cancellation of server-side processing
+
+### Requirement: Keep the quotation menu compact
+
+The quotation tab SHALL contain "Locker de origen"/"Locker de destino" selectors, parcel fields, "Comparar envíos" and live counts. The availability-success sentence, "Ver lockers", "Actualizar", timestamp, "Ver España" and informational note SHALL remain absent. Loading, empty, error/retry and tile warnings SHALL appear only when applicable. Tracking SHALL not depend on a successful available-locker load.
+
+#### Scenario: Compact and independent modes
+- **WHEN** lockers load or fail and the visitor switches to tracking
+- **THEN** counts remain truthful, retired controls stay absent and UUID lookup operates independently of locker availability
+- **AND** the main quotation menu contains all input needed to compare without a lateral form
+
+### Requirement: Enter parcel measurements locally
+
+The quotation tab SHALL contain visibly labelled length, width and height fields in centimetres and weight in kilograms. Fields SHALL start empty, permit empty values and accept positive decimal numbers. Nonpositive values SHALL be invalid. Editing SHALL remain local to the current page without submitting data, persisting values, filtering lockers or requesting quotations. It SHALL NOT move or zoom the map.
+
+#### Scenario: Edit dimensions and weight
+- **WHEN** a user enters 25.5, 15, 10 and 2.5 into the four labelled fields and navigates between them by keyboard
+- **THEN** the values remain editable, the map view and available lockers stay unchanged, and no request is triggered by those edits
+- **AND** clearing a field is allowed, while zero or a negative value is identified as invalid without making a request
+
+#### Scenario: Interact with the overlay
+- **WHEN** a user clicks, types or drags within the dimension or weight controls, or scrolls the panel
+- **THEN** those interactions operate on the panel without being interpreted as map navigation
+- **AND** opening or closing the quotation panel preserves entered parcel values
+
+### Requirement: Search geography independently of locker selection
+
+A separate search panel above the tabs SHALL find Spanish directions or postal codes after 350 ms without edits and at least three trimmed characters, preserving five-digit postal text. It SHALL offer at most five candidates requiring selection. Choosing one SHALL only fill that search, reveal its map position and close suggestions; it SHALL NOT change tabs, locker selections, derived postcodes, tracking results or quotations.
+
+#### Scenario: Debounced suggestions and geographic choice
+- **WHEN** the visitor types an eligible query and selects a returned place
+- **THEN** only the latest query is requested with country ES and preserved leading zeroes, and the selected place is revealed without another request
+- **AND** typing or receiving candidates alone does not move the map; fewer than three characters sends no request
+- **AND** even a result with a postcode cannot supply either locker's postal code
+
+### Requirement: Select actual lockers for both shipment roles
+
+Unselected "Locker de origen" and "Locker de destino" fields SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Selecting one role SHALL preserve the other and parcel values. All matches in an eligible result set, including coincident or unmapped lockers, SHALL remain keyboard reachable.
+
+#### Scenario: Local candidates and independent roles
+- **WHEN** a visitor searches by label, address or postcode and chooses a locker for each role
+- **THEN** the chosen UUIDs identify origin and destination without Photon or additional API requests
+- **AND** arbitrary geographic addresses can instead be explored through the separate map search, without being accepted as lockers
+
+#### Scenario: Clear or replace a selected role
+- **WHEN** the role's X is activated or a different locker is assigned through an explicit popup action
+- **THEN** the former UUID, derived postcode and obsolete quotations are cleared or replaced together, while the other role and parcel values remain
+- **AND** typing an old label after clearing does not restore its UUID without selection; choosing the unchanged UUID from a popup preserves the selected record
+
+### Requirement: Lock selected fields until explicitly cleared
+
+A selected role SHALL show a read-only, focusable field and an accessible X named "Quitar locker de origen" or "Quitar locker de destino". Selection SHALL focus its X. Focus, clicks and keys SHALL NOT edit the chosen label or open candidates. X SHALL empty the role and return focus to its editable search. Explicit popup replacement and invalidation when a locker disappears from availability SHALL remain supported.
+
+#### Scenario: Selected field cannot reopen or mutate its choice
+- **WHEN** a visitor selects a locker through a candidate or popup, then focuses, clicks or types into its field or presses navigation keys
+- **THEN** the selected UUID and label remain unchanged, suggestions stay closed and the clear action is keyboard reachable
+- **AND** replacing the role through another popup keeps the new field locked and focuses that role's X
+
+#### Scenario: Clear a complete selection
+- **WHEN** the visitor activates X by pointer or keyboard
+- **THEN** that role's text, UUID, derived postcode, address detail and stale warnings are cleared, obsolete quotation work/results and the route are invalidated, and focus returns to the empty editable search with suggestions closed
+- **AND** the other role and parcel values remain, no request is made and the map does not move
+
+### Requirement: Open locker suggestions only for bounded searches
+
+Unselected role fields SHALL open candidates only for a nonempty trimmed query with 1..20 matches, showing all matches. Empty queries SHALL keep the list closed; more than 20 SHALL request refinement without displaying the first 20; zero SHALL announce no matches with the list closed. Focus, click, Enter and arrow keys SHALL obey the same rule. A selected field SHALL keep candidates closed until cleared.
+
+#### Scenario: Empty and oversized searches
+- **WHEN** the field is empty or contains a query matching 21 or more lockers
+- **THEN** focus, click and keyboard cannot open candidates; an oversized query announces "Concreta la búsqueda"
+- **AND** there is no fixed character minimum beyond nonempty text and no truncated candidate set
+
+#### Scenario: Zero, one and twenty matches
+- **WHEN** editing narrows a query to 20 matches, then one, then zero
+- **THEN** all 20 or the single candidate can be selected, while zero closes the list and announces "Sin coincidencias"
+- **AND** searching remains local, without requests or automatic selection
+
+#### Scenario: Animation and preserved selection
+- **WHEN** eligible and ineligible queries alternate rapidly in an editable field, or a locker is selected while suggestions are animating
+- **THEN** hidden candidates immediately become inert, older animation callbacks cannot reopen them, reduced motion is respected and selection closes the list and locks the field
+- **AND** choosing the unchanged UUID through a popup preserves its selected record and derived postcode without reopening suggestions
+
+### Requirement: Animate and dismiss geographic suggestions accessibly
+
+Suggestions SHALL open and close with a brief animation below the search field and respect reduced-motion preferences. Their controls SHALL support keyboard selection and visible focus. Escape SHALL close suggestions and return focus to the field; leaving the search controls SHALL close without triggering a search. Closed suggestions SHALL immediately become noninteractive and unfocusable. Superseded requests or animations SHALL NOT reopen a dismissed list or hide a newer one.
+
+#### Scenario: Select or dismiss with keyboard and pointer
+- **WHEN** a user selects a suggestion by click or keyboard, presses Escape, or moves focus outside the search controls
+- **THEN** suggestions close without another request, selection remains possible before focus leaves, and hidden controls cannot receive focus
+- **AND** rapid closing/reopening stays consistent, scroll does not navigate the map, and reduced-motion settings suppress the movement
+
+### Requirement: Isolate geographic-search failures and stale responses
+
+Geographic search SHALL have independent loading, no-results and error states, with a five-second timeout and explicit retry. It SHALL accept only valid Spanish point results and render provider text safely. A superseded or cancelled response SHALL NOT update results or move the map. Search SHALL NOT mutate lockers, infer missing locker coordinates or call locker APIs, and a search failure SHALL leave the existing map and locker data usable.
+
+#### Scenario: No result or unavailable provider
+- **WHEN** geographic search returns no valid Spanish result, fails, times out or yields malformed data
+- **THEN** its own status communicates no results or failure and permits explicit retry or a new debounced query without replacing locker results or their status
+
+#### Scenario: A later query supersedes an earlier request
+- **WHEN** a user edits or replaces a pending query and its earlier response subsequently arrives
+- **THEN** the earlier response is ignored, and only the latest eligible query can update suggestions; the map moves only after selection
+
+### Requirement: Choose a shipment role from a locker popup
+
+Opening an available locker marker SHALL show its label, recorded address or absence, shared text "Seleccionar como:" and buttons "Locker de origen" then "Locker de destino" in visual and keyboard order. Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
+
+#### Scenario: Inspect then choose explicitly
+- **WHEN** a visitor opens an available marker in either mode and then chooses a role
+- **THEN** inspection alone preserves mode and selections, while the action switches to quotation if needed, assigns the UUID and focuses that role's X
+- **AND** no quotation request occurs and no technical catalogue or lateral input form opens
+
+#### Scenario: Keyboard entry and popup dismissal
+- **WHEN** a keyboard user follows the quotation skip link or closes a marker popup with Escape
+- **THEN** the link activates quotation and focuses origin search if empty or its X if selected, while popup dismissal restores marker focus when possible
+- **AND** choosing lockers remains possible without pointer interaction, including coincident and unmapped lockers
+
+### Requirement: Position inspection popups above their markers
+
+Inspection popups SHALL appear above the top of their associated icon with a visible gap, without covering the icon or changing its stored coordinates. This relation SHALL hold for available and tracking markers after opening, pan, zoom and viewport resize. Desktop and mobile layouts SHALL keep content, actions and focus reachable, using internal scrolling when needed rather than omitting actions.
+
+#### Scenario: Popup geometry across map and viewport changes
+- **WHEN** a popup is opened and the map pans, zooms or resizes on desktop or at 375×480
+- **THEN** the popup and its pointer remain above and separated from the icon, and its content/actions remain reachable
+- **AND** role selection, Escape and focus restoration retain their existing behavior
+
+### Requirement: Present centered pins and emphasize the visible route
+
+Individual locker pins SHALL use a symmetric shape with an upright, centered locker symbol and a geographic anchor consistent with the visible tip. While a quotation route is visible, origin/destination SHALL remain fully opaque and other pins/groups SHALL be approximately 30% opaque. Focused or inspected controls SHALL remain legible. Removing the route or entering tracking SHALL restore normal opacity without changing selection or counts.
+
+#### Scenario: Centered drawing and route emphasis
+- **WHEN** the visitor views pins and then completes or changes a positioned origin/destination pair
+- **THEN** the symbol is centered within the pin body, stored positions and popup separation are preserved, and only the current route endpoints retain normal emphasis alongside focused/inspected controls
+- **AND** O/D identification remains available without relying solely on color, including coincident endpoints
+
+#### Scenario: Restore and interact with background lockers
+- **WHEN** the visitor focuses or inspects a dimmed locker/group, clears a route role, selects a pair without usable positions or switches to tracking
+- **THEN** background controls remain operable, focus/inspection is readable and normal opacity returns whenever no quotation route is visible
+- **AND** geographic and tracking markers remain independently identifiable
+
+### Requirement: Group nearby lockers without losing individual access
+
+Nearby positioned lockers SHALL appear as count-labelled groups appropriate to the visible map area and zoom. Group activation by pointer or keyboard SHALL expand the area; groups that cannot separate SHALL expose all members in pages of at most 20. Positioned origin, destination, inspected and tracked lockers SHALL remain individually represented outside groups. Grouping SHALL NOT alter UUIDs, stored coordinates, availability or quotation state.
+
+#### Scenario: Explore a group
+- **WHEN** a visitor activates a group with click, Enter or Space and more detail can reveal its members
+- **THEN** the map approaches that group with the existing motion preference, without assigning a role or requesting API data
+- **AND** individual lockers retain the existing popup actions, readonly/X selection and focus behavior
+
+#### Scenario: Coincident or inseparable members
+- **WHEN** multiple lockers remain together at the supported zoom limit or share coordinates
+- **THEN** an accessible contextual member list provides page navigation and access to every UUID, including duplicate labels, without truncation or moving positions apart
+- **AND** choosing a member opens its individual inspection without automatically assigning a role; Escape/close restores meaningful focus
+
+#### Scenario: Viewport changes preserve the collection and interaction
+- **WHEN** the visitor pans, zooms, resizes or changes selected roles with thousands of lockers loaded
+- **THEN** visible groups/pins update without duplicating or losing records, and selectors still search every available locker including those outside the view or without coordinates
+- **AND** available and "en el mapa" counts retain their full-collection meanings, independent of rendered control counts
+- **AND** selected, inspected, focused and tracking controls are not discarded in a way that loses their state or keyboard focus
+
+### Requirement: Keep large collections responsive
+
+The frontend SHALL support controlled collections of 250, 1,000 and 5,000 lockers with viewport-appropriate map controls and on-demand inspection content. Repeated inspection and navigation SHALL NOT accumulate abandoned popup controls or listeners. Verification SHALL compare loading, DOM retention, click handling and animation responsiveness against the recorded baseline under the same conditions, without claiming universal FPS or network performance.
+
+#### Scenario: Repeated navigation with a large collection
+- **WHEN** 5,000 distributed or densely concentrated records are loaded and the visitor repeatedly inspects, groups, pans and selects roles
+- **THEN** individual records remain reachable while rendered controls follow the view/grouping rather than one persistent control and popup per record
+- **AND** inspection, cancellation and selection remain correct without repeated growth in obsolete retained UI resources
+
+#### Scenario: Controlled before and after measurements
+- **WHEN** the same fixtures, browser, viewports and repeated measurements are run before and after optimization
+- **THEN** the report records materially reduced retained nodes, click work and frame delays for the large dataset, alongside load timings and the smaller-case regression results
+- **AND** real tile/network speed and performance on untested devices are not inferred from the controlled benchmark
+
+### Requirement: Animate deliberate locker framing smoothly
+
+Opening a locker popup by pointer or keyboard SHALL use a brief smooth camera transition when repositioning is needed, keeping popup and icon visible without a final snap. Deliberate route framing SHALL use the same motion preference. Reduced-motion users SHALL receive immediate positioning. Newer interactions SHALL cancel obsolete camera work so late callbacks cannot restore an older target or steal focus.
+
+#### Scenario: Inspect lockers with normal or reduced motion
+- **WHEN** a visitor opens a locker marker on desktop or at 375×480 with normal motion, then repeats with reduced motion
+- **THEN** normal motion transitions smoothly to the final popup/icon framing, while reduced motion reaches the same accessible framing without animation
+- **AND** the popup gap, action order and keyboard focus remain correct
+
+#### Scenario: Supersede an animation
+- **WHEN** another marker is opened, a role is assigned or cleared, or the visitor changes mode or starts geographic/manual navigation during a camera transition
+- **THEN** obsolete animation and correction callbacks cannot move the map back or refocus an old popup
+- **AND** a role chosen from tracking frames only the final valid pair, never an intermediate previous pair
+
+### Requirement: Read live lockers in the browser
+
+The browser SHALL load lockers directly from the configured API using GET without credentials or custom request headers. Each load SHALL bypass the browser response cache and cancel after five seconds without completion. Response validation, availability filtering and map interaction SHALL execute client-side. Missing or invalid essential data SHALL produce a visible data error, while unusable coordinates alone SHALL retain the locker without a map position.
+
+#### Scenario: Fresh client-side observation
+- **WHEN** a visitor opens the static page or retries a failed locker load
+- **THEN** the browser performs a new API read and computes availability from that response rather than build-time data or a stored availability cache
+
+#### Scenario: Timeout and unreadable response
+- **WHEN** the API does not complete within five seconds, CORS prevents reading it, or essential fields are malformed
+- **THEN** the browser displays an error with retry and no fabricated capacity or proxy HTTP status
+- **AND** invalid coordinates in an otherwise usable locker response only prevent positioning that locker
+
+### Requirement: Derive general availability from current locker data
+
+The frontend SHALL consider a locker available exactly when active is true and at least one returned compartment is enabled and unoccupied. Both role selectors and the quotation marker layer SHALL use only available lockers; tracking SHALL remain independent. Counts SHALL reflect the current successful load. Selection and quotations SHALL NOT claim parcel fit, reserve capacity or create a shipment.
+
+#### Scenario: Mixed capacity and operational states
+- **WHEN** lockers include inactive, full, disabled-only and active free-capacity records
+- **THEN** only active lockers with an enabled free cell are offered for either role
+- **AND** editing parcel dimensions does not filter that collection or request quotations
+
+#### Scenario: Collection replaced on a new successful load
+- **WHEN** a fresh load no longer includes a selected available locker
+- **THEN** its affected role and active quotation display are cleared instead of being presented as current
+
+### Requirement: Display real coordinates across Spain
+
+The map SHALL initially frame mainland Spain closely. Mainland, Balearic, Canary Island, Ceuta and Melilla lockers SHALL remain reachable through navigation and either role selector without a "Ver España" control. Valid stored positions SHALL remain unchanged. Wheel input over the map SHALL zoom in/out, while overlay interactions SHALL NOT navigate it. Data loads and empty results SHALL preserve the current view.
+
+#### Scenario: Island and autonomous-city destinations remain reachable
+- **WHEN** available destinations have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla and the visitor navigates to inspect one or completes a positioned origin/destination pair containing it
+- **THEN** inspection or route framing reveals the stored position without changing its coordinates
+- **AND** selecting a single role alone does not recenter or change map zoom
+
+#### Scenario: Initial view and wheel navigation
+- **WHEN** the page opens and the user scrolls the wheel over the map in either direction
+- **THEN** the initial view focuses on mainland Spain, wheel-up zooms in and wheel-down zooms out
+- **AND** scrolling search, parcel or quotation controls does not change map zoom
+
+#### Scenario: Empty loads preserve navigation
+- **WHEN** a locker load finishes without positioned lockers after initial framing or geographic search
+- **THEN** the current view remains unchanged
+
+#### Scenario: Coordinates are independent of address
+- **WHEN** a locker has valid coordinates but no address
+- **THEN** it keeps its stored map position without receiving an invented address or postal code
+
+### Requirement: Connect selected lockers with an illustrative line
+
+In quotation mode, two selected lockers with valid positions SHALL show a straight illustrative line using their recorded coordinates, with origin and destination identifiable without color alone. Completing or changing the pair SHALL frame both endpoints outside visible overlays without stealing selection focus. The line SHALL require no routing requests and SHALL NOT claim a road route, distance, travel time or shipment creation.
+
+#### Scenario: Complete or change the selected pair
+- **WHEN** a visitor selects origin and destination through either selector or popup, then replaces one with another positioned locker
+- **THEN** the line connects only the current pair and both identified endpoints are visible on desktop and at 375×480, with focus on the chosen role's X
+- **AND** no additional API or geographic request occurs, availability counts and parcel input remain unchanged, and changing the pair still invalidates obsolete quotations
+
+#### Scenario: Invalidate or lose a selected role
+- **WHEN** either role is cleared with its X or invalidated by a new availability load
+- **THEN** its previous line and endpoint indicators disappear immediately without retaining a stale connection or altering the other selection
+
+#### Scenario: Assignment without a new positioned pair
+- **WHEN** a visitor assigns only one role, chooses an unchanged UUID, clears a role or chooses a pair with an unavailable position
+- **THEN** the action does not pan or zoom the map, while selection, route removal and missing-position feedback update normally
+- **AND** only completing or changing a pair with both positions permits framing as a consequence of role assignment
+
+#### Scenario: Missing or coincident positions
+- **WHEN** both roles are selected but one lacks usable coordinates, or both share the same recorded position
+- **THEN** a missing position produces no line and an accessible explanation identifying the affected role, without inferring coordinates or changing quotation eligibility
+- **AND** coincident positions remain unchanged, communicate both roles at that point and use a bounded zoom rather than inventing a visible separation or route
+
+### Requirement: Isolate the illustrative line from other map workflows
+
+The line and its role indicators SHALL be hidden in tracking mode and restored from current selections on return to quotation. They SHALL NOT change tracking data, markers or counts. Geographic search and manual navigation SHALL remain usable without changing the pair or being overridden by continuous route framing. Existing quotation submission, reopening and tracking controls SHALL remain unchanged.
+
+#### Scenario: Switch modes and explore another location
+- **WHEN** a visitor with a selected pair enters tracking, locates a parcel, returns to quotation and chooses a geographic search result
+- **THEN** tracking shows no quotation line or role indicators; returning restores the current connection, and the geographic result can subsequently move the map without clearing the pair or being recentered onto it
+- **AND** no automatic quotation or tracking request is triggered by drawing or restoring the connection
+
+### Requirement: Retain available lockers without usable coordinates
+
+Available lockers with missing or invalid coordinates SHALL remain selectable for either role, with an indication that their map position is unavailable. They SHALL NOT receive invented positions or be geocoded. Counts SHALL distinguish all available lockers from mapped ones.
+
+#### Scenario: No available locker can be mapped
+- **WHEN** every available locker lacks usable coordinates
+- **THEN** the available count and both role selectors remain populated, the mapped count is zero and the map retains its view
+- **AND** users can select either role through keyboard entry without a fabricated marker
+
+### Requirement: Identify each available locker safely
+
+Locker identity SHALL remain independent of its label and coordinates. Public labels SHALL use alias, recorded address or a neutral numbered fallback, with duplicate labels distinguishable in the selector. Selections and popups SHALL show the recorded address or its absence without a technical UUID/cell sheet. External text SHALL be rendered literally, never as executable markup.
+
+#### Scenario: Coincident or identically labelled lockers
+- **WHEN** two lockers share a position or label
+- **THEN** both role selectors and any inseparable group's paginated inspection permit choosing each distinct locker without changing its stored position
+
+#### Scenario: Missing or untrusted labels
+- **WHEN** alias/address is absent or contains markup-like text
+- **THEN** a usable fallback or literal label is shown without executing markup or inventing an address
+
+### Requirement: Distinguish loading, empty results and data failure
+
+Locker loading, empty and error states SHALL be communicated in Spanish. Empty SHALL follow only a successful load without available lockers. Network, timeout, HTTP or data failures SHALL offer retry and SHALL NOT present obsolete data as current availability. Success SHALL update counts/map and hide loading/error status without the former repeated success sentence or timestamp.
+
+#### Scenario: Loading, empty and success
+- **WHEN** a pending locker load completes
+- **THEN** loading disappears and either a no-available-lockers message or populated map/counts is shown
+
+#### Scenario: Failure and recovery
+- **WHEN** a locker read fails and the user retries after recovery
+- **THEN** an accessible error/retry outside the closed quotation panel leads to a fresh read and usable data without entering parcel measurements
+
+### Requirement: Preserve access when external cartography fails
+
+The map SHALL retain provider attribution. Tile failures SHALL show a cartography warning without converting successful locker data into a backend error or empty result. Both role selectors, counts and quotation controls SHALL remain usable independently of tiles.
+
+#### Scenario: Tiles fail while data succeeds
+- **WHEN** external tiles fail but locker data loads
+- **THEN** the warning and attribution remain visible and every available locker is selectable for either role through the menu
+
+### Requirement: Support Spanish mobile and keyboard use
+
+The page SHALL use Spanish content, preserve a usable map and readable panels at desktop and mobile sizes, and expose labelled controls, visible focus and announced loading/error status. Both role selectors, popup actions and quotation controls SHALL be keyboard operable without requiring pointer interaction with the map. Panels SHALL scroll internally without page-level horizontal overflow.
+
+#### Scenario: Small viewport and keyboard operation
+- **WHEN** the page is used at 375×480 CSS pixels or with keyboard alone
+- **THEN** search, parcel fields, both role selectors and their X actions, popup actions, quotation controls/results and map attribution remain accessible without hiding the inspected marker or framed route endpoints or losing focus
+
+### Requirement: Derive postal codes only from selected lockers
+
+Quotation origin/destination codes SHALL come only from the corresponding selected locker records, as five-digit ASCII strings with country ES. The UI SHALL contain no independent postal-code inputs, visible or hidden, and no manual supplement. Missing/invalid codes SHALL show a warning beside the affected selector and block comparison until a valid locker is selected. Labels, coordinates and geographic search SHALL NOT provide inferred codes or modify locker data.
+
+#### Scenario: Recorded codes without duplicate fields
+- **WHEN** selected origin and destination lockers contain "01001" and "28001"
+- **THEN** comparison uses those exact strings with countries ES, while the existing address display remains visible without additional postal inputs
+
+#### Scenario: Missing code and recovery
+- **WHEN** either selected locker has no valid postcode
+- **THEN** it remains visible/selectable but its role shows "Este locker no tiene un CP válido. Elige otro", comparison stays disabled and submission makes no POST
+- **AND** choosing a complete locker clears that warning and enables comparison only when all remaining input is valid
+- **AND** postal validation feedback and focus target the affected locker selector rather than removed controls
+
+#### Scenario: Public role names and unchanged tracking states
+- **WHEN** a visitor uses the quotation form, marker popup or related messages
+- **THEN** the roles are named "Locker de origen" and "Locker de destino" consistently
+- **AND** package tracking states such as "pendiente de recogida" remain unchanged
+
+### Requirement: Submit only explicitly validated shipping input
+
+"Comparar envíos" SHALL be in the main menu and enabled only with both selected locker UUIDs, valid stored postcodes and parcel input and no request or waiting in progress. Submit SHALL revalidate. Dimensions SHALL convert exactly from cm to integer mm in 1..2000 and weight from kg to integer grams in 1..30000. Invalid input SHALL identify the field without HTTP. Editing, selection and search SHALL NOT submit; duplicate clicks SHALL NOT duplicate requests.
+
+#### Scenario: Exact conversion and payload
+- **WHEN** the visitor compares two selected lockers with valid codes, 25.5/15/10 cm and 2.5 kg
+- **THEN** one POST contains depth_mm 255, width_mm 150, height_mm 100, weight_grams 2500, countries ES and postal strings
+- **AND** neither locker UUID nor address is added to the existing API payload
+
+#### Scenario: Incomplete or invalid input
+- **WHEN** a role is only free text, a required value is missing, fractions are unrepresentable or limits are exceeded
+- **THEN** comparison stays disabled and attempted submission makes no POST, with relevant field feedback
+- **AND** a failed, timed-out or unreadable later POST is reported without automatic resubmission
+
+### Requirement: Observe asynchronous quotations with bounded waiting
+
+After accepted creation, the browser SHALL read that quotation sequentially about once per second, with five-second HTTP timeouts and a thirty-second local waiting limit. PENDING/PROCESSING SHALL show waiting; COMPLETED/FAILED SHALL stop polling. A read failure or waiting limit SHALL permit manually continuing the same identifier without a new POST. Process failure SHALL be distinguished from provider outcomes.
+
+#### Scenario: Pending work completes or fails
+- **WHEN** an accepted quotation progresses through pending/processing to a terminal state
+- **THEN** reads do not overlap and stop at the terminal state, showing its offers/provider outcomes or process error
+
+#### Scenario: Long wait or interrupted read
+- **WHEN** the local waiting limit is reached or a GET fails while the request identifier is known
+- **THEN** the UI stops waiting and offers to continue reading the same quotation rather than creating another one
+- **AND** it does not claim the server-side work was cancelled
+
+### Requirement: Invalidate obsolete quotation interaction
+
+Closing results, switching tabs or leaving SHALL stop local waiting and reject late responses. Changing either locker UUID, its stored postal data or parcel input SHALL also invalidate results and the resumable reference, even when the postal payload is unchanged. Known quotations SHALL resume only explicitly for their unchanged snapshot. Browser cancellation SHALL NOT claim to cancel worker processing. Geographic search alone SHALL NOT invalidate a quotation.
+
+#### Scenario: Changed identity with unchanged postal payload
+- **WHEN** a different locker with the same postcode replaces either role while a POST or GET is pending
+- **THEN** the earlier reference/results are invalidated and a late response cannot reopen or replace current content
+
+#### Scenario: Close and return without changing input
+- **WHEN** the visitor closes results or leaves quotation mode with a known nonterminal reference, then returns
+- **THEN** a read-only continuation remains accessible for that unchanged snapshot without automatically polling or issuing another POST
+- **AND** changing input removes that continuation
+
+### Requirement: Reserve the lateral panel for quotation results
+
+The initially closed lateral panel SHALL contain only quotation status/reference, offers, simulation notice and close/continuation controls. Comparison from the main menu SHALL open it; marker inspection or role selection SHALL NOT. It SHALL contain no locker selector, postal/parcel input or compare button. Close/Escape SHALL return focus to the main compare control. Mobile layout SHALL preserve access with internal scrolling.
+
+#### Scenario: Results without a second form
+- **WHEN** a valid comparison begins and later completes
+- **THEN** the right-hand panel shows progress then provider outcomes, while all shipment input remains in the main menu
+- **AND** at 375×480 the results, menu, popup controls and attribution remain accessible without horizontal page overflow
+
+### Requirement: Present provider offers honestly
+
+The panel SHALL show every returned provider/service, EUR price and transit-day range from the quotation, without calculating tariffs or inventing brands. QUOTED, NOT_COVERED and provider FAILED SHALL remain distinguishable, including partial success. Current simulated providers and demonstration prices SHALL be visibly identified. Quotes SHALL NOT imply real-provider coverage, cell fit, reservation, payment or shipment creation.
+
+#### Scenario: Partial and total provider failures
+- **WHEN** a completed quotation includes offers, no coverage or provider error/timeout outcomes
+- **THEN** each provider remains visible with its own outcome and any successful services retain their prices and transit-day ranges
+- **AND** an all-failed provider set is shown faithfully as a completed comparison rather than a fabricated process failure

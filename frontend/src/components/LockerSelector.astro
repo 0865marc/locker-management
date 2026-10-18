@@ -1,0 +1,72 @@
+---
+interface Props {
+  role: 'pickup' | 'delivery';
+  label: string;
+}
+const { role, label } = Astro.props;
+---
+
+<div class="locker-selector" id={`${role}-selector`}>
+  <label for={`${role}-locker`}>{label}</label>
+  <div class="locker-input-row">
+    <input
+      id={`${role}-locker`}
+      role="combobox"
+      aria-autocomplete="list"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-controls={`${role}-options`}
+      aria-describedby={`${role}-selection-status ${role}-search-status ${role}-postal-warning`}
+      data-selected-id=""
+      placeholder="Nombre, dirección o CP"
+      autocomplete="off"
+    />
+    <button
+      id={`${role}-clear`}
+      type="button"
+      class="clear-locker"
+      aria-label={`Quitar locker de ${role === 'pickup' ? 'origen' : 'destino'}`}
+      hidden
+    >
+      <span aria-hidden="true">×</span>
+    </button>
+  </div>
+  <div
+    id={`${role}-suggestions`}
+    class="search-suggestions"
+    aria-hidden="true"
+    hidden
+    inert
+  >
+    <div class="suggestions-content">
+      <ul
+        id={`${role}-options`}
+        class="locker-options"
+        role="listbox"
+        aria-label={`Opciones de ${label.toLowerCase()}`}
+      ></ul>
+    </div>
+  </div>
+  <p
+    id={`${role}-search-status`}
+    class="selection-status"
+    role="status"
+    aria-live="polite"
+    hidden
+  ></p>
+  <p
+    id={`${role}-selection-status`}
+    class="selection-status"
+    role="status"
+    aria-live="polite"
+  >
+    Selecciona un locker de la lista.
+  </p>
+  <p
+    id={`${role}-postal-warning`}
+    class="field-error"
+    role="status"
+    aria-live="polite"
+    hidden
+  ></p>
+</div>

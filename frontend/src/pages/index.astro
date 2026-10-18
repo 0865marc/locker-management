@@ -1,0 +1,26 @@
+---
+import LockerExplorer from '../components/LockerExplorer.astro';
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Cotiza envíos simulados hacia lockers y localiza entregas o devoluciones por UUID."
+    />
+    <title>Envíos y seguimiento de paquetes</title>
+  </head>
+  <body>
+    <a class="skip-link" id="skip-results" href="#pickup-locker">
+      Elegir lockers y cotizar
+    </a>
+    <main>
+      <h1 class="sr-only">Localizador de lockers en España</h1>
+      <LockerExplorer />
+    </main>
+  </body>
+</html>

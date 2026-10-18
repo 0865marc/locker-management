@@ -4,7 +4,8 @@ Demo de backend para gestionar **lockers y puntos de entrega y recogida de paque
 con arquitectura hexagonal y FastAPI. **Delivery** registra un
 paquete recibido del transportista para que lo recoja el destinatario; **Return**
 registra uno depositado por el cliente para que lo retire el transportista.
-Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
+El [mapa de lockers](#mapa-de-lockers-frontend-estático) permite consultar su
+disponibilidad y comparar envíos simulados hacia un locker desde el navegador. Cada entidad representa un paquete y tiene un UUID independiente. La persistencia
 usa **SQLModel asíncrono sobre PostgreSQL** y **Alembic** gestiona las migraciones.
 
 Ambas entidades contienen `tracking_number`, `carrier_code` y `received_at` UTC
@@ -22,6 +23,385 @@ a la recepción. El plazo de recogida admite una fecha con zona y es informativo
 un paquete vencido sigue pendiente y se puede recoger. Seguimiento y transportista
 no son claves únicas; el UUID identifica el registro.
 
+## Mapa de lockers: frontend estático
+
+Con **Docker Compose**, `docker compose up --build` desde la raíz arranca toda
+la aplicación y sirve el mapa en [http://127.0.0.1:4321](http://127.0.0.1:4321).
+No necesitas instalar Node o npm para este arranque. Nginx sirve los archivos
+estáticos generados; el navegador consulta directamente la API del puerto 8000.
+El frontend puede arrancar aunque la API no esté disponible: en ese caso muestra
+el estado de error y permite reintentar cuando el backend esté preparado.
+
+### Navegar y buscar una ubicación
+
+La vista inicial se acerca a la península. Usa la rueda sobre el mapa para
+acercar o alejar, o sus controles de zoom. Puedes navegar también a Baleares,
+Canarias, Ceuta y Melilla. Las cargas vacías conservan tu encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
+
+Un buscador independiente aparece encima de las pestañas **Cotizar envío** y
+**Localizar paquete**. Escribe una dirección o CP de España: con tres caracteres
+aparecen hasta cinco sugerencias tras 350 ms sin cambios. Cinco dígitos ASCII
+usan búsqueda postal estructurada, conservando ceros como `01001`. Elegir un
+resultado solo centra y marca el mapa; no elige lockers, rellena CP, cambia modo
+ni invalida una cotización o un seguimiento. Enter no duplica consultas.
+
+Las pestañas admiten Tab, flechas izquierda/derecha y Home/End. El contenido
+inactivo queda oculto y sin foco. Cambiar conserva ambos lockers y medidas,
+cierra sugerencias/resultados y detiene esperas locales,
+sin consultar de nuevo ni cancelar trabajos persistidos del worker.
+
+Las sugerencias geográficas y locales admiten teclado, click o toque, cierre con
+Escape y foco visible. La apertura/cierre breve respeta movimiento reducido;
+el contenido cerrado queda inerte y las respuestas antiguas no reabren listas.
+
+La consulta se envía directamente desde tu navegador al servicio público
+[Photon](https://photon.komoot.io/), basado en datos de OpenStreetMap, con país
+España. Las direcciones usan `/api/` y los códigos postales `/structured`, según
+[Photon API v1](https://github.com/komoot/photon/blob/master/docs/api-v1.md).
+No requiere claves ni proxy y el frontend sigue siendo estático y compatible
+con Cloudflare Pages. Es un servicio de demostración para uso razonable, sin
+garantía de disponibilidad: los errores y el límite de cinco segundos tienen
+su propio estado y reintento, sin interrumpir la consulta de lockers. Cambiar la
+búsqueda cancela la anterior; sus respuestas obsoletas se descartan. No se guardan
+las consultas ni se hacen reintentos automáticos. Las pruebas controlan Photon
+y las teselas; no demuestran conectividad real o CORS del proveedor externo en
+este entorno.
+
+### Desarrollo opcional con npm
+
+Para editar el frontend con recarga automática necesitas **Node 24 LTS** y npm.
+Arranca solo el backend con `docker compose up --build api worker` desde la raíz;
+si antes arrancaste todo el stack, libera el puerto con `docker compose stop frontend`.
+En otra terminal:
+
+```bash
+cd frontend
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+Abre `http://localhost:4321`. El ejemplo configura explícitamente
+`PUBLIC_API_BASE_URL=http://127.0.0.1:8000`; es una URL pública incorporada al
+JavaScript, sin secretos. El navegador consulta directamente `GET /lockers`,
+sin credenciales, con una lectura nueva en cada actualización y un límite de
+cinco segundos. La API debe ser accesible desde el navegador: el nombre Docker
+`api` no sirve como dirección pública. Una URL ausente o inválida, o HTTP bajo
+una página HTTPS, produce un error visible sin recurrir a otra API.
+
+Para comprobar y generar la web (el build funciona con el backend apagado):
+
+```bash
+# Desde frontend/
+npm run check
+npm test
+npm run build
+npm run preview
+# Alternativa a preview: servir dist con un servidor HTTP estático genérico.
+python3 -m http.server 4321 --bind 127.0.0.1 --directory dist
+```
+
+Usa npm dev, preview, el servidor genérico o Nginx de Compose por separado:
+todos ocupan el puerto 4321. Detén el proceso anterior antes de cambiar de modo.
+`dist/` contiene HTML, CSS y JavaScript estáticos, sin instantáneas de lockers.
+No necesita Node en producción, SSR, Workers, funciones ni proxy frontend.
+Cambiar `PUBLIC_API_BASE_URL` requiere **un nuevo build** y volver a distribuir
+`dist`: las variables del host no cambian los archivos ya compilados.
+
+### URL de API al construir la imagen
+
+Compose pasa `PUBLIC_API_BASE_URL` como argumento de build, con el valor local
+por defecto `http://127.0.0.1:8000` cuando no está definida. Un valor explícitamente
+vacío se conserva y provoca el error de configuración del frontend. Puedes
+definirlo en el entorno o en `.env`
+de la raíz y reconstruir el servicio. Por ejemplo, para una API HTTPS propia:
+
+```bash
+PUBLIC_API_BASE_URL=https://api.example.com docker compose up --build frontend
+```
+
+Sustituye la URL de ejemplo por la API accesible desde tu navegador y autoriza
+el origen del frontend en su configuración CORS. El nombre interno `api` de
+Docker no es una URL pública para el navegador.
+
+El Dockerfile instala con `npm ci` y compila con Node 24; la imagen final contiene
+Nginx Alpine y únicamente el contenido de `dist`, sin Node, npm, fuentes o archivos
+`.env`. `.dockerignore` excluye entornos locales y salidas: `frontend/.env` no
+configura el build de Docker. La URL queda incorporada en los assets, no se
+sustituye al arrancar Nginx ni se utiliza un proxy. Cambiar una variable de runtime
+o reiniciar el contenedor no la actualiza; reconstruye con `--build`.
+El mismo build estático sigue siendo apto para Cloudflare Pages.
+
+Las pruebas de navegador necesitan `python3` para servir los archivos estáticos
+y el entorno local `backend/.venv`, incluso si normalmente ejecutas la API con
+Docker. Prepáralo con uv y ejecuta desde la raíz:
+
+```bash
+cd backend
+uv sync --locked --extra dev
+cd ../frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+Como alternativa al Chromium de Playwright, puedes indicar un navegador instalado
+con `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:e2e`.
+La suite levanta su servidor estático y FastAPI con middleware CORS real y dobles
+de persistencia; no necesita PostgreSQL ni RabbitMQ. Deja libres los puertos
+4321 y 8765 antes de ejecutarla.
+
+El mapa ocupa toda la pantalla. El menú permite introducir largo, ancho y
+alto en centímetros y peso en kilogramos. Los datos empiezan vacíos y permanecen
+locales hasta pulsar **Comparar envíos**. Buscar una dirección no los envía.
+
+### Comparar envíos entre lockers
+
+En el menú, **Locker de origen** y **Locker de destino** buscan localmente entre
+los lockers disponibles ya cargados, por nombre, dirección o CP. No consultan
+Photon ni hacen peticiones adicionales, y no prometen proximidad geográfica.
+La lista se abre cuando la consulta no está vacía y quedan entre **1 y 20
+coincidencias**, mostrando todas. Con más de veinte aparece **Concreta la búsqueda**;
+con cero, **Sin coincidencias**. El campo vacío mantiene la lista cerrada, también
+con clic o teclado. Elige explícitamente un candidato: escribir un texto, incluso
+el nombre exacto, no establece su UUID. Los resultados de una búsqueda acotada,
+incluidos lockers coincidentes o sin coordenadas, son accesibles con scroll y
+teclado. Al elegir, el campo queda de solo lectura y enfoca su X accesible:
+**Quitar locker de origen** o **Quitar locker de destino**. No abre candidatos ni
+admite edición hasta quitarlo. La X vacía el rol y enfoca la búsqueda editable,
+conservando el otro locker y las medidas. El enlace de teclado **Elegir lockers y
+cotizar** activa cotización y
+enfoca origen (su X si ya está seleccionado) sin abrir resultados.
+
+El mapa agrupa puntos cercanos en burbujas con su cantidad. Clic, Enter o Espacio
+acerca el grupo; al máximo zoom, las coincidencias se exploran en páginas de hasta
+20 lockers, sin desplazar posiciones. Elegir un miembro abre su popup; asignar
+origen/destino sigue siendo una acción explícita. Los roles seleccionados,
+inspección y seguimiento permanecen individuales. Las búsquedas y «disponibles»
+incluyen la colección completa, también lockers sin coordenadas. «En el mapa»
+cuenta todos los posicionables, independientemente de los nodos visibles; el mapa
+solo materializa la vista con margen. Los pines SVG tienen el pictograma centrado.
+Con trayecto visible, otros pines/grupos se atenúan aproximadamente al 30%; los
+roles, la inspección y el foco permanecen legibles. Quitar el trayecto o entrar en
+seguimiento restaura la intensidad.
+
+Un marcador abre un popup de nombre/dirección por encima del icono, con separación
+visible y movimiento suave, sin seleccionar ni cambiar modo. Con movimiento
+reducido, el encuadre es inmediato. Bajo **Seleccionar como:**, los botones
+**Locker de origen** y **Locker de destino**, en ese orden, fijan o reemplazan
+solo ese rol, activan cotización, cierran el popup y enfocan su X. El popup
+conserva su anclaje al mover o acercar
+el mapa y al cambiar el tamaño de la pantalla. Escape o el botón de cierre devuelve
+foco al marcador. No reserva capacidad ni crea envíos.
+
+Al elegir ambos lockers con coordenadas, el mapa los encuadra y muestra una
+línea discontinua **Trayecto orientativo**, con extremos O (origen) y D (destino).
+Es una relación visual directa, sin ruta por carretera, distancia ni tiempo.
+Los indicadores se agrupan como O/D al solaparse en pantalla, sin mover sus
+posiciones; se distingue ese caso de dos puntos coincidentes. Si falta una
+posición se indica el rol afectado, sin impedir cotizar con CP válido.
+Quitar un rol retira el trayecto; seguimiento lo oculta y volver a cotización lo
+restaura con encuadre suave del par válido. Asignar un rol aislado o quitarlo no
+mueve el mapa. Buscar una dirección o navegar manualmente sigue siendo
+independiente; cada interacción cancela transiciones anteriores.
+
+Cada CP procede exclusivamente del locker seleccionado, como texto de cinco
+dígitos ASCII de país ES, conservando ceros iniciales. La dirección registrada
+permanece visible; no hay campos de CP independientes ni suplemento manual,
+visible u oculto. Si falta o es inválido aparece **Este locker no tiene un CP válido.
+Elige otro** junto al selector, y la comparación se bloquea hasta elegir uno
+completo. No se infiere desde Photon, nombre o coordenadas ni se actualiza la API.
+Quitar o reemplazar un locker invalida la comparación; el nuevo usa solo su CP
+registrado, incluso si el anterior tenía uno válido.
+
+**Comparar envíos** está en el menú y permanece deshabilitado hasta elegir dos
+lockers con CP registrado válido y completar dimensiones y peso válidos; también
+se bloquea mientras hay trabajo en curso.
+El panel derecho muestra únicamente estados y resultados, aviso demo, cierre y
+continuación. **Ver comparación existente** lo reabre sin crear otra solicitud;
+si corresponde, **Seguir consultando** continúa el GET de la misma referencia.
+Cambiar cualquier UUID, su CP registrado o medida invalida la comparación y su
+referencia, incluso al cambiar de locker por otro con el mismo CP. La búsqueda
+geográfica no afecta esa comparación.
+
+**Comparar envíos** valida dimensiones entre 0,1 y 200 cm (milímetros enteros) y
+peso entre 0,001 y 30 kg (gramos enteros). No redondea fracciones incompatibles:
+`1.001 kg` son exactamente `1001 g`. Largo se envía como profundidad. Envía
+únicamente países ES, códigos postales y paquete al contrato existente de
+`POST /quotations`; no envía UUID de locker, dirección ni coordenadas. La
+cotización usa esos CP, sin comprobar que el paquete cabe, reservar ni crear un
+envío. Las tarjetas son una **demo con proveedores, precios y plazos simulados**:
+pueden mostrar ofertas en EUR, ausencia de cobertura o fallo/timeout de proveedor.
+Un fallo del proceso se presenta por separado.
+
+Tras un 202 consulta `GET /quotations/{id}` secuencialmente, aproximadamente cada
+segundo. Cada petición tiene límite de cinco segundos y cada espera local,
+treinta segundos. Un fallo de lectura o fin de espera permite **Seguir consultando**
+la misma referencia sin otro POST. No hay reintentos automáticos de creación.
+Una creación no confirmada puede haberse guardado; un error de publicación con
+referencia permite consultar ese estado. El backend persiste las solicitudes.
+Editar datos, cerrar el panel o salir detiene la espera local y descarta respuestas
+obsoletas; no cancela el trabajo remoto. No se usa almacenamiento del navegador.
+
+Solo aparecen lockers activos con alguna celda habilitada y libre. Los contadores
+muestran lockers disponibles y posicionables, no celdas. La lectura inicial y el
+reintento tras fallo consultan disponibilidad; no hay actualización periódica.
+Los lockers sin coordenadas siguen siendo seleccionables en ambos roles sin inventar
+ubicación. Una respuesta vacía o un error no mueve el mapa.
+
+El fondo utiliza teselas de [OpenStreetMap, © sus colaboradores](https://www.openstreetmap.org/copyright),
+con atribución visible. Si fallan, ambos selectores y el cotizador siguen utilizables.
+Las pruebas controlan teselas y Photon; el recorrido CORS de cotización usa la
+aplicación FastAPI real con repositorios y publicación de prueba, sin interceptar
+las peticiones de lockers o cotizaciones. No demuestra conectividad del proveedor
+externo ni la integración del worker real.
+
+Para repetir las mediciones locales del mapa, desde `frontend/` compila con
+`PUBLIC_API_BASE_URL=http://127.0.0.1:8765 npm run build` (sin necesitar la API) y
+sirve `dist` con `python3 -m http.server 4328 --bind 127.0.0.1 --directory dist`.
+En otra terminal:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium node tests/performance/map-benchmark.mjs http://127.0.0.1:4328 current > /tmp/map-current.jsonl
+```
+
+La variable de Chromium es opcional si Playwright tiene su navegador instalado.
+`BENCH_COUNTS`, `BENCH_PATTERNS` y `BENCH_RUNS` permiten ajustar datos y repeticiones.
+`map-interactions.mjs` con el mismo servidor permite medir selección, grupos y
+retención. Compara medianas con un baseline en la misma máquina y condiciones:
+los datos y teselas controlados miden navegador local, no red real ni FPS
+universales. La API sigue descargando todos los lockers; esta mejora reduce
+representación y trabajo del navegador.
+
+### Localizar un paquete (integración pendiente)
+
+La pestaña **Localizar paquete** y su interfaz se conservan, pero el backend
+actual no ofrece `GET /tracking/{id}`. El seguimiento no está operativo: no se
+puede consultar un estado ni localizar un locker mediante el UUID de una entrega
+o devolución. Los registros y operaciones existentes de entregas y devoluciones
+siguen disponibles en sus endpoints habituales.
+
+El cliente conserva la validación del UUID, la cancelación de lecturas y el
+tratamiento de errores para una futura integración. Al enviar un UUID válido
+contra este backend recibe un 404 de ruta inexistente y muestra su mensaje actual
+de resultado no encontrado; ese mensaje no demuestra que el registro no exista.
+No hay un servicio alternativo ni datos de seguimiento simulados en producción.
+
+Las pruebas del navegador verifican ese 404 real y que el mapa y la cotización
+siguen utilizables. Las pruebas de presentación que reciben respuestas
+interceptadas solo cubren la interfaz conservada, no un servicio de seguimiento
+implementado.
+
+### Generar lockers sintéticos de demostración
+
+El generador es manual: no se ejecuta al arrancar, compilar o abrir el mapa.
+Añade por defecto **250 lockers**, con **semilla 42**, a
+`http://127.0.0.1:8000`. Comprueba primero los payloads con `--dry-run`, que
+imprime un array JSON y no hace peticiones. Desde la raíz, con una API de
+**demostración** y su imagen reconstruida para incluir el script:
+
+```bash
+docker compose up --build -d api
+docker compose exec -T api python scripts/seed_lockers.py --dry-run > /tmp/lockers-demo.json
+# Tras revisar el JSON, creación explícita en la API de demostración:
+docker compose exec api python scripts/seed_lockers.py
+# Cantidad personalizada:
+docker compose exec api python scripts/seed_lockers.py --count 12 --seed 42
+```
+
+También puedes ejecutarlo localmente desde `backend/`:
+
+```bash
+uv run python scripts/seed_lockers.py --dry-run > /tmp/lockers-demo.json
+uv run python scripts/seed_lockers.py --base-url http://127.0.0.1:8000
+# Cantidad personalizada:
+uv run python scripts/seed_lockers.py --count 12 --seed 42
+```
+
+`--count` exige un entero positivo; `--seed` acepta un entero y `--base-url`
+selecciona la API HTTP(S). Cada locker lleva alias `DEMO-<seed>-<índice>`, estado
+activo y seis celdas habilitadas y libres de 400×400×600 mm. Dirección completa
+(calle, número, CP textual, localidad, provincia y país ES) y coordenadas proceden
+**juntas del mismo registro** de un catálogo local de 3423 ubicaciones reales de
+estaciones de servicio del snapshot MITECO de **17/10/2026 23:09:30**. Se conservan
+los portales explícitos y las posiciones originales: cada CP corresponde a ese
+mismo registro.
+El catálogo conserva identificadores y campos fuente; consulta su
+[procedencia, normalización y condiciones de reutilización](backend/scripts/data/README.md).
+
+Son **lockers de demostración**, no instalaciones existentes en esas estaciones.
+La correspondencia con la fuente está comprobada documentalmente, sin inspección
+física independiente ni garantía de precisión catastral. La ejecución y el dry-run
+funcionan sin descargas de direcciones ni geocodificación/Photon. Cada ronda
+baraja el catálogo sin repetir registros; si `--count` supera su tamaño, comienza
+otra ronda y puede repetir ubicaciones. Distintos registros fuente también pueden
+compartir una ubicación. La distribución se limita al catálogo, sin cuotas iguales
+por territorio ni puntos aleatorios. Los lockers anteriores sin dirección se
+conservan: este script solo añade registros y no completa ni modifica existentes.
+
+La misma semilla reproduce los payloads y las coordenadas, no los UUID asignados
+por el servidor. **Repetir añade nuevos registros**, incluso con la misma semilla;
+no hay idempotencia. El script crea secuencialmente mediante `POST /lockers` y se
+detiene al primer fallo, informa cuántas creaciones se confirmaron y sale con
+código no cero. La última respuesta incierta puede corresponder a una creación:
+no reintenta escrituras ni borra los datos existentes o ya creados. Revisa el
+resultado antes de volver a ejecutarlo. Los smoke tests de generación usan solo
+stacks desechables y conservan los datos del usuario.
+
+### CORS local y de producción
+
+FastAPI lee `CORS_ALLOWED_ORIGINS` al arrancar: orígenes HTTP(S) exactos separados
+por comas, recortando espacios. Sin variable o con valor vacío no permite ningún
+origen de navegador. Rechaza comodines, credenciales, rutas (también `/` final),
+query, fragmentos y entradas inválidas. El `CORSMiddleware` estándar aplica una
+política común a toda la API: permite preflight GET/POST con `Content-Type`, sin
+reglas por ruta ni acceso con credenciales. PATCH, DELETE y cabeceras adicionales
+como `Authorization` o `X-Admin` no están permitidos en preflight. Permitir un
+preflight no crea endpoints, valida JSON ni autoriza operaciones: las peticiones
+reales siguen sujetas a sus handlers y contratos. CORS no es autenticación ni
+impide que un cliente HTTP use las rutas existentes.
+
+Compose configura solo en API los orígenes locales explícitos
+`http://localhost:4321,http://127.0.0.1:4321`. Para una API fuera de Compose,
+exporta la variable antes de arrancarla. Para sustituirlos en Compose, define
+`CORS_ALLOWED_ORIGINS` en el entorno o `.env` raíz y recrea el servicio API con
+su configuración actualizada. Un valor explícitamente vacío conserva la lista
+vacía. Revisa `docker compose config` antes de arrancar.
+
+### Preparar Cloudflare Pages
+
+Este repositorio prepara una web estática; no publica ni proporciona alojamiento
+para FastAPI, PostgreSQL o RabbitMQ. Antes de publicar necesitas una API **HTTPS**
+independiente y accesible públicamente, y configurar en esa API los orígenes
+concretos del frontend. Sustituye los placeholders siguientes por tus valores:
+
+| Ajuste de Pages | Valor |
+| --- | --- |
+| Directorio raíz | `frontend` |
+| Comando de build de Astro | `npm run build` |
+| Directorio de salida | `dist` |
+| Versión Node | `NODE_VERSION=24` |
+| Variable pública de build | `PUBLIC_API_BASE_URL=https://<api-publica>` |
+
+Para garantizar la instalación bloqueada con `npm ci`, configura también
+`SKIP_DEPENDENCY_INSTALL=1` y usa **`npm ci && npm run build`** como comando de
+build de Pages. Así se desactiva su instalación automática y se utiliza el
+lockfile del repositorio. La opción está documentada en la
+[imagen de build oficial de Pages](https://developers.cloudflare.com/pages/configuration/build-image/#skip-dependency-install).
+Configura las variables tanto para producción como para los previews que uses.
+
+En el backend, un ejemplo de allowlist de producción es:
+
+```dotenv
+CORS_ALLOWED_ORIGINS=https://<proyecto>.pages.dev,https://<dominio-propio>
+```
+
+Cada preview que deba leer la API necesita añadir su origen exacto, por ejemplo
+`https://<identificador-preview>.<proyecto>.pages.dev`; no se admite `*.pages.dev`.
+Los orígenes no llevan rutas ni `/` final. Si cambia la URL API, recompila y
+publica el nuevo `dist`; si cambia un origen frontend, actualiza la allowlist y
+reinicia la API. El alojamiento estático de Pages y el despliegue de la API son
+operaciones independientes y no se ejecutan como parte de esta preparación.
+
 ## Arrancar
 
 Necesitas Docker con Docker Compose. Ejecuta Compose desde la raíz del repositorio:
@@ -37,6 +417,8 @@ docker compose up --build
 
 Compose espera a que PostgreSQL esté preparado, ejecuta `alembic upgrade head`
 en el servicio `migrate` y arranca la API cuando la migración termina correctamente.
+También sirve el frontend estático con Nginx, sin depender del arranque de la API.
+Abre [el mapa de lockers](http://127.0.0.1:4321); no hace falta ejecutar npm aparte.
 Si conservas una base de datos de la versión anterior, consulta primero
 [el procedimiento de migración segura](#base-de-datos-de-la-versión-anterior).
 
@@ -941,8 +1323,8 @@ son `adapters/database/sqlmodel_quotations.py`, `adapters/http/quotations/` y
 trabajo. API comparte servicios por instancia y cierra motor y broker incluso
 si falla el arranque. Solo el worker llama a `ShippingQuoteComparator.compare`.
 
-`docker compose up --build` inicia PostgreSQL, migraciones, RabbitMQ 4, API y
-**un único worker**. API/worker esperan migraciones correctas y broker saludable;
+`docker compose up --build` inicia el frontend estático Nginx, PostgreSQL,
+migraciones, RabbitMQ 4, API y **un único worker**. API/worker esperan migraciones correctas y broker saludable;
 las migraciones esperan PostgreSQL saludable. Los volúmenes `postgres_data` y
 `rabbitmq_data` se conservan con `docker compose down` sin `-v`. Para arrancar
 por separado, ejecutar `alembic upgrade head`, `uvicorn main:app` y
