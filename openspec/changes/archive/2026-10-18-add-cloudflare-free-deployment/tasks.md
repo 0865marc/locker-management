@@ -1,5 +1,11 @@
 # Tasks
 
+## Nota de cierre autorizado — 2026-10-18
+
+El usuario ha autorizado sincronizar las especificaciones y archivar este cambio con **31 de 46 tareas verificadas y 15 pendientes**, después de conocer sus límites. Se conservan abiertas 1.1–1.4, 3.2, 5.1–5.3, 6.1–6.3, 7.1, 7.3, 8.1 y 8.3, sin modificar sus textos ni convertir evidencia parcial en cumplimiento completo. El cierre documental no certifica despliegue remoto, ejecución nativa completa de Workers/Queues ni aceptación Cloudflare Free.
+
+El usuario comunicó el arranque local de ambas APIs; se conserva como reporte suyo, no como sustituto de las comprobaciones pendientes. El coordinador integra `main` `31dfa8c`, verifica la integración y la sincronización semántica antes del archivo. Las notas y comandos históricos siguientes conservan el contexto de cada fase; la distribución y evidencia vigentes están en `deploy/cloudflare/`.
+
 El usuario ha aprobado la implementación de este plan. Partir del `main` integrado y sus especificaciones principales: cotizaciones/CI ya están sincronizados y archivados, y la aplicación usa paquetes por funcionalidad y simuladores autónomos. Conservar esa línea base sin modificar cambios archivados. Marcar las casillas únicamente después de verificar todos sus criterios.
 
 Dependencias: mantener 1.1–1.3 como verificaciones obligatorias, pero su bloqueo por red no impide implementar y probar localmente adaptadores/composición bajo la autorización renovada del usuario. 2 y 3 pueden avanzar con propiedad de archivos separada; preparar el puente complementario de 6.1 junto con 3; 4 depende de 2/3; 5 depende de 4.4; 6 integra 2–5; 7–8 cierran preparación y aceptación. Estas dependencias ordenan las interfaces y código necesarios, sin exigir cerrar antes casillas con pruebas nativas pendientes. Una incompatibilidad demostrada bloquea la solución dependiente. La falta de runtime/cuenta deja pendientes las verificaciones ausentes y las tareas cuyos criterios las requieren, incluidas 1.1–1.4 y 8.1/8.3 cuando corresponda; CPython/Miniflare no sustituye su evidencia ni autoriza completar casillas.
@@ -110,6 +116,6 @@ Movimiento aprobado posterior a la sección 13. Las referencias históricas a la
 
 ## Workflow follow-up
 
-- Presentar al usuario el resultado como planificación lista; no iniciar estas tareas durante el turno de propuesta.
-- El coordinador gestiona cualquier sincronización/archivo posterior solo cuando corresponda y esté autorizado. Cotizaciones/CI ya están sincronizados y archivados; conservar sus requisitos principales y los de identidad/runtime existentes. La actualización de la rama no cierra este cambio incompleto: `OpenSpec closure` seguirá fallando en una PR a main mientras permanezca activo, sin excepciones ni bypass.
+- La autorización del 18 de octubre permite al coordinador sincronizar y archivar con los pendientes indicados, conservando las casillas y la evidencia; sustituye la instrucción de detenerse al terminar la propuesta inicial.
+- Verificar la integración con `main`, preservar sus requisitos de frontend, generación de datos y CORS y completar la sincronización antes de archivar. Mantener el check `OpenSpec closure` intacto: su condición se resuelve mediante el archivo autorizado, sin excepciones ni bypass.
 - Diferenciar implementación local verificada, despliegue remoto y aceptación Free. La falta de evidencia remota impide afirmar el último estado, aunque el trabajo local esté terminado.

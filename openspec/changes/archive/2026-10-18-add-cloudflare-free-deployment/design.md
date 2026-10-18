@@ -26,6 +26,14 @@ La API PostgreSQL compone SQLModel y RabbitMQ y construye `app` al importar su e
 
 Se evita un único módulo con imports globales de ambas infraestructuras. La API y el consumidor estarán en el mismo Worker: el runtime distingue eventos HTTP y de cola; la concurrencia del consumidor se configura aparte de HTTP. No se necesita un segundo servicio externo.
 
+### 1.1. Integración de main 31dfa8c antes del cierre
+
+Preservar el frontend Astro estático, su servicio Compose, configuración pública de API, scripts manuales de generación de lockers y catálogo incorporados en `main`, sin añadirlos al paquete Workers ni cambiar contratos. Mantener las entradas `entrypoints/server/` y `entrypoints/cloudflare/`, la composición compartida y la ausencia de endpoint backend de tracking. La sincronización conserva los ocho requisitos adicionales de application-runtime y las especificaciones locker-map y parcel-tracking.
+
+Ambos perfiles conservan la política CORS de `main`: allowlist de orígenes exactos, GET/POST y Content-Type en cualquier ruta, sin credenciales ni comodines; PATCH/DELETE y headers no admitidos siguen denegados en preflight. Server valida la configuración antes de crear el motor. Workers obtiene la allowlist del binding del evento y la valida antes de invocar el handler, sin capturar bindings al importar ni mezclar configuración entre eventos.
+
+La reconciliación explícita del requisito CORS conserva sus cuatro escenarios y precisa el momento de validación por perfil: «No Origin and invalid configuration» exige rechazo antes de arranque/asignación del motor en server; el escenario Workers adicional exige validar el binding del evento antes de rutas, handlers o I/O, también sin Origin. Un valor ausente/vacío no admite ningún origen; un valor inválido falla sin recurrir a configuración de proceso u otro evento, y el contexto se restaura tras éxito o error. Esta precisión refleja la disponibilidad temporal del binding sin cambiar la política pública. La comprobación nativa y sus resultados siguen pendientes donde no exista evidencia; la autorización de archivo no los completa.
+
 ### 2. Paquete Workers reproducible y prueba inicial obligatoria
 
 Mantener las dependencias actuales y Python 3.11 para el código compartido. Desde `backend/`, la API usa `uvicorn entrypoints.server.api:app` y el consumidor `python -m entrypoints.server.consumer`. Actualizar Docker/Compose, scripts y documentación a esos comandos. En `backend/pyproject.toml`, `py-modules` conserva solo `composition` y la búsqueda de paquetes `entrypoints*` ya incluye los subpaquetes; Docker copia el paquete completo de entradas. Verificar el wheel instalado fuera del árbol fuente y los comandos de API/consumidor en Docker; no basta importar desde el checkout. El movimiento no añade dependencias ni requiere alterar sus versiones.
