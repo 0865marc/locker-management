@@ -17,7 +17,7 @@ from event_context import (
     verify_context_cleanup,
 )
 from fastapi import FastAPI, Request
-from import_clock import STARTED
+from import_clock import STARTED, elapsed_ms
 from pydantic import BaseModel, ValidationError
 from queue_probe import process_spike_message
 from workers import Request as WorkerRequest
@@ -70,6 +70,8 @@ async def health() -> dict[str, object]:
         "app_builds": APP_BUILDS,
         "python": sys.version,
         "import_wall_ms": IMPORT_WALL_MS,
+        "import_wall_ms_unavailable_reason": IMPORT_UNAVAILABLE_REASON,
+        "timing_source": "runtime perf_counter delta; not CPU",
         "forbidden_imports": forbidden,
         "schemas": [
             schema_title(DeliveryResponse),
@@ -169,7 +171,7 @@ async def benchmark(count: int) -> dict[str, object]:
             pass
         else:
             raise AssertionError("2000 new cells must be rejected")
-    validation_ms = (perf_counter() - started) * 1000
+    validation_ms, validation_reason = elapsed_ms(started, perf_counter())
     started = perf_counter()
     response = LockerResponse(
         id=UUID(int=1),
@@ -188,22 +190,26 @@ async def benchmark(count: int) -> dict[str, object]:
             for n in range(count)
         ],
     )
-    construction_ms = (perf_counter() - started) * 1000
+    construction_ms, construction_reason = elapsed_ms(started, perf_counter())
     started = perf_counter()
     serialized = response.model_dump_json()
-    serialization_ms = (perf_counter() - started) * 1000
+    serialization_ms, serialization_reason = elapsed_ms(started, perf_counter())
     return {
         "count": count,
+        "timing_source": "runtime perf_counter delta; not CPU",
         "validation_wall_ms": validation_ms,
+        "validation_wall_ms_unavailable_reason": validation_reason,
         "response_construction_wall_ms": construction_ms,
+        "response_construction_wall_ms_unavailable_reason": construction_reason,
         "serialization_wall_ms": serialization_ms,
+        "serialization_wall_ms_unavailable_reason": serialization_reason,
         "request_bytes": len(payload),
         "response_bytes": len(serialized),
         "app_builds": APP_BUILDS,
     }
 
 
-IMPORT_WALL_MS = (perf_counter() - STARTED) * 1000
+IMPORT_WALL_MS, IMPORT_UNAVAILABLE_REASON = elapsed_ms(STARTED, perf_counter())
 # A missing ContextVar value here proves import never needed an event binding.
 try:
     current_environment.get()

@@ -5,21 +5,18 @@ No account, credentials, resource creation or remote deployment is used.
 """
 
 import os
-import signal
 import socket
 import subprocess
 import sys
 import tempfile
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
+
+from startup_probe import wait_until_ready, worker_process
 
 ROOT = Path(__file__).resolve().parents[3]
 CLOUDFLARE = ROOT / "deploy" / "cloudflare"
 CONFIG = "wrangler.production.jsonc"
 WRANGLER = ["node", "node_modules/wrangler/bin/wrangler.js"]
-CLIENT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def run(command: list[str]) -> None:
@@ -81,24 +78,11 @@ def main() -> None:
             state,
             "--show-interactive-dev-session=false",
         ]
-        process = subprocess.Popen(command, cwd=CLOUDFLARE, start_new_session=True)
-        try:
+        with worker_process(
+            command, CLOUDFLARE, Path(state) / "runtime.log"
+        ) as process:
             base_url = f"http://127.0.0.1:{port}"
-            deadline = time.monotonic() + 90
-            while True:
-                if process.poll() is not None:
-                    raise RuntimeError(
-                        "Production Python Worker exited before readiness"
-                    )
-                try:
-                    with CLIENT.open(base_url + "/openapi.json", timeout=1):
-                        break
-                except (urllib.error.URLError, TimeoutError):
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError(
-                            "Production Python Worker readiness timed out"
-                        )
-                    time.sleep(0.05)
+            wait_until_ready(process, base_url + "/openapi.json")
             environment = dict(os.environ)
             environment["CLOUDFLARE_RUNTIME_BASE_URL"] = base_url
             subprocess.run(
@@ -117,16 +101,6 @@ def main() -> None:
                 env=environment,
                 check=True,
             )
-        finally:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=10)
     print(
         "Production native Python/Queues local contracts passed; Free metrics remain pending."
     )

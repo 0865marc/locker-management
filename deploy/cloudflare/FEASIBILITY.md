@@ -43,6 +43,22 @@ estado ignorado tras Git está en el
 El arranque de ambas APIs comunicado por el usuario se conserva como reporte,
 sin acreditar entrega real de Queues ni aceptación Free.
 
+## Reloj y diagnóstico de arranque
+
+El origen de `perf_counter()` puede ser cero; no es una condición de arranque.
+Las medidas internas de importación, validación, construcción y serialización
+conservan sus campos `*_wall_ms`: un delta positivo identifica únicamente el
+reloj del runtime, nunca CPU. Si el reloj no avanza, cada campo vale `null` y su
+campo `*_unavailable_reason` explica el motivo. La pared medida por el host se
+registra por separado; ninguna de ambas medidas acredita cuotas Free.
+
+Los dos ejecutores toleran `RemoteDisconnected` durante el plazo original de
+90 segundos. Ante fallo muestran la causa, el estado anterior a la limpieza y
+las últimas 120 líneas / 64 KiB del log disponible. El log productivo vive en su
+directorio temporal; el spike conserva su ubicación histórica. Las regresiones
+unitarias de reloj y sondeo se ejecutan antes de sincronizar el runtime. No
+prueban Python/WASM, Queues, Free ni la causa de un fallo previo de CI sin log.
+
 ## Evidencia histórica del experimento
 
 Los resultados y versiones anteriores que siguen se conservan como registro de

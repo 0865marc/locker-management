@@ -7,9 +7,9 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
+
+from startup_probe import wait_until_ready, worker_process
 
 CLOUDFLARE = Path(__file__).resolve().parents[1]
 ROOT = CLOUDFLARE.parents[1]
@@ -20,7 +20,6 @@ WRANGLER = [
     "--config",
     "wrangler.spike.jsonc",
 ]
-CLIENT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def run(
@@ -91,6 +90,21 @@ def main() -> None:
         "probe-units.txt",
         context_environment,
     )
+    run(
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_startup_*.py",
+            "-v",
+        ],
+        "startup-units.txt",
+        context_environment,
+    )
     run(["npm", "ci", "--ignore-scripts"], "npm-install.log")
     run(["uv", "run", "--locked", "pywrangler", "sync"], "sync.log")
     run(WRANGLER + ["deploy", "--dry-run", "--outdir", ".wrangler/build"], "build.log")
@@ -131,73 +145,37 @@ def main() -> None:
             "--show-interactive-dev-session=false",
         ]
         print("COMMAND " + json.dumps(command), flush=True)
-        with (EVIDENCE / "runtime.log").open("w") as output:
-            process = subprocess.Popen(
-                command,
-                cwd=CLOUDFLARE,
-                stdout=output,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-            try:
-                base_url = f"http://127.0.0.1:{port}"
-                deadline = time.monotonic() + 90
-                while True:
-                    if process.poll() is not None:
-                        raise RuntimeError(
-                            "Native runtime exited; inspect evidence/runtime.log"
+        with worker_process(command, CLOUDFLARE, EVIDENCE / "runtime.log") as process:
+            base_url = f"http://127.0.0.1:{port}"
+            health = wait_until_ready(process, base_url + "/", decode=json.load)
+            (EVIDENCE / "startup.json").write_text(
+                json.dumps(
+                    {
+                        "local_process_to_first_response_wall_ms": (
+                            time.perf_counter() - started
                         )
-                    try:
-                        with CLIENT.open(base_url + "/", timeout=1) as response:
-                            health: object = json.load(response)
-                        break
-                    except (urllib.error.URLError, TimeoutError):
-                        if time.monotonic() >= deadline:
-                            raise TimeoutError(
-                                "Native runtime did not become ready in 90 seconds"
-                            )
-                        time.sleep(0.05)
-                (EVIDENCE / "startup.json").write_text(
-                    json.dumps(
-                        {
-                            "local_process_to_first_response_wall_ms": (
-                                time.perf_counter() - started
-                            )
-                            * 1000,
-                            "health": health,
-                        },
-                        indent=2,
-                    )
-                    + "\n"
+                        * 1000,
+                        "health": health,
+                    },
+                    indent=2,
                 )
-                os.environ["SPIKE_BASE_URL"] = base_url
-                run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "unittest",
-                        "discover",
-                        "-s",
-                        "tests",
-                        "-p",
-                        "test_native_spike.py",
-                        "-v",
-                    ],
-                    "native-tests.log",
-                )
-            finally:
-                # Terminate the launcher and its Wrangler/workerd descendants.
-                import signal
-
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=10)
+                + "\n"
+            )
+            os.environ["SPIKE_BASE_URL"] = base_url
+            run(
+                [
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "-s",
+                    "tests",
+                    "-p",
+                    "test_native_spike.py",
+                    "-v",
+                ],
+                "native-tests.log",
+            )
     print("Native feasibility checks passed; remote Free acceptance remains pending.")
 
 
