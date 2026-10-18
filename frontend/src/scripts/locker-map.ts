@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import { loadLockers } from '../lib/locker-api';
 import { setupAutocomplete } from './autocomplete';
 import { setupTracking } from './tracking-panel';
+import { setupMapCamera } from './map-camera';
 import { setupLockerRoute } from './locker-route';
 import { setupLockerSelector, type LockerRole } from './locker-selector';
 import type { AvailableLocker } from '../lib/lockers';
@@ -56,7 +57,11 @@ results.addEventListener('keydown', (event) => {
 element('skip-results').addEventListener('click', (event) => {
   event.preventDefault();
   setMode('quote');
-  element('pickup-locker').focus();
+  element(
+    element<HTMLInputElement>('pickup-locker').readOnly
+      ? 'pickup-clear'
+      : 'pickup-locker',
+  ).focus();
 });
 for (const panel of [element('map-panels'), results]) {
   L.DomEvent.disableClickPropagation(panel);
@@ -73,6 +78,13 @@ const map = L.map('map', {
 }).fitBounds(peninsulaBounds, {
   padding: [15, 15],
 });
+const camera = setupMapCamera(map);
+document.addEventListener('pointerdown', () => camera.cancel(), true);
+map
+  .getContainer()
+  .addEventListener('wheel', () => camera.cancel(), { passive: true });
+map.getContainer().addEventListener('keydown', () => camera.cancel());
+element('location-query').addEventListener('input', () => camera.cancel());
 const zoom = L.control.zoom({ position: 'topright' }).addTo(map);
 zoom
   .getContainer()
@@ -130,7 +142,7 @@ if (inspection) {
   map.on('move zoom viewreset', syncInspection);
   syncInspection();
 }
-const route = setupLockerRoute(map, element('route-status'), () => {
+const route = setupLockerRoute(map, camera, element('route-status'), () => {
   const menu = element('map-panels').getBoundingClientRect();
   const panel = results.hidden ? null : results.getBoundingClientRect();
   const size = map.getSize();
@@ -151,13 +163,10 @@ const route = setupLockerRoute(map, element('route-status'), () => {
 function selectRole(role: LockerRole, locker: AvailableLocker | null) {
   shipping.setRole(role, locker);
   map.closePopup();
-  const pairFramed = route.select(role, locker);
-  if (!locker?.position) return;
+  camera.cancel();
+  route.select(role, locker);
   for (const marker of markers.values()) marker.setZIndexOffset(0);
-  markers.get(locker.id)?.setZIndexOffset(1000);
-  if (pairFramed) return;
-  map.setView(locker.position, 14, { animate: false });
-  revealPosition(locker.position);
+  if (locker) markers.get(locker.id)?.setZIndexOffset(1000);
 }
 function text(tag: string, value: string) {
   const node = document.createElement(tag);
@@ -165,14 +174,20 @@ function text(tag: string, value: string) {
   return node;
 }
 function chooseRole(role: LockerRole, locker: AvailableLocker) {
-  setMode('quote');
+  setMode('quote', false);
   map.closePopup();
   (role === 'pickup' ? pickup : delivery).select(locker);
 }
 let inspected: { marker: L.Marker; popup: L.Popup } | null = null;
 let fittingInspection = false;
 function fitInspection() {
-  if (fittingInspection || !inspected || !map.hasLayer(inspected.popup)) return;
+  if (
+    camera.moving ||
+    fittingInspection ||
+    !inspected ||
+    !map.hasLayer(inspected.popup)
+  )
+    return;
   const popupNode = inspected.popup.getElement();
   const iconNode = inspected.marker.getElement();
   if (!popupNode || !iconNode) return;
@@ -214,7 +229,10 @@ function fitInspection() {
 }
 map.on('moveend zoomend resize', fitInspection);
 map.on('popupclose', (event) => {
-  if (inspected?.popup === event.popup) inspected = null;
+  if (inspected?.popup === event.popup) {
+    inspected = null;
+    camera.cancel();
+  }
 });
 function bindInspection(
   marker: L.Marker,
@@ -235,8 +253,8 @@ function bindInspection(
     actions.className = 'popup-role-actions';
     content.append(caption, actions);
     for (const [role, label] of [
-      ['delivery', 'Locker de destino'],
       ['pickup', 'Locker de origen'],
+      ['delivery', 'Locker de destino'],
     ] as const) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -256,22 +274,49 @@ function bindInspection(
   }).setContent(content);
   marker.bindPopup(popup);
   const open = () => {
+    camera.cancel();
     for (const other of markers.values()) other.setZIndexOffset(0);
     marker.setZIndexOffset(1000);
     inspected = { marker, popup };
     marker.openPopup();
     const size = map.getSize();
-    if (matchMedia('(max-width:760px)').matches) {
-      const desired = L.point(
-        size.x / 2,
-        Math.min(size.y - 52, Math.max(250, size.y * 0.78)),
-      );
-      map.panBy(
-        map.latLngToContainerPoint(marker.getLatLng()).subtract(desired),
-        { animate: false },
-      );
-    } else revealPosition([marker.getLatLng().lat, marker.getLatLng().lng]);
-    fitInspection();
+    const point = map.latLngToContainerPoint(marker.getLatLng());
+    const menu = element('map-panels').getBoundingClientRect();
+    const panel = results.hidden ? null : results.getBoundingClientRect();
+    const desired = matchMedia('(max-width:760px)').matches
+      ? L.point(size.x / 2, Math.min(size.y - 52, Math.max(250, size.y * 0.78)))
+      : L.point(
+          (menu.right + 12 + (panel ? panel.left - 12 : size.x - 24)) / 2,
+          size.y / 2,
+        );
+    const popupBox = popup.getElement()!.getBoundingClientRect();
+    const iconBox = marker.getElement()!.getBoundingClientRect();
+    const painted =
+      marker.getElement()?.querySelector('span')?.getBoundingClientRect() ??
+      iconBox;
+    const tip =
+      popup
+        .getElement()
+        ?.querySelector('.leaflet-popup-tip-container')
+        ?.getBoundingClientRect() ?? popupBox;
+    const left = Math.min(popupBox.left, iconBox.left, painted.left);
+    const right = Math.max(popupBox.right, iconBox.right, painted.right);
+    const top = Math.min(popupBox.top, iconBox.top, painted.top);
+    const bottom = Math.max(
+      popupBox.bottom,
+      tip.bottom,
+      iconBox.bottom,
+      painted.bottom,
+    );
+    const dx = Math.max(
+      12 - left,
+      Math.min(desired.x - point.x, size.x - 12 - right),
+    );
+    const dy = Math.max(
+      12 - top,
+      Math.min(desired.y - point.y, size.y - 12 - bottom),
+    );
+    camera.panBy([-dx, -dy]);
     const popupNode = popup.getElement();
     const focus = popupNode?.querySelector<HTMLElement>('button, a');
     focus?.focus({ preventScroll: true });
@@ -348,6 +393,7 @@ function render() {
     if (!locker.position) continue;
     const marker = L.marker(locker.position, {
       title: locker.label,
+      autoPanOnFocus: false,
       alt: `Ver ${locker.label}`,
       icon: L.divIcon({
         className: 'locker-marker',
@@ -398,6 +444,8 @@ void update();
 let searchMarker: L.Marker | null = null;
 const geography = setupAutocomplete('location', {
   onSelect(place, postal) {
+    camera.cancel();
+    map.closePopup();
     searchMarker?.remove();
     searchMarker = L.marker(place.position, {
       title: `Ubicación buscada: ${place.label}`,
@@ -423,6 +471,7 @@ const tracking = setupTracking(element, (parcel) => {
       : 'Último locker registrado';
   trackingMarker = L.marker(parcel.locker.position, {
     title: `${label}: ${parcel.locker.label}`,
+    autoPanOnFocus: false,
     icon: L.divIcon({
       className: 'tracking-marker',
       html: '<span aria-hidden="true">●</span>',
@@ -443,8 +492,9 @@ const tracking = setupTracking(element, (parcel) => {
   map.setView(parcel.locker.position, 14, { animate: false });
   revealPosition(parcel.locker.position);
 });
-function setMode(mode: 'quote' | 'tracking') {
+function setMode(mode: 'quote' | 'tracking', restoreRoute = true) {
   if (mode === activeMode) return;
+  camera.cancel();
   pickup.close();
   delivery.close();
   geography.close();
@@ -463,7 +513,7 @@ function setMode(mode: 'quote' | 'tracking') {
     view.hidden = !selected;
     view.inert = !selected;
   }
-  route.setVisible(mode === 'quote');
+  route.setVisible(mode === 'quote', restoreRoute);
 }
 const tabs = [
   element<HTMLButtonElement>('quote-tab'),

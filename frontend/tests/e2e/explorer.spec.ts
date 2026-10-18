@@ -463,6 +463,8 @@ const address = {
 };
 async function selectRole(page: Page, role: 'pickup' | 'delivery', n: number) {
   const input = page.locator(`#${role}-locker`);
+  if ((await input.getAttribute('readonly')) !== null)
+    await page.locator(`#${role}-clear`).click();
   await input.fill(knownLabels.get(id(n)) ?? 'Locker');
   await page
     .locator(`#${role}-options [role="option"][data-id="${id(n)}"]`)
@@ -490,7 +492,7 @@ async function reopenResults(page: Page) {
 async function expectRoleUncovered(page: Page, role: 'pickup' | 'delivery') {
   await expect
     .poll(() =>
-      page.locator(`#${role}-locker`).evaluate((input) => {
+      page.locator(`#${role}-clear`).evaluate((input) => {
         const box = input.getBoundingClientRect();
         const panel = input.closest('.left-stack')!.getBoundingClientRect();
         const tabs = document
@@ -498,10 +500,9 @@ async function expectRoleUncovered(page: Page, role: 'pickup' | 'delivery') {
           .getBoundingClientRect();
         return {
           hit:
-            document.elementFromPoint(
-              box.x + box.width / 2,
-              box.y + box.height / 2,
-            ) === input,
+            document
+              .elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+              ?.closest('button') === input,
           contained:
             box.top >= Math.max(panel.top, tabs.bottom, 0) - 1 &&
             box.bottom <= Math.min(panel.bottom, window.innerHeight) + 1 &&
@@ -664,19 +665,15 @@ for (const viewport of [
     await page.screenshot({
       path: `test-results/shipping-${viewport.name}-offers.png`,
     });
+    const beforeChange = await basePosition(page, 'Madrid · 1');
     await selectRole(page, 'delivery', 1);
     await expect(page.locator('#quotation-offers')).toBeEmpty();
-    const marker = page.locator('.locker-marker[title="Madrid · 1"]');
-    expect(
-      await marker.evaluate((node) => {
-        const r = node.getBoundingClientRect();
-        return (
-          document
-            .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-            ?.closest('.locker-marker') === node
-        );
-      }),
-    ).toBe(true);
+    await expect(page.locator('.locker-route,.route-endpoint')).toHaveCount(0);
+    await expect(page.locator('#route-status')).toContainText(
+      'locker de origen',
+    );
+    await expectPositionStopped(page, 'Madrid · 1');
+    expect(await basePosition(page, 'Madrid · 1')).toEqual(beforeChange);
     await expect(page.locator('#results')).toBeHidden();
   });
 }
@@ -1289,7 +1286,7 @@ test('roles require registered postal codes and no independent postal controls e
             new Event('submit', { bubbles: true, cancelable: true }),
           ),
         );
-      await expect(page.locator(`#${role}-locker`)).toBeFocused();
+      await expect(page.locator(`#${role}-clear`)).toBeFocused();
       expect(posts).toBe(0);
       await selectRole(page, role, 1);
       await expect(page.locator(`#${role}-postal-warning`)).toBeHidden();
@@ -1302,6 +1299,7 @@ test('roles require registered postal codes and no independent postal controls e
       ).not.toHaveAccessibleDescription(/no tiene un CP/);
     }
   }
+  await page.locator('#delivery-clear').click();
   await page.locator('#delivery-locker').fill('Completo');
   await expect(page.locator('#delivery-locker')).toHaveAttribute(
     'data-selected-id',
@@ -1346,6 +1344,7 @@ test('local candidates preserve duplicates, unmapped identities and safe literal
     'data-selected-id',
     id(20),
   );
+  await page.locator('#delivery-clear').click();
   await page.locator('#delivery-locker').fill('<img');
   await expect(page.locator('#delivery-options')).toContainText(
     '<img src=x onerror=alert(1)>',
@@ -1451,7 +1450,7 @@ for (const viewport of [
       'data-selected-id',
       id(1),
     );
-    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expect(page.locator('#delivery-clear')).toBeFocused();
     await expectRoleUncovered(page, 'delivery');
     await expect(page.locator('#pickup-locker')).toHaveAttribute(
       'data-selected-id',
@@ -1469,7 +1468,7 @@ for (const viewport of [
       'data-selected-id',
       id(1),
     );
-    await expect(page.locator('#pickup-locker')).toBeFocused();
+    await expect(page.locator('#pickup-clear')).toBeFocused();
     await expectRoleUncovered(page, 'pickup');
     // Selecting a role must reveal its input after the menu has been scrolled.
     await page.locator('.left-stack').evaluate((panel) => {
@@ -1486,7 +1485,7 @@ for (const viewport of [
       'data-selected-id',
       id(1),
     );
-    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expect(page.locator('#delivery-clear')).toBeFocused();
     await expectRoleUncovered(page, 'delivery');
     await page.locator('.left-stack').evaluate((panel) => {
       panel.scrollTop = panel.scrollHeight;
@@ -1498,7 +1497,7 @@ for (const viewport of [
     await marker.focus();
     await page.keyboard.press('Enter');
     await pickup.click();
-    await expect(page.locator('#pickup-locker')).toBeFocused();
+    await expect(page.locator('#pickup-clear')).toBeFocused();
     await expectRoleUncovered(page, 'pickup');
     await page.screenshot({
       path: `test-results/roles-${viewport.name}-selected.png`,
@@ -1640,7 +1639,7 @@ test('tabs preserve both role identities and parcel data while cancelling pendin
   await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
   await page.locator('#skip-results').focus();
   await page.keyboard.press('Enter');
-  await expect(page.locator('#pickup-locker')).toBeFocused();
+  await expect(page.locator('#pickup-clear')).toBeFocused();
   await expect(page.locator('#results')).toBeHidden();
 });
 for (const viewport of [
@@ -1713,12 +1712,16 @@ for (const viewport of [
       await page.keyboard.press('Enter');
       await expect(input).toHaveAttribute('data-selected-id', id(20));
       await expect(suggestions).toBeHidden();
+      await expect(input).toHaveAttribute('readonly', '');
+      await expect(page.locator(`#${role}-clear`)).toBeFocused();
       await input.click();
-      await expect(options).toHaveCount(1);
       await input.press('ArrowDown');
-      await page.keyboard.press('Enter');
+      await input.press('Enter');
+      await expect(input).toHaveAttribute('aria-expanded', 'false');
+      await expect(suggestions).toBeHidden();
       await expect(input).toHaveAttribute('data-selected-id', id(20));
-      await expect(page.locator(`#${role}-postal-warning`)).toBeHidden();
+      await page.locator(`#${role}-clear`).click();
+      await expect(input).toBeFocused();
       await input.fill('Veinte');
       await input.fill('Grupo');
       await expect(input).toHaveAttribute('aria-expanded', 'false');
@@ -1822,6 +1825,7 @@ for (const viewport of [
         await expect(page.locator('.locker-popup button')).toHaveCount(0);
       }
       async function assertGap() {
+        await page.waitForTimeout(350);
         const geometry = await popupGap(page, selector);
         expect(geometry.gap).toBeGreaterThanOrEqual(4);
         expect(
@@ -1891,7 +1895,7 @@ for (const viewport of [
           'data-selected-id',
           id(1),
         );
-        await expect(page.locator('#delivery-locker')).toBeFocused();
+        await expect(page.locator('#delivery-clear')).toBeFocused();
         expect(
           await marker.evaluate((node) =>
             node.parentElement?.classList.contains('leaflet-marker-pane'),
@@ -1981,6 +1985,10 @@ test('postal request uses the selected origin and destination records with leadi
 });
 
 async function routeGeometry(page: Page, labels: string[]) {
+  await expect(page.locator('.leaflet-map-pane')).not.toHaveClass(
+    /leaflet-zoom-anim/,
+  );
+  await page.waitForTimeout(350);
   const badges = page.locator('.route-endpoint');
   await expect(badges).toHaveCount(labels.length);
   for (const [index, label] of labels.entries()) {
@@ -2073,7 +2081,7 @@ for (const viewport of [
     await pin.press('Enter');
     await selectRole(page, 'delivery', 2);
     await expect(page.locator('.leaflet-popup')).toHaveCount(0);
-    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expect(page.locator('#delivery-clear')).toBeFocused();
     await expect(page.locator('#route-status')).toHaveText(
       'Trayecto orientativo · O origen · D destino',
     );
@@ -2186,6 +2194,7 @@ for (const viewport of [
       /leaflet-zoom-anim/,
     );
     await expect(page.locator('.route-endpoint')).toHaveText('O/D');
+    await page.locator('#delivery-clear').click();
     await page.locator('#delivery-locker').fill('');
     await expect(page.locator('.route-endpoint,.locker-route')).toHaveCount(0);
     await expect(page.locator('#route-status')).toBeHidden();
@@ -2196,4 +2205,206 @@ for (const viewport of [
     expect(reads).toBe(1);
     expect(writes).toBe(0);
   });
+}
+
+async function basePosition(page: Page, label: string) {
+  return page.locator(`.locker-marker[title="${label}"]`).evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return { x: box.x, y: box.y };
+  });
+}
+async function expectPositionStopped(page: Page, label: string) {
+  const before = await basePosition(page, label);
+  await page.waitForTimeout(450);
+  const after = await basePosition(page, label);
+  expect(
+    Math.hypot(after.x - before.x, after.y - before.y),
+  ).toBeLessThanOrEqual(1);
+}
+async function samplePopup(page: Page) {
+  await page.evaluate(() => {
+    const samples: { x: number; y: number }[] = [];
+    Reflect.set(window, 'popupSamples', samples);
+    const until = performance.now() + 650;
+    function frame() {
+      const box = document
+        .querySelector('.leaflet-popup')
+        ?.getBoundingClientRect();
+      if (box) samples.push({ x: box.x, y: box.y });
+      if (performance.now() < until) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`locked role clears explicitly without camera movement ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await data(
+      page,
+      [
+        locker(1, 'Origen animado'),
+        locker(2, 'Destino animado', { latitude: 28.12, longitude: -15.43 }),
+      ],
+      false,
+    );
+    const initial = await basePosition(page, 'Origen animado');
+    await selectRole(page, 'pickup', 1);
+    await expect(page.locator('#pickup-clear')).toBeFocused();
+    expect(await basePosition(page, 'Origen animado')).toEqual(initial);
+    const input = page.locator('#pickup-locker');
+    await input.focus();
+    await input.click();
+    await input.pressSequentially('otro');
+    for (const key of ['Enter', 'ArrowDown', 'ArrowUp', 'Escape'])
+      await input.press(key);
+    await expect(input).toHaveValue('Origen animado');
+    await expect(input).toHaveAttribute('data-selected-id', id(1));
+    await expect(input).toHaveAttribute('readonly', '');
+    await expect(input).not.toBeDisabled();
+    await expect(page.locator('#pickup-suggestions')).toBeHidden();
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
+    await page.locator('#pickup-clear').focus();
+    await page.screenshot({ path: `test-results/locked-${viewport.name}.png` });
+    await page.locator('#pickup-clear').press('Enter');
+    await expect(input).toBeFocused();
+    await expect(input).toBeEditable();
+    await expect(input).toHaveValue('');
+    await expect(page.locator('#pickup-clear')).toBeHidden();
+    await expect(page.locator('#pickup-suggestions')).toBeHidden();
+    await expectPositionStopped(page, 'Origen animado');
+    await selectRole(page, 'pickup', 1);
+    await page.locator('#parcel-weight').fill('1.001');
+    await selectRole(page, 'delivery', 2);
+    // Observe an in-flight fractional zoom before cancelling it with X.
+    await expect
+      .poll(
+        () =>
+          page.locator('.leaflet-tile-container').evaluateAll((nodes) =>
+            nodes.some((node) => {
+              const scale = new DOMMatrixReadOnly(
+                getComputedStyle(node).transform,
+              ).a;
+              return Math.abs(scale - Math.round(scale)) > 0.01;
+            }),
+          ),
+        { intervals: [10], timeout: 250 },
+      )
+      .toBe(true);
+    await page.locator('#delivery-clear').dispatchEvent('click');
+    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expect(page.locator('.locker-route,.route-endpoint')).toHaveCount(0);
+    await expectPositionStopped(page, 'Origen animado');
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
+  });
+  for (const reduced of [false, true]) {
+    test(`popup camera is continuous and cancellable ${viewport.name} reduced=${reduced}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await page.emulateMedia({
+        reducedMotion: reduced ? 'reduce' : 'no-preference',
+      });
+      await page.route(photon, (route) =>
+        route.fulfill({ json: places(place('Barcelona', 2.17, 41.39)) }),
+      );
+      await data(
+        page,
+        [
+          locker(1, 'Origen animado'),
+          locker(2, 'Otro popup', { latitude: 41.39, longitude: 2.17 }),
+        ],
+        false,
+      );
+      const marker = page.locator('.locker-marker[title="Origen animado"]');
+      await samplePopup(page);
+      await marker.focus();
+      await marker.press('Enter');
+      await page.waitForTimeout(700);
+      const points = await page.evaluate(
+        () => Reflect.get(window, 'popupSamples') as { x: number; y: number }[],
+      );
+      const unique = new Set(
+        points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`),
+      );
+      if (reduced) expect(unique.size).toBe(1);
+      else {
+        expect(unique.size).toBeGreaterThan(3);
+        const steps = points
+          .slice(1)
+          .map((p, i) => Math.hypot(p.x - points[i]!.x, p.y - points[i]!.y));
+        const distance = Math.hypot(
+          points.at(-1)!.x - points[0]!.x,
+          points.at(-1)!.y - points[0]!.y,
+        );
+        expect(Math.max(...steps)).toBeLessThan(distance * 0.65);
+        expect(Math.max(...steps.slice(-5))).toBeLessThan(1);
+      }
+      await expect(page.locator('.popup-role-actions button')).toHaveText([
+        'Locker de origen',
+        'Locker de destino',
+      ]);
+      await page.screenshot({
+        path: `test-results/camera-${viewport.name}-${reduced ? 'reduced' : 'normal'}.png`,
+      });
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.leaflet-popup')).toHaveCount(0);
+      const otherForEscape = page.locator('.locker-marker[title="Otro popup"]');
+      const beforeOpening = await basePosition(page, 'Otro popup');
+      await otherForEscape.focus();
+      await otherForEscape.press('Enter');
+      if (!reduced) {
+        await page.waitForTimeout(60);
+        const duringOpening = await basePosition(page, 'Otro popup');
+        expect(
+          Math.hypot(
+            duringOpening.x - beforeOpening.x,
+            duringOpening.y - beforeOpening.y,
+          ),
+        ).toBeGreaterThan(1);
+      }
+      await page.keyboard.press('Escape');
+      await expect(otherForEscape).toBeFocused();
+      await expectPositionStopped(page, 'Origen animado');
+      await marker.press('Enter');
+      const other = page.locator('.locker-marker[title="Otro popup"]');
+      await other.focus();
+      await other.press('Enter');
+      await page.waitForTimeout(400);
+      await expect(page.locator('.locker-popup strong')).toHaveText(
+        'Otro popup',
+      );
+      await expectPositionStopped(page, 'Origen animado');
+      await marker.focus();
+      await marker.press('Enter');
+      await page.locator('#location-query').fill('Barcelona');
+      await expectPositionStopped(page, 'Origen animado');
+      await page.locator('#location-results button').click();
+      await expect(page.locator('.search-location')).toHaveCount(1);
+      await expectPositionStopped(page, 'Origen animado');
+      await marker.focus();
+      await marker.press('Enter');
+      await page.mouse.move(viewport.width - 16, viewport.height * 0.55);
+      await page.mouse.down();
+      await page.mouse.move(viewport.width - 16, viewport.height * 0.55 + 20, {
+        steps: 5,
+      });
+      await page.mouse.up();
+      await page.waitForTimeout(350);
+      await expectPositionStopped(page, 'Origen animado');
+      await marker.focus();
+      await marker.press('Enter');
+      await page.locator('#tracking-tab').click();
+      await expect(page.locator('.leaflet-popup')).toHaveCount(0);
+      await expectPositionStopped(page, 'Origen animado');
+    });
+  }
 }

@@ -8,18 +8,29 @@ const { role, label } = Astro.props;
 
 <div class="locker-selector" id={`${role}-selector`}>
   <label for={`${role}-locker`}>{label}</label>
-  <input
-    id={`${role}-locker`}
-    role="combobox"
-    aria-autocomplete="list"
-    aria-haspopup="listbox"
-    aria-expanded="false"
-    aria-controls={`${role}-options`}
-    aria-describedby={`${role}-selection-status ${role}-search-status ${role}-postal-warning`}
-    data-selected-id=""
-    placeholder="Nombre, dirección o CP"
-    autocomplete="off"
-  />
+  <div class="locker-input-row">
+    <input
+      id={`${role}-locker`}
+      role="combobox"
+      aria-autocomplete="list"
+      aria-haspopup="listbox"
+      aria-expanded="false"
+      aria-controls={`${role}-options`}
+      aria-describedby={`${role}-selection-status ${role}-search-status ${role}-postal-warning`}
+      data-selected-id=""
+      placeholder="Nombre, dirección o CP"
+      autocomplete="off"
+    />
+    <button
+      id={`${role}-clear`}
+      type="button"
+      class="clear-locker"
+      aria-label={`Quitar locker de ${role === 'pickup' ? 'origen' : 'destino'}`}
+      hidden
+    >
+      <span aria-hidden="true">×</span>
+    </button>
+  </div>
   <div
     id={`${role}-suggestions`}
     class="search-suggestions"

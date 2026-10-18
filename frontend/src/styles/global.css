@@ -809,7 +809,7 @@ select:focus-visible {
   font-weight: 650;
   margin-bottom: 7px;
 }
-.locker-selector > input {
+.locker-selector input {
   width: 100%;
   padding: 10px;
   background: #fafcfd;
@@ -895,7 +895,7 @@ select:focus-visible {
   text-align: center;
 }
 @media (max-width: 760px) {
-  .locker-selector > input {
+  .locker-selector input {
     font-size: 16px;
   }
   .geography-panel {
@@ -919,7 +919,8 @@ select:focus-visible {
   color: #18354a;
 }
 /* Reveal a chosen role below the sticky tab bar in the scrolling menu. */
-.locker-selector > input {
+.locker-selector input,
+.clear-locker {
   scroll-margin-top: 64px;
   scroll-margin-bottom: 12px;
 }
@@ -959,4 +960,24 @@ select:focus-visible {
   font-size: 11px;
   line-height: 1.5;
   color: #496374;
+}
+
+.locker-input-row {
+  position: relative;
+}
+.locker-input-row input {
+  width: 100%;
+}
+.locker-input-row input[readonly] {
+  padding-right: 42px;
+  background: #f0f5f7;
+}
+.clear-locker {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  min-height: 32px;
+  width: 32px;
+  padding: 0;
+  font-size: 22px;
 }

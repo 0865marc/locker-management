@@ -165,14 +165,19 @@ con cero, **Sin coincidencias**. El campo vacío mantiene la lista cerrada, tamb
 con clic o teclado. Elige explícitamente un candidato: escribir un texto, incluso
 el nombre exacto, no establece su UUID. Los resultados de una búsqueda acotada,
 incluidos lockers coincidentes o sin coordenadas, son accesibles con scroll y
-teclado. La selección de un rol conserva el otro y las
-medidas. El enlace de teclado **Elegir lockers y cotizar** activa cotización y
-enfoca origen sin abrir resultados.
+teclado. Al elegir, el campo queda de solo lectura y enfoca su X accesible:
+**Quitar locker de origen** o **Quitar locker de destino**. No abre candidatos ni
+admite edición hasta quitarlo. La X vacía el rol y enfoca la búsqueda editable,
+conservando el otro locker y las medidas. El enlace de teclado **Elegir lockers y
+cotizar** activa cotización y
+enfoca origen (su X si ya está seleccionado) sin abrir resultados.
 
 Un marcador abre un popup de nombre/dirección por encima del icono, con separación
-visible, sin seleccionar ni cambiar modo. Bajo **Seleccionar como:**, los botones
-**Locker de destino** y **Locker de origen** fijan solo ese rol, activan cotización,
-cierran el popup y enfocan su campo. El popup conserva su anclaje al mover o acercar
+visible y movimiento suave, sin seleccionar ni cambiar modo. Con movimiento
+reducido, el encuadre es inmediato. Bajo **Seleccionar como:**, los botones
+**Locker de origen** y **Locker de destino**, en ese orden, fijan o reemplazan
+solo ese rol, activan cotización, cierran el popup y enfocan su X. El popup
+conserva su anclaje al mover o acercar
 el mapa y al cambiar el tamaño de la pantalla. Escape o el botón de cierre devuelve
 foco al marcador. No reserva capacidad ni crea envíos.
 
@@ -180,9 +185,12 @@ Al elegir ambos lockers con coordenadas, el mapa los encuadra y muestra una
 línea discontinua **Trayecto orientativo**, con extremos O (origen) y D (destino).
 Es una relación visual directa, sin ruta por carretera, distancia ni tiempo.
 Los indicadores se agrupan como O/D al solaparse en pantalla, sin mover sus
-posiciones; se distingue ese caso de dos puntos coincidentes. Si falta una posición se indica el rol afectado, sin impedir cotizar con CP válido.
-Editar un rol retira el trayecto; seguimiento lo oculta y volver a cotización lo
-restaura. Buscar una dirección o navegar manualmente sigue siendo independiente.
+posiciones; se distingue ese caso de dos puntos coincidentes. Si falta una
+posición se indica el rol afectado, sin impedir cotizar con CP válido.
+Quitar un rol retira el trayecto; seguimiento lo oculta y volver a cotización lo
+restaura con encuadre suave del par válido. Asignar un rol aislado o quitarlo no
+mueve el mapa. Buscar una dirección o navegar manualmente sigue siendo
+independiente; cada interacción cancela transiciones anteriores.
 
 Cada CP procede exclusivamente del locker seleccionado, como texto de cinco
 dígitos ASCII de país ES, conservando ceros iniciales. La dirección registrada
@@ -190,8 +198,8 @@ permanece visible; no hay campos de CP independientes ni suplemento manual,
 visible u oculto. Si falta o es inválido aparece **Este locker no tiene un CP válido.
 Elige otro** junto al selector, y la comparación se bloquea hasta elegir uno
 completo. No se infiere desde Photon, nombre o coordenadas ni se actualiza la API.
-Editar un selector borra su UUID e invalida la comparación; elegir otro usa solo
-su CP registrado, incluso si el anterior tenía uno válido.
+Quitar o reemplazar un locker invalida la comparación; el nuevo usa solo su CP
+registrado, incluso si el anterior tenía uno válido.
 
 **Comparar envíos** está en el menú y permanece deshabilitado hasta elegir dos
 lockers con CP registrado válido y completar dimensiones y peso válidos; también

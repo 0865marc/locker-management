@@ -16,7 +16,8 @@ export function setupLockerSelector(
   const root = element('selector'),
     input = element<HTMLInputElement>('locker'),
     suggestions = element('suggestions'),
-    list = element('options');
+    list = element('options'),
+    clear = element<HTMLButtonElement>('clear');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let lockers: AvailableLocker[] = [];
   let selected: AvailableLocker | null = null;
@@ -24,7 +25,8 @@ export function setupLockerSelector(
   let animation = 0;
   let hideTimer: number | undefined;
   function close(focus = false) {
-    if (focus) input.focus({ preventScroll: true });
+    const target = selected ? clear : input;
+    if (focus) target.focus({ preventScroll: true });
     const generation = ++animation;
     clearTimeout(hideTimer);
     suggestions.inert = true;
@@ -36,16 +38,24 @@ export function setupLockerSelector(
       hideTimer = window.setTimeout(() => {
         if (generation === animation) suggestions.hidden = true;
       }, 160);
-    if (focus) input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (focus) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   function choose(locker: AvailableLocker | null) {
     selected = locker;
     input.dataset.selectedId = locker?.id ?? '';
     input.value = locker?.label ?? '';
+    input.readOnly = !!locker;
+    clear.hidden = !locker;
+    element('search-status').textContent = '';
+    element('search-status').hidden = true;
     close();
     onChoose(locker);
   }
   function show() {
+    if (selected) {
+      close();
+      return;
+    }
     animation++;
     clearTimeout(hideTimer);
     list.replaceChildren();
@@ -70,7 +80,7 @@ export function setupLockerSelector(
       const button = document.createElement('button');
       button.type = 'button';
       button.setAttribute('role', 'option');
-      button.setAttribute('aria-selected', String(selected?.id === locker.id));
+      button.setAttribute('aria-selected', 'false');
       button.dataset.id = locker.id;
       const title = document.createElement('strong');
       title.textContent = locker.label;
@@ -105,6 +115,11 @@ export function setupLockerSelector(
     if (suggestions.inert) show();
   });
   input.addEventListener('input', () => {
+    if (selected) {
+      input.value = selected.label;
+      close();
+      return;
+    }
     selected = null;
     input.dataset.selectedId = '';
     onChoose(null);
@@ -133,6 +148,11 @@ export function setupLockerSelector(
       event.preventDefault();
       if (suggestions.inert) show();
     }
+  });
+  clear.addEventListener('click', () => {
+    choose(null);
+    list.replaceChildren();
+    close(true);
   });
   suggestions.addEventListener('pointerdown', () => {
     pointerSelecting = true;

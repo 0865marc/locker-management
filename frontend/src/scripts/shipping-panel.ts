@@ -256,7 +256,7 @@ export function setupShipping(
         const error = element(role ? `${role}-postal-warning` : `${id}-error`);
         error.textContent = role ? missingPostalMessage : message;
         error.hidden = false;
-        first ??= input;
+        first ??= role ? element(`${role}-clear`) : input;
       }
       first?.focus();
       return;

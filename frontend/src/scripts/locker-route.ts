@@ -1,10 +1,12 @@
 import L from 'leaflet';
 import type { AvailableLocker } from '../lib/lockers';
+import type { MapCamera } from './map-camera';
 import type { LockerRole } from './locker-selector';
 
 /** An illustration of the selected positions, never a transport route. */
 export function setupLockerRoute(
   map: L.Map,
+  camera: MapCamera,
   message: HTMLElement,
   visibleArea: () => {
     left: number;
@@ -72,14 +74,13 @@ export function setupLockerRoute(
         size = map.getSize();
       // Include each badge, keep the real positions and bound coincident zoom.
       fitting = true;
-      map.fitBounds(L.latLngBounds([origin, destination]), {
+      camera.frame(L.latLngBounds([origin, destination]), {
         paddingTopLeft: [area.left + 14, area.top + 14],
         paddingBottomRight: [
           size.x - area.right + 14,
           size.y - area.bottom + 14,
         ],
         maxZoom: 14,
-        animate: false,
       });
       fitting = false;
     }
@@ -109,9 +110,9 @@ export function setupLockerRoute(
       roles[role] = locker;
       return render(changed);
     },
-    setVisible(next: boolean) {
+    setVisible(next: boolean, frame = true) {
       visible = next;
-      render(next);
+      render(next && frame);
     },
   };
 }

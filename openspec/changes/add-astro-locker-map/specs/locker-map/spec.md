@@ -58,21 +58,35 @@ A separate search panel above the tabs SHALL find Spanish directions or postal c
 
 ### Requirement: Select actual lockers for both shipment roles
 
-"Locker de origen" and "Locker de destino" SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Editing a role's text SHALL clear its selection and derived postcode. Selecting one role SHALL preserve the other and parcel values. All matches in an eligible result set, including coincident or unmapped lockers, SHALL remain keyboard reachable.
+Unselected "Locker de origen" and "Locker de destino" fields SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Selecting one role SHALL preserve the other and parcel values. All matches in an eligible result set, including coincident or unmapped lockers, SHALL remain keyboard reachable.
 
 #### Scenario: Local candidates and independent roles
 - **WHEN** a visitor searches by label, address or postcode and chooses a locker for each role
 - **THEN** the chosen UUIDs identify origin and destination without Photon or additional API requests
 - **AND** arbitrary geographic addresses can instead be explored through the separate map search, without being accepted as lockers
 
-#### Scenario: Edit or replace a selected role
-- **WHEN** the selected label is edited or a different locker is chosen for a role
-- **THEN** that role's previous selection, derived postcode and obsolete quotations are cleared, while the other role and parcel values remain
-- **AND** typing the old label back does not restore its UUID without selection; reopening suggestions or choosing the unchanged UUID preserves the selected record
+#### Scenario: Clear or replace a selected role
+- **WHEN** the role's X is activated or a different locker is assigned through an explicit popup action
+- **THEN** the former UUID, derived postcode and obsolete quotations are cleared or replaced together, while the other role and parcel values remain
+- **AND** typing an old label after clearing does not restore its UUID without selection; choosing the unchanged UUID from a popup preserves the selected record
+
+### Requirement: Lock selected fields until explicitly cleared
+
+A selected role SHALL show a read-only, focusable field and an accessible X named "Quitar locker de origen" or "Quitar locker de destino". Selection SHALL focus its X. Focus, clicks and keys SHALL NOT edit the chosen label or open candidates. X SHALL empty the role and return focus to its editable search. Explicit popup replacement and invalidation when a locker disappears from availability SHALL remain supported.
+
+#### Scenario: Selected field cannot reopen or mutate its choice
+- **WHEN** a visitor selects a locker through a candidate or popup, then focuses, clicks or types into its field or presses navigation keys
+- **THEN** the selected UUID and label remain unchanged, suggestions stay closed and the clear action is keyboard reachable
+- **AND** replacing the role through another popup keeps the new field locked and focuses that role's X
+
+#### Scenario: Clear a complete selection
+- **WHEN** the visitor activates X by pointer or keyboard
+- **THEN** that role's text, UUID, derived postcode, address detail and stale warnings are cleared, obsolete quotation work/results and the route are invalidated, and focus returns to the empty editable search with suggestions closed
+- **AND** the other role and parcel values remain, no request is made and the map does not move
 
 ### Requirement: Open locker suggestions only for bounded searches
 
-Both role selectors SHALL open candidates only for a nonempty trimmed query with 1..20 matches, showing all matches. Empty queries SHALL keep the list closed; more than 20 SHALL request refinement without displaying the first 20; zero SHALL announce no matches with the list closed. Focus, click, Enter and arrow keys SHALL obey the same rule. Opening, closing or choosing the unchanged UUID SHALL preserve the selected record.
+Unselected role fields SHALL open candidates only for a nonempty trimmed query with 1..20 matches, showing all matches. Empty queries SHALL keep the list closed; more than 20 SHALL request refinement without displaying the first 20; zero SHALL announce no matches with the list closed. Focus, click, Enter and arrow keys SHALL obey the same rule. A selected field SHALL keep candidates closed until cleared.
 
 #### Scenario: Empty and oversized searches
 - **WHEN** the field is empty or contains a query matching 21 or more lockers
@@ -85,9 +99,9 @@ Both role selectors SHALL open candidates only for a nonempty trimmed query with
 - **AND** searching remains local, without requests or automatic selection
 
 #### Scenario: Animation and preserved selection
-- **WHEN** eligible and ineligible queries alternate rapidly, or an unchanged selected locker is inspected and chosen again
-- **THEN** hidden candidates immediately become inert, older animation callbacks cannot reopen them, reduced motion is respected and the unchanged UUID retains its selected record and derived postcode
-- **AND** editing the selected text still invalidates that role according to the selection requirement
+- **WHEN** eligible and ineligible queries alternate rapidly in an editable field, or a locker is selected while suggestions are animating
+- **THEN** hidden candidates immediately become inert, older animation callbacks cannot reopen them, reduced motion is respected and selection closes the list and locks the field
+- **AND** choosing the unchanged UUID through a popup preserves its selected record and derived postcode without reopening suggestions
 
 ### Requirement: Animate and dismiss geographic suggestions accessibly
 
@@ -112,16 +126,16 @@ Geographic search SHALL have independent loading, no-results and error states, w
 
 ### Requirement: Choose a shipment role from a locker popup
 
-Opening an available locker marker SHALL show its label, recorded address or absence, shared text "Seleccionar como:" and buttons "Locker de destino"/"Locker de origen". Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
+Opening an available locker marker SHALL show its label, recorded address or absence, shared text "Seleccionar como:" and buttons "Locker de origen" then "Locker de destino" in visual and keyboard order. Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
 
 #### Scenario: Inspect then choose explicitly
 - **WHEN** a visitor opens an available marker in either mode and then chooses a role
-- **THEN** inspection alone preserves mode and selections, while the action switches to quotation if needed, assigns the UUID and focuses that role's selector
+- **THEN** inspection alone preserves mode and selections, while the action switches to quotation if needed, assigns the UUID and focuses that role's X
 - **AND** no quotation request occurs and no technical catalogue or lateral input form opens
 
 #### Scenario: Keyboard entry and popup dismissal
 - **WHEN** a keyboard user follows the quotation skip link or closes a marker popup with Escape
-- **THEN** the link activates quotation and focuses origin selection, while popup dismissal restores marker focus when possible
+- **THEN** the link activates quotation and focuses origin search if empty or its X if selected, while popup dismissal restores marker focus when possible
 - **AND** choosing lockers remains possible without pointer interaction, including coincident and unmapped lockers
 
 ### Requirement: Position inspection popups above their markers
@@ -132,6 +146,20 @@ Inspection popups SHALL appear above the top of their associated icon with a vis
 - **WHEN** a popup is opened and the map pans, zooms or resizes on desktop or at 375×480
 - **THEN** the popup and its pointer remain above and separated from the icon, and its content/actions remain reachable
 - **AND** role selection, Escape and focus restoration retain their existing behavior
+
+### Requirement: Animate deliberate locker framing smoothly
+
+Opening a locker popup by pointer or keyboard SHALL use a brief smooth camera transition when repositioning is needed, keeping popup and icon visible without a final snap. Deliberate route framing SHALL use the same motion preference. Reduced-motion users SHALL receive immediate positioning. Newer interactions SHALL cancel obsolete camera work so late callbacks cannot restore an older target or steal focus.
+
+#### Scenario: Inspect lockers with normal or reduced motion
+- **WHEN** a visitor opens a locker marker on desktop or at 375×480 with normal motion, then repeats with reduced motion
+- **THEN** normal motion transitions smoothly to the final popup/icon framing, while reduced motion reaches the same accessible framing without animation
+- **AND** the popup gap, action order and keyboard focus remain correct
+
+#### Scenario: Supersede an animation
+- **WHEN** another marker is opened, a role is assigned or cleared, or the visitor changes mode or starts geographic/manual navigation during a camera transition
+- **THEN** obsolete animation and correction callbacks cannot move the map back or refocus an old popup
+- **AND** a role chosen from tracking frames only the final valid pair, never an intermediate previous pair
 
 ### Requirement: Read live lockers in the browser
 
@@ -164,8 +192,9 @@ The frontend SHALL consider a locker available exactly when active is true and a
 The map SHALL initially frame mainland Spain closely. Mainland, Balearic, Canary Island, Ceuta and Melilla lockers SHALL remain reachable through navigation and either role selector without a "Ver España" control. Valid stored positions SHALL remain unchanged. Wheel input over the map SHALL zoom in/out, while overlay interactions SHALL NOT navigate it. Data loads and empty results SHALL preserve the current view.
 
 #### Scenario: Island and autonomous-city destinations remain reachable
-- **WHEN** available destinations have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla and the user selects each
-- **THEN** each stored position is revealed in the visible map area with that locker selected for the chosen role
+- **WHEN** available destinations have coordinates in Madrid, Palma, Santa Cruz de Tenerife, Ceuta and Melilla and the visitor navigates to inspect one or completes a positioned origin/destination pair containing it
+- **THEN** inspection or route framing reveals the stored position without changing its coordinates
+- **AND** selecting a single role alone does not recenter or change map zoom
 
 #### Scenario: Initial view and wheel navigation
 - **WHEN** the page opens and the user scrolls the wheel over the map in either direction
@@ -182,16 +211,21 @@ The map SHALL initially frame mainland Spain closely. Mainland, Balearic, Canary
 
 ### Requirement: Connect selected lockers with an illustrative line
 
-In quotation mode, two selected lockers with valid positions SHALL show a straight illustrative line using their recorded coordinates, with origin and destination identifiable without color alone. Completing or changing the pair SHALL frame both endpoints outside visible overlays without changing focus. The line SHALL require no routing requests and SHALL NOT claim a road route, distance, travel time or shipment creation.
+In quotation mode, two selected lockers with valid positions SHALL show a straight illustrative line using their recorded coordinates, with origin and destination identifiable without color alone. Completing or changing the pair SHALL frame both endpoints outside visible overlays without stealing selection focus. The line SHALL require no routing requests and SHALL NOT claim a road route, distance, travel time or shipment creation.
 
 #### Scenario: Complete or change the selected pair
 - **WHEN** a visitor selects origin and destination through either selector or popup, then replaces one with another positioned locker
-- **THEN** the line connects only the current pair and both identified endpoints are visible on desktop and at 375×480, with existing selection focus preserved
+- **THEN** the line connects only the current pair and both identified endpoints are visible on desktop and at 375×480, with focus on the chosen role's X
 - **AND** no additional API or geographic request occurs, availability counts and parcel input remain unchanged, and changing the pair still invalidates obsolete quotations
 
 #### Scenario: Invalidate or lose a selected role
-- **WHEN** either role is cleared by editing its text or invalidated by a new availability load
+- **WHEN** either role is cleared with its X or invalidated by a new availability load
 - **THEN** its previous line and endpoint indicators disappear immediately without retaining a stale connection or altering the other selection
+
+#### Scenario: Assignment without a new positioned pair
+- **WHEN** a visitor assigns only one role, chooses an unchanged UUID, clears a role or chooses a pair with an unavailable position
+- **THEN** the action does not pan or zoom the map, while selection, route removal and missing-position feedback update normally
+- **AND** only completing or changing a pair with both positions permits framing as a consequence of role assignment
 
 #### Scenario: Missing or coincident positions
 - **WHEN** both roles are selected but one lacks usable coordinates, or both share the same recorded position
@@ -254,7 +288,7 @@ The page SHALL use Spanish content, preserve a usable map and readable panels at
 
 #### Scenario: Small viewport and keyboard operation
 - **WHEN** the page is used at 375×480 CSS pixels or with keyboard alone
-- **THEN** search, parcel fields, both role selectors, popup actions and quotation controls/results and map attribution remain accessible without covering the selected position or losing focus
+- **THEN** search, parcel fields, both role selectors and their X actions, popup actions, quotation controls/results and map attribution remain accessible without hiding the inspected marker or framed route endpoints or losing focus
 
 ### Requirement: Derive postal codes only from selected lockers
 
