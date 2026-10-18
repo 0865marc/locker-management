@@ -18,23 +18,40 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
-BOUNDARY_PATH = Path(__file__).with_name("data") / "spain.geojson"
+CATALOGUE_PATH = Path(__file__).with_name("data") / "spain-addresses.json"
+SNAPSHOT_DATE = "17/10/2026 23:09:30"
+SNAPSHOT_SHA256 = "91ee3c584c20563d60f5f9389dec011cef0e3d8a69a2fc89ab9cc5aadbf26f9b"
+SOURCE_FIELDS = (
+    "IDEESS",
+    "IDProvincia",
+    "Provincia",
+    "Municipio",
+    "Localidad",
+    "Dirección",
+    "C.P.",
+    "Latitud",
+    "Longitud (WGS84)",
+)
+STREET_PATTERN = re.compile(
+    r"((?:CALLE|AVENIDA|PLAZA|PASEO|RONDA|TRAVESIA|TRAVESÍA|CARRER|AVINGUDA|RAMBLA) "
+    r"[^,]+),\s*([0-9]+[A-Za-z]?)"
+)
 REQUEST_TIMEOUT = 10
 MAX_RESPONSE_BYTES = 1024 * 1024
-
-Point = tuple[float, float]  # GeoJSON order: longitude, latitude.
-Ring = tuple[Point, ...]
-
-
-@dataclass(frozen=True)
-class Polygon:
-    rings: tuple[Ring, ...]
-    bounds: tuple[float, float, float, float]
 
 
 class CoordinatesPayload(TypedDict):
     latitude: float
     longitude: float
+
+
+class AddressPayload(TypedDict):
+    country_code: str
+    postal_code: str
+    province: str
+    city: str
+    street: str
+    street_number: str
 
 
 class DimensionsPayload(TypedDict):
@@ -51,133 +68,128 @@ class BatchPayload(TypedDict):
 
 class LockerPayload(TypedDict):
     location_id: str
-    address: None
+    address: AddressPayload
     coordinates: CoordinatesPayload
     active: bool
     compartments: list[BatchPayload]
 
 
-def load_boundary(path: Path = BOUNDARY_PATH) -> tuple[Polygon, ...]:
-    """Load the bundled land geometry before any request can be made."""
-    geometry: object = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(geometry, dict) or geometry.get("type") != "MultiPolygon":
-        raise ValueError("La geografía debe ser un MultiPolygon GeoJSON")
-    coordinates: object = geometry.get("coordinates")
-    if not isinstance(coordinates, list) or not coordinates:
-        raise ValueError("La geografía no contiene polígonos")
-    polygons: list[Polygon] = []
-    for polygon in coordinates:
-        if not isinstance(polygon, list) or not polygon:
-            raise ValueError("Polígono vacío o inválido")
-        rings: list[Ring] = []
-        for ring in polygon:
-            if not isinstance(ring, list) or len(ring) < 4:
-                raise ValueError("Anillo inválido")
-            points: list[Point] = []
-            for point in ring:
-                if (
-                    not isinstance(point, list)
-                    or len(point) != 2
-                    or any(type(value) not in (int, float) for value in point)
-                ):
-                    raise ValueError("Coordenada inválida")
-                longitude, latitude = float(point[0]), float(point[1])
-                if (
-                    not math.isfinite(longitude)
-                    or not math.isfinite(latitude)
-                    or not -180 <= longitude <= 180
-                    or not -90 <= latitude <= 90
-                ):
-                    raise ValueError("Coordenada fuera de rango")
-                points.append((longitude, latitude))
-            if points[0] != points[-1]:
-                raise ValueError("Anillo sin cerrar")
-            rings.append(tuple(points))
-        shell = rings[0]
-        bounds = (
-            min(point[0] for point in shell),
-            min(point[1] for point in shell),
-            max(point[0] for point in shell),
-            max(point[1] for point in shell),
-        )
-        if bounds[0] == bounds[2] or bounds[1] == bounds[3]:
-            raise ValueError("Polígono sin superficie")
-        polygons.append(Polygon(tuple(rings), bounds))
-    return tuple(polygons)
+@dataclass(frozen=True)
+class CatalogueLocation:
+    source_id: str
+    source_province_id: str
+    source_address: str
+    source_latitude: str
+    source_longitude: str
+    address: AddressPayload
+    coordinates: CoordinatesPayload
 
 
-def ring_location(point: Point, ring: Ring) -> int:
-    """Return 1 inside, 0 outside or -1 on the edge (ray casting)."""
-    longitude, latitude = point
-    inside = False
-    for (x1, y1), (x2, y2) in zip(ring, ring[1:]):
-        cross = (longitude - x1) * (y2 - y1) - (latitude - y1) * (x2 - x1)
-        if (
-            abs(cross) < 1e-12
-            and min(x1, x2) <= longitude <= max(x1, x2)
-            and min(y1, y2) <= latitude <= max(y1, y2)
-        ):
-            return -1
-        if (y1 > latitude) != (y2 > latitude):
-            intersection = x1 + (latitude - y1) * (x2 - x1) / (y2 - y1)
-            if longitude < intersection:
-                inside = not inside
-    return 1 if inside else 0
+def source_record(value: object) -> CatalogueLocation:
+    """Normalize only complete source records with an explicit street number."""
+    if not isinstance(value, dict):
+        raise ValueError("Registro del catálogo inválido")
+    fields: dict[str, str] = {}
+    for key in SOURCE_FIELDS:
+        text: object = value.get(key)
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"Campo de catálogo ausente o inválido: {key}")
+        fields[key] = text
+    identifier, province_id = fields["IDEESS"], fields["IDProvincia"]
+    postal_code = fields["C.P."]
+    if (
+        re.fullmatch(r"[0-9]+", identifier) is None
+        or re.fullmatch(r"[0-9]{2}", province_id) is None
+        or not 1 <= int(province_id) <= 52
+        or re.fullmatch(r"[0-9]{5}", postal_code) is None
+        or postal_code[:2] != province_id
+    ):
+        raise ValueError("Identificador o CP/provincia inválido en el catálogo")
+    street = STREET_PATTERN.fullmatch(fields["Dirección"])
+    if street is None:
+        raise ValueError("La dirección no contiene calle y número inequívocos")
+    numbers: list[float] = []
+    for name in ("Latitud", "Longitud (WGS84)"):
+        text = fields[name]
+        if re.fullmatch(r"-?[0-9]+(?:,[0-9]+)?", text) is None:
+            raise ValueError("Formato de coordenadas del catálogo inválido")
+        number = float(text.replace(",", "."))
+        if not math.isfinite(number):
+            raise ValueError("Coordenadas del catálogo no finitas")
+        numbers.append(number)
+    latitude, longitude = numbers
+    if not (27 <= latitude <= 44 and -19 <= longitude <= 5):
+        raise ValueError("Coordenadas fuera del ámbito español del catálogo")
+    return CatalogueLocation(
+        identifier,
+        province_id,
+        fields["Dirección"],
+        fields["Latitud"],
+        fields["Longitud (WGS84)"],
+        {
+            "country_code": "ES",
+            "postal_code": postal_code,
+            "province": fields["Provincia"],
+            "city": fields["Localidad"],
+            "street": street.group(1),
+            "street_number": street.group(2),
+        },
+        {"latitude": latitude, "longitude": longitude},
+    )
 
 
-def on_land(point: Point, polygons: tuple[Polygon, ...]) -> bool:
-    """Accept only shell interiors, excluding holes and boundary points."""
-    longitude, latitude = point
-    for polygon in polygons:
-        west, south, east, north = polygon.bounds
-        if not (west < longitude < east and south < latitude < north):
-            continue
-        if ring_location(point, polygon.rings[0]) == 1 and all(
-            ring_location(point, hole) == 0 for hole in polygon.rings[1:]
-        ):
-            return True
-    return False
+def load_catalogue(path: Path = CATALOGUE_PATH) -> tuple[CatalogueLocation, ...]:
+    """Validate every record and source version before any HTTP write."""
+    catalogue: object = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(catalogue, dict):
+        raise ValueError("Catálogo de direcciones inválido")
+    source: object = catalogue.get("source")
+    if (
+        not isinstance(source, dict)
+        or source.get("snapshot_date") != SNAPSHOT_DATE
+        or source.get("snapshot_sha256") != SNAPSHOT_SHA256
+    ):
+        raise ValueError("Versión o procedencia del catálogo inválida")
+    records: object = catalogue.get("records")
+    if not isinstance(records, list) or not records:
+        raise ValueError("El catálogo no contiene direcciones")
+    locations = tuple(source_record(record) for record in records)
+    if len({location.source_id for location in locations}) != len(locations):
+        raise ValueError("Identificadores fuente duplicados en el catálogo")
+    return locations
 
 
 def generate_payloads(
-    count: int, seed: int, polygons: tuple[Polygon, ...]
+    count: int, seed: int, locations: tuple[CatalogueLocation, ...]
 ) -> list[LockerPayload]:
-    if count <= 0 or not polygons:
-        raise ValueError("La cantidad y la geografía deben ser válidas")
+    if count <= 0 or not locations:
+        raise ValueError("La cantidad y el catálogo deben ser válidos")
     generator = random.Random(seed)
-    west = min(polygon.bounds[0] for polygon in polygons)
-    south = min(polygon.bounds[1] for polygon in polygons)
-    east = max(polygon.bounds[2] for polygon in polygons)
-    north = max(polygon.bounds[3] for polygon in polygons)
     payloads: list[LockerPayload] = []
-    # Finite rejection budget also prevents corrupt geometry from hanging a run.
-    for _ in range(max(10000, count * 1000)):
-        point = (generator.uniform(west, east), generator.uniform(south, north))
-        rounded = (round(point[0], 6), round(point[1], 6))
-        if not on_land(point, polygons) or not on_land(rounded, polygons):
-            continue
-        payloads.append(
-            {
-                "location_id": f"DEMO-{seed}-{len(payloads) + 1}",
-                "address": None,
-                "active": True,
-                "coordinates": {"longitude": rounded[0], "latitude": rounded[1]},
-                "compartments": [
-                    {
-                        "quantity": 6,
-                        "enabled": True,
-                        "dimensions": {
-                            "width_mm": 400,
-                            "height_mm": 400,
-                            "depth_mm": 600,
-                        },
-                    }
-                ],
-            }
-        )
-        if len(payloads) == count:
-            return payloads
-    raise ValueError("No se pudieron generar todos los puntos terrestres")
+    while len(payloads) < count:
+        cycle = list(locations)
+        generator.shuffle(cycle)
+        for location in cycle[: count - len(payloads)]:
+            payloads.append(
+                {
+                    "location_id": f"DEMO-{seed}-{len(payloads) + 1}",
+                    "address": location.address.copy(),
+                    "active": True,
+                    "coordinates": location.coordinates.copy(),
+                    "compartments": [
+                        {
+                            "quantity": 6,
+                            "enabled": True,
+                            "dimensions": {
+                                "width_mm": 400,
+                                "height_mm": 400,
+                                "depth_mm": 600,
+                            },
+                        }
+                    ],
+                }
+            )
+    return payloads
 
 
 def positive_integer(value: str) -> int:
@@ -266,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     options = parser.parse_args(argv)
     try:
-        payloads = generate_payloads(options.count, options.seed, load_boundary())
+        payloads = generate_payloads(options.count, options.seed, load_catalogue())
     except (OSError, ValueError) as error:
         print(f"Error antes de escribir: {error}", file=sys.stderr)
         return 1

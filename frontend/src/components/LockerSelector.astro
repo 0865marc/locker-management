@@ -17,7 +17,7 @@ const { role, label, postalId, postalLabel } = Astro.props;
     aria-haspopup="listbox"
     aria-expanded="false"
     aria-controls={`${role}-options`}
-    aria-describedby={`${role}-selection-status`}
+    aria-describedby={`${role}-selection-status ${role}-search-status`}
     data-selected-id=""
     placeholder="Nombre, dirección o CP"
     autocomplete="off"
@@ -36,11 +36,15 @@ const { role, label, postalId, postalLabel } = Astro.props;
         role="listbox"
         aria-label={`Opciones de ${label.toLowerCase()}`}
       ></ul>
-      <p id={`${role}-empty`} class="address" hidden>
-        No hay lockers disponibles que coincidan.
-      </p>
     </div>
   </div>
+  <p
+    id={`${role}-search-status`}
+    class="selection-status"
+    role="status"
+    aria-live="polite"
+    hidden
+  ></p>
   <p
     id={`${role}-selection-status`}
     class="selection-status"

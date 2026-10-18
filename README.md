@@ -159,16 +159,22 @@ locales hasta pulsar **Comparar envíos**. Buscar una dirección no los envía.
 En el menú, **Locker de recogida** y **Locker de entrega** buscan localmente entre
 los lockers disponibles ya cargados, por nombre, dirección o CP. No consultan
 Photon ni hacen peticiones adicionales, y no prometen proximidad geográfica.
-Elige explícitamente un candidato: escribir un texto, incluso el nombre exacto,
-no establece su UUID. Todos los coincidentes y lockers sin coordenadas permanecen
-accesibles con scroll y teclado. La selección de un rol conserva el otro y las
+La lista se abre cuando la consulta no está vacía y quedan entre **1 y 20
+coincidencias**, mostrando todas. Con más de veinte aparece **Concreta la búsqueda**;
+con cero, **Sin coincidencias**. El campo vacío mantiene la lista cerrada, también
+con clic o teclado. Elige explícitamente un candidato: escribir un texto, incluso
+el nombre exacto, no establece su UUID. Los resultados de una búsqueda acotada,
+incluidos lockers coincidentes o sin coordenadas, son accesibles con scroll y
+teclado. La selección de un rol conserva el otro y las
 medidas. El enlace de teclado **Elegir lockers y cotizar** activa cotización y
 enfoca recogida sin abrir resultados.
 
-Un marcador abre un popup de nombre/dirección sin seleccionar ni cambiar modo.
-**Seleccionar como locker de entrega** o **Seleccionar como locker de recogida**
-fija solo ese rol, activa cotización, cierra el popup y enfoca su campo. Escape o
-el botón de cierre devuelve foco al marcador. No reserva capacidad ni crea envíos.
+Un marcador abre un popup de nombre/dirección por encima del icono, con separación
+visible, sin seleccionar ni cambiar modo. Bajo **Seleccionar como:**, los botones
+**Locker de entrega** y **Locker de recogida** fijan solo ese rol, activan cotización,
+cierran el popup y enfocan su campo. El popup conserva su anclaje al mover o acercar
+el mapa y al cambiar el tamaño de la pantalla. Escape o el botón de cierre devuelve
+foco al marcador. No reserva capacidad ni crea envíos.
 
 Cada locker aporta su CP español registrado de cinco dígitos como solo lectura.
 Cuando no lo tiene aparece **CP del locker no registrado** y se pide un suplemento
@@ -282,13 +288,25 @@ uv run python scripts/seed_lockers.py --count 12 --seed 42
 ```
 
 `--count` exige un entero positivo; `--seed` acepta un entero y `--base-url`
-selecciona la API HTTP(S). Cada locker lleva alias `DEMO-<seed>-<índice>`, dirección
-`null`, estado activo y seis celdas habilitadas y libres de 400×400×600 mm. Sus
-posiciones se muestrean dentro de los polígonos terrestres españoles de Natural
-Earth, respetando huecos; no se usa Photon. La [procedencia y licencia del dato](backend/scripts/data/README.md)
-identifica el extracto local de dominio público y su versión. Son ubicaciones
-sintéticas con límites generalizados, sin instalaciones o direcciones reales ni
-cuotas iguales por territorio. Puedes explorar las islas desplazando y alejando el mapa.
+selecciona la API HTTP(S). Cada locker lleva alias `DEMO-<seed>-<índice>`, estado
+activo y seis celdas habilitadas y libres de 400×400×600 mm. Dirección completa
+(calle, número, CP textual, localidad, provincia y país ES) y coordenadas proceden
+**juntas del mismo registro** de un catálogo local de 3423 ubicaciones reales de
+estaciones de servicio del snapshot MITECO de **17/10/2026 23:09:30**. Se conservan
+los portales explícitos y las posiciones originales: cada CP corresponde a ese
+mismo registro.
+El catálogo conserva identificadores y campos fuente; consulta su
+[procedencia, normalización y condiciones de reutilización](backend/scripts/data/README.md).
+
+Son **lockers de demostración**, no instalaciones existentes en esas estaciones.
+La correspondencia con la fuente está comprobada documentalmente, sin inspección
+física independiente ni garantía de precisión catastral. La ejecución y el dry-run
+funcionan sin descargas de direcciones ni geocodificación/Photon. Cada ronda
+baraja el catálogo sin repetir registros; si `--count` supera su tamaño, comienza
+otra ronda y puede repetir ubicaciones. Distintos registros fuente también pueden
+compartir una ubicación. La distribución se limita al catálogo, sin cuotas iguales
+por territorio ni puntos aleatorios. Los lockers anteriores sin dirección se
+conservan: este script solo añade registros y no completa ni modifica existentes.
 
 La misma semilla reproduce los payloads y las coordenadas, no los UUID asignados
 por el servidor. **Repetir añade nuevos registros**, incluso con la misma semilla;

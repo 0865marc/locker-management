@@ -1,11 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 const id = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const knownLabels = new Map<string, string>();
 function locker(
   n: number,
   label: string | null = `Locker ${n}`,
   coordinates: unknown = { latitude: 40.4168, longitude: -3.7038 },
 ) {
+  knownLabels.set(id(n), label ?? `Locker ${n}`);
   return {
     id: id(n),
     location_id: label,
@@ -461,7 +463,7 @@ const address = {
 };
 async function selectRole(page: Page, role: 'pickup' | 'delivery', n: number) {
   const input = page.locator(`#${role}-locker`);
-  await input.fill('');
+  await input.fill(knownLabels.get(id(n)) ?? 'Locker');
   await page
     .locator(`#${role}-options [role="option"][data-id="${id(n)}"]`)
     .click();
@@ -569,6 +571,7 @@ test('real cross-origin FastAPI completes POST/preflight and polling without int
   page,
   context,
 }) => {
+  knownLabels.set(id(1), 'Locker CORS');
   await tiles(page);
   const response = page.waitForResponse('http://127.0.0.1:8765/lockers');
   await page.goto('/');
@@ -1414,11 +1417,11 @@ for (const viewport of [
       '',
     );
     const delivery = page.getByRole('button', {
-        name: 'Seleccionar como locker de entrega',
+        name: 'Locker de entrega',
         exact: true,
       }),
       pickup = page.getByRole('button', {
-        name: 'Seleccionar como locker de recogida',
+        name: 'Locker de recogida',
         exact: true,
       });
     await expect(delivery).toBeVisible();
@@ -1636,3 +1639,291 @@ test('tabs preserve both role identities and parcel data while cancelling pendin
   await expect(page.locator('#pickup-locker')).toBeFocused();
   await expect(page.locator('#results')).toBeHidden();
 });
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`bounded local suggestions for both roles ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    let apiReads = 0,
+      otherReads = 0;
+    await tiles(page);
+    const payload = Array.from({ length: 21 }, (_, index) =>
+      locker(
+        index + 1,
+        index === 20 ? 'Zeta Grupo' : `Veinte ${index + 1} Grupo`,
+        null,
+      ),
+    );
+    await page.route('**/lockers', (r) => {
+      apiReads++;
+      return r.fulfill({ json: payload });
+    });
+    page.on('request', (r) => {
+      if (
+        r.url().includes('/quotations') ||
+        r.url().includes('photon.komoot.io')
+      )
+        otherReads++;
+    });
+    await page.goto('/');
+    await expect(page.locator('#available-count')).toHaveText('21');
+    for (const role of ['pickup', 'delivery'] as const) {
+      const input = page.locator(`#${role}-locker`),
+        suggestions = page.locator(`#${role}-suggestions`),
+        options = page.locator(`#${role}-options [role=option]`),
+        status = page.locator(`#${role}-search-status`);
+      for (const [query, message] of [
+        ['', ''],
+        ['  ', ''],
+        ['Ausente', 'Sin coincidencias'],
+        ['Grupo', 'Concreta la búsqueda'],
+      ]) {
+        await input.fill(query!);
+        for (const action of [
+          'focus',
+          'click',
+          'Enter',
+          'ArrowDown',
+          'ArrowUp',
+        ]) {
+          if (action === 'focus') await input.focus();
+          else if (action === 'click') await input.click();
+          else await input.press(action);
+          await expect(input).toHaveAttribute('aria-expanded', 'false');
+          expect(
+            await suggestions.evaluate((node: HTMLElement) => node.inert),
+          ).toBe(true);
+          await expect(options).toHaveCount(0);
+        }
+        if (message) await expect(status).toHaveText(message);
+        else await expect(status).toBeHidden();
+      }
+      await input.fill('Veinte');
+      await expect(options).toHaveCount(20);
+      await expect(input).toHaveAttribute('aria-expanded', 'true');
+      await input.press('ArrowUp');
+      await expect(options.last()).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(input).toHaveAttribute('data-selected-id', id(20));
+      await expect(suggestions).toBeHidden();
+      const postal = page.locator(
+        role === 'pickup' ? '#origin-postal' : '#destination-postal',
+      );
+      await postal.fill('01001');
+      await input.click();
+      await expect(options).toHaveCount(1);
+      await input.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await expect(postal).toHaveValue('01001');
+      await input.fill('Veinte');
+      await input.fill('Grupo');
+      await expect(input).toHaveAttribute('aria-expanded', 'false');
+      await expect(status).toHaveText('Concreta la búsqueda');
+      await input.fill('Z');
+      await expect(options).toHaveCount(1);
+      await page.waitForTimeout(200);
+      await expect(suggestions).toBeVisible();
+      await input.press('Escape');
+      await expect(input).toBeFocused();
+      await expect(suggestions).toBeHidden();
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await input.fill('Z');
+      await expect(options).toHaveCount(1);
+      await input.fill('');
+      expect(
+        await suggestions.evaluate((node) => (node as HTMLElement).hidden),
+      ).toBe(true);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+    }
+    expect(apiReads).toBe(1);
+    expect(otherReads).toBe(0);
+  });
+}
+async function popupGap(page: Page, markerSelector: string) {
+  return page.evaluate((selector) => {
+    const marker = document.querySelector(selector)!,
+      popup = document.querySelector('.leaflet-popup')!,
+      tip = document.querySelector('.leaflet-popup-tip-container')!;
+    const icon = marker.getBoundingClientRect(),
+      span = marker.querySelector('span')?.getBoundingClientRect(),
+      box = popup.getBoundingClientRect(),
+      point = tip.getBoundingClientRect();
+    return {
+      gap:
+        Math.min(icon.top, span?.top ?? icon.top) -
+        Math.max(box.bottom, point.bottom),
+      popup: { x: box.x, y: box.y, right: box.right, bottom: box.bottom },
+      icon: { x: icon.x, y: icon.y, right: icon.right, bottom: icon.bottom },
+      viewport: { width: innerWidth, height: innerHeight },
+    };
+  }, markerSelector);
+}
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  for (const kind of ['available', 'tracking'] as const) {
+    test(`popup clears real ${kind} icon after map changes ${viewport.name}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await data(
+        page,
+        [
+          locker(1, 'Geometría segura'),
+          ...(kind === 'available'
+            ? [
+                locker(2, 'Segundo popup', {
+                  latitude: 40.42,
+                  longitude: -3.71,
+                }),
+              ]
+            : []),
+        ],
+        false,
+      );
+      const selector =
+        kind === 'available'
+          ? '.locker-marker[title="Geometría segura"]'
+          : '.tracking-marker';
+      if (kind === 'tracking') {
+        await page.route('**/tracking/*', (r) =>
+          r.fulfill({ json: tracked() }),
+        );
+        await page.locator('#tracking-tab').click();
+        await track(page, 1001);
+        await expect(page.locator('.tracking-marker')).toHaveCount(1);
+      }
+      const marker = page.locator(selector);
+      await marker.focus();
+      await marker.press('Enter');
+      await expect(page.locator('.leaflet-popup')).toBeVisible();
+      if (kind === 'available') {
+        await expect(page.locator('.locker-popup')).toContainText(
+          'Seleccionar como:',
+        );
+        await expect(
+          page.getByRole('button', { name: 'Locker de entrega', exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: 'Locker de recogida', exact: true }),
+        ).toBeVisible();
+        await expect(page.locator('.locker-popup')).not.toContainText(
+          'Seleccionar como locker',
+        );
+      } else {
+        await expect(page.locator('.locker-popup')).toContainText(
+          'Locker actual',
+        );
+        await expect(page.locator('.locker-popup button')).toHaveCount(0);
+      }
+      async function assertGap() {
+        const geometry = await popupGap(page, selector);
+        expect(geometry.gap).toBeGreaterThanOrEqual(4);
+        expect(
+          await marker.evaluate((node) => {
+            const r = node.getBoundingClientRect();
+            return (
+              document
+                .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                ?.closest('.locker-marker,.tracking-marker') === node
+            );
+          }),
+        ).toBe(true);
+
+        expect(geometry.popup.x).toBeGreaterThanOrEqual(0);
+        expect(geometry.popup.y).toBeGreaterThanOrEqual(0);
+        expect(geometry.popup.right).toBeLessThanOrEqual(
+          geometry.viewport.width,
+        );
+        expect(geometry.popup.bottom).toBeLessThanOrEqual(
+          geometry.viewport.height,
+        );
+        expect(geometry.icon.y).toBeGreaterThanOrEqual(0);
+        expect(geometry.icon.bottom).toBeLessThanOrEqual(
+          geometry.viewport.height,
+        );
+      }
+      await assertGap();
+      await page.screenshot({
+        path: `test-results/popup-gap-${kind}-${viewport.name}.png`,
+      });
+      await page.mouse.move(viewport.width - 15, viewport.height - 50);
+      await page.mouse.down();
+      await page.mouse.move(viewport.width - 40, viewport.height - 65, {
+        steps: 5,
+      });
+      await page.mouse.up();
+      await page.waitForTimeout(250);
+      await assertGap();
+      await page.mouse.move(viewport.width - 15, viewport.height - 50);
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(400);
+      await assertGap();
+      await page.setViewportSize({
+        width: viewport.width + (kind === 'available' ? 10 : 20),
+        height: viewport.height + 30,
+      });
+      await page.waitForTimeout(200);
+      await assertGap();
+      await page.locator('.leaflet-popup-close-button').focus();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.leaflet-popup')).toHaveCount(0);
+      await expect(marker).toBeFocused();
+      expect(
+        await marker.evaluate((node) =>
+          node.parentElement?.classList.contains('leaflet-marker-pane'),
+        ),
+      ).toBe(true);
+      await marker.press('Enter');
+      await expect(
+        page.locator('.inspection-pane').locator(selector),
+      ).toHaveCount(1);
+      if (kind === 'available') {
+        await page
+          .getByRole('button', { name: 'Locker de entrega', exact: true })
+          .click();
+        await expect(page.locator('#delivery-locker')).toHaveAttribute(
+          'data-selected-id',
+          id(1),
+        );
+        await expect(page.locator('#delivery-locker')).toBeFocused();
+        expect(
+          await marker.evaluate((node) =>
+            node.parentElement?.classList.contains('leaflet-marker-pane'),
+          ),
+        ).toBe(true);
+        await marker.press('Enter');
+        const other = page.locator('.locker-marker[title="Segundo popup"]');
+        await other.focus();
+        await other.press('Enter');
+        expect(
+          await marker.evaluate((node) =>
+            node.parentElement?.classList.contains('leaflet-marker-pane'),
+          ),
+        ).toBe(true);
+        expect(
+          await other.evaluate((node) =>
+            node.parentElement?.classList.contains('inspection-pane'),
+          ),
+        ).toBe(true);
+        await page.reload();
+        await expect(page.locator('#available-count')).toHaveText('2');
+        await expect(
+          page.locator('.inspection-pane .locker-marker'),
+        ).toHaveCount(0);
+        await expect(
+          page.locator('.leaflet-marker-pane .locker-marker'),
+        ).toHaveCount(2);
+      } else {
+        await page.locator('#quote-tab').click();
+        await expect(
+          page.locator('.inspection-pane .tracking-marker'),
+        ).toHaveCount(0);
+      }
+    });
+  }
+}

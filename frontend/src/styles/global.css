@@ -894,7 +894,7 @@ select:focus-visible {
   outline: none;
 }
 .locker-popup {
-  max-height: min(300px, calc(100dvh - 130px));
+  max-height: min(300px, calc(100dvh - 170px));
   overflow: auto;
   overscroll-behavior: contain;
   padding: 2px;
@@ -948,4 +948,20 @@ select:focus-visible {
 .locker-selector > input {
   scroll-margin-top: 64px;
   scroll-margin-bottom: 12px;
+}
+.locker-popup .popup-role-label {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.popup-role-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.locker-popup .popup-role-actions button {
+  margin: 0;
+  min-height: 48px;
+  padding: 8px;
+  line-height: 1.4;
 }

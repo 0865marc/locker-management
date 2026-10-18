@@ -148,6 +148,53 @@ function chooseRole(role: LockerRole, locker: AvailableLocker) {
   map.closePopup();
   (role === 'pickup' ? pickup : delivery).select(locker);
 }
+let inspected: { marker: L.Marker; popup: L.Popup } | null = null;
+let fittingInspection = false;
+function fitInspection() {
+  if (fittingInspection || !inspected || !map.hasLayer(inspected.popup)) return;
+  const popupNode = inspected.popup.getElement();
+  const iconNode = inspected.marker.getElement();
+  if (!popupNode || !iconNode) return;
+  const popup = popupNode.getBoundingClientRect();
+  const icon = iconNode.getBoundingClientRect();
+  const painted =
+    iconNode.querySelector('span')?.getBoundingClientRect() ?? icon;
+  const tip =
+    popupNode
+      .querySelector('.leaflet-popup-tip-container')
+      ?.getBoundingClientRect() ?? popup;
+  const size = map.getSize(),
+    padding = 12;
+  const left = Math.min(popup.left, icon.left, painted.left);
+  const right = Math.max(popup.right, icon.right, painted.right);
+  const top = Math.min(popup.top, icon.top, painted.top);
+  const bottom = Math.max(
+    popup.bottom,
+    tip.bottom,
+    icon.bottom,
+    painted.bottom,
+  );
+  const dx =
+    left < padding
+      ? left - padding
+      : right > size.x - padding
+        ? right - size.x + padding
+        : 0;
+  const dy =
+    top < padding
+      ? top - padding
+      : bottom > size.y - padding
+        ? bottom - size.y + padding
+        : 0;
+  if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+  fittingInspection = true;
+  map.panBy([dx, dy], { animate: false });
+  fittingInspection = false;
+}
+map.on('moveend zoomend resize', fitInspection);
+map.on('popupclose', (event) => {
+  if (inspected?.popup === event.popup) inspected = null;
+});
 function bindInspection(
   marker: L.Marker,
   label: string,
@@ -161,15 +208,20 @@ function bindInspection(
     text('p', address ?? 'Dirección no registrada'),
   );
   if (available) {
+    const caption = text('p', 'Seleccionar como:');
+    caption.className = 'popup-role-label';
+    const actions = document.createElement('div');
+    actions.className = 'popup-role-actions';
+    content.append(caption, actions);
     for (const [role, label] of [
-      ['delivery', 'Seleccionar como locker de entrega'],
-      ['pickup', 'Seleccionar como locker de recogida'],
+      ['delivery', 'Locker de entrega'],
+      ['pickup', 'Locker de recogida'],
     ] as const) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label;
       button.addEventListener('click', () => chooseRole(role, available));
-      content.append(button);
+      actions.append(button);
     }
   }
   L.DomEvent.disableClickPropagation(content);
@@ -185,6 +237,7 @@ function bindInspection(
   const open = () => {
     for (const other of markers.values()) other.setZIndexOffset(0);
     marker.setZIndexOffset(1000);
+    inspected = { marker, popup };
     marker.openPopup();
     const size = map.getSize();
     if (matchMedia('(max-width:760px)').matches) {
@@ -197,6 +250,7 @@ function bindInspection(
         { animate: false },
       );
     } else revealPosition([marker.getLatLng().lat, marker.getLatLng().lng]);
+    fitInspection();
     const popupNode = popup.getElement();
     const focus = popupNode?.querySelector<HTMLElement>('button, a');
     focus?.focus({ preventScroll: true });
@@ -219,7 +273,24 @@ function bindInspection(
       marker.getElement()?.focus({ preventScroll: true });
     }
   });
+  let promoted: { icon: HTMLElement; parent: HTMLElement } | null = null;
+  marker.on('popupclose', () => {
+    if (promoted && marker.getElement() === promoted.icon)
+      promoted.parent.append(promoted.icon);
+    promoted = null;
+  });
   marker.on('popupopen', () => {
+    // Keep just the inspected icon visible beside its popup above the menu.
+    const icon = marker.getElement();
+    if (
+      icon?.parentElement &&
+      inspection &&
+      icon.parentElement !== inspection
+    ) {
+      promoted = { icon, parent: icon.parentElement };
+      inspection.append(icon);
+    }
+
     const close = popup
       .getElement()
       ?.querySelector<HTMLElement>('.leaflet-popup-close-button');
@@ -262,6 +333,7 @@ function render() {
         html: '<span aria-hidden="true">▦</span>',
         iconSize: [34, 40],
         iconAnchor: [17, 40],
+        popupAnchor: [0, -62],
       }),
     }).addTo(map);
     markers.set(locker.id, marker);
@@ -335,6 +407,7 @@ const tracking = setupTracking(element, (parcel) => {
       html: '<span aria-hidden="true">●</span>',
       iconSize: [30, 30],
       iconAnchor: [15, 15],
+      popupAnchor: [0, -28],
     }),
     zIndexOffset: 2000,
   }).addTo(map);

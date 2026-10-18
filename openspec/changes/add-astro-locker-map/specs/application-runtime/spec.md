@@ -4,22 +4,35 @@
 
 ### Requirement: Generate synthetic lockers manually through the API
 
-The repository SHALL provide a manually invoked script that creates 250 synthetic lockers by default using the existing POST /lockers API. It SHALL support a positive count through --count, API base URL, reproducible random seed and a dry run without HTTP writes. Generated lockers SHALL be active with enabled free compartments, a synthetic alias, null address and terrestrial coordinates within the bundled Spanish boundary. Startup and builds SHALL NOT run the script automatically.
+The manual generator SHALL create 250 demonstration lockers by default through POST /lockers, supporting positive --count, API base URL, reproducible --seed and --dry-run without HTTP. Each SHALL have a DEMO alias, active state, enabled free compartments and a complete address/coordinate pair from the bundled real-location catalogue. Runtime SHALL NOT download or geocode locations. Startup/builds SHALL NOT invoke the generator.
 
 #### Scenario: Create the requested demonstration collection
-- **WHEN** the script runs against an empty dedicated API with default count and successful responses
-- **THEN** exactly 250 lockers are created and appear as available in the existing list/map
-- **AND** every generated coordinate belongs to the bundled Spanish land geometry, rather than an unrestricted bounding rectangle
+- **WHEN** the script runs against a dedicated API with default count and successful responses
+- **THEN** exactly 250 new lockers have street, explicit street number, postal code, city, province, country ES and coordinates from their respective source records
+- **AND** no source postcode is attached to another random or perturbed position
 
-#### Scenario: Override the default quantity
-- **WHEN** the script runs with --count 12 and all creation requests succeed
-- **THEN** exactly 12 new lockers are added regardless of the existing collection size
-- **AND** existing lockers are preserved
+#### Scenario: Override quantity and exhaust the catalogue
+- **WHEN** --count requests 12 lockers or more lockers than the catalogue contains
+- **THEN** that exact number is generated, with repetition allowed after exhausting catalogue records
+- **AND** existing lockers are neither removed nor updated, including those without addresses
 
-#### Scenario: Reproduce generation without writing
-- **WHEN** two dry runs use the same seed, count and boundary version
-- **THEN** they produce the same ordered creation payloads without making API requests
-- **AND** reproducibility covers coordinates and input fields, not UUIDs generated later by the server
+#### Scenario: Reproduce generation without external services
+- **WHEN** two dry runs use the same seed, count and catalogue version without network access
+- **THEN** they produce identical ordered complete payloads without HTTP, geocoding or fabricated address fields
+- **AND** reproducibility covers payloads, not server-generated UUIDs
+
+### Requirement: Preserve traceable real address and coordinate records
+
+The bundled catalogue SHALL retain complete addresses and coordinates together from a fixed documented source. Provenance SHALL identify the source snapshot/date, record identifiers, normalization, hashes and reuse conditions. Ambiguous or incomplete addresses SHALL be excluded rather than invented. Documentation SHALL distinguish source-backed locations from synthetic lockers and physical verification, including possible repeated locations.
+
+#### Scenario: Verify provenance and unambiguous normalization
+- **WHEN** a catalogue record is checked against its identified source record
+- **THEN** street/number, postcode, municipality/province and coordinates correspond without location jitter or inferred postal data
+- **AND** ambiguous road/kilometre text is not converted into a fabricated street number; source attribution/date is retained without implying endorsement
+
+#### Scenario: Invalid catalogue before creation
+- **WHEN** the catalogue is unreadable or contains invalid required fields or coordinates
+- **THEN** the generator reports the problem before issuing any creation request
 
 ### Requirement: Report partial demonstration creation without destructive recovery
 

@@ -1,4 +1,7 @@
-import { matchingLockers } from '../lib/locker-selection';
+import {
+  matchingLockers,
+  lockerSuggestionState,
+} from '../lib/locker-selection';
 import type { AvailableLocker } from '../lib/lockers';
 export type LockerRole = 'pickup' | 'delivery';
 export function setupLockerSelector(
@@ -47,6 +50,20 @@ export function setupLockerSelector(
     clearTimeout(hideTimer);
     list.replaceChildren();
     const matches = matchingLockers(lockers, input.value);
+    const state = lockerSuggestionState(input.value, matches.length);
+    const searchStatus = element('search-status');
+    searchStatus.textContent =
+      state === 'refine'
+        ? 'Concreta la búsqueda'
+        : state === 'none'
+          ? 'Sin coincidencias'
+          : '';
+    searchStatus.hidden = state === 'empty' || state === 'matches';
+    if (state !== 'matches') {
+      close();
+      return;
+    }
+
     for (const locker of matches) {
       const li = document.createElement('li');
       li.setAttribute('role', 'presentation');
@@ -72,7 +89,6 @@ export function setupLockerSelector(
       li.append(button);
       list.append(li);
     }
-    element('empty').hidden = matches.length > 0;
     suggestions.inert = false;
     suggestions.setAttribute('aria-hidden', 'false');
     input.setAttribute('aria-expanded', 'true');
@@ -101,6 +117,7 @@ export function setupLockerSelector(
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       if (suggestions.inert) show();
+      if (suggestions.inert) return;
       const options = [...list.querySelectorAll('button')];
       const current = options.indexOf(
         document.activeElement as HTMLButtonElement,

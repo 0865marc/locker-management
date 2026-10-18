@@ -1,4 +1,4 @@
-"""Manual synthetic-data generation, geographic membership and HTTP outcomes."""
+"""Complete source-backed locations, reproducible generation and HTTP outcomes."""
 
 import io
 import json
@@ -16,28 +16,41 @@ from adapters.http.lockers.schemas import CreateLocker
 from scripts import seed_lockers as seed
 
 
-class SeedGeometryTests(unittest.TestCase):
+class SeedCatalogueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.polygons = seed.load_boundary()
+        cls.locations = seed.load_catalogue()
+        cls.catalogue = json.loads(seed.CATALOGUE_PATH.read_text(encoding="utf-8"))
 
-    def test_thousand_available_payloads_are_deterministic_and_on_spanish_land(
+    def test_thousand_payloads_are_reproducible_complete_and_exact_source_pairs(
         self,
     ) -> None:
-        payloads = seed.generate_payloads(1000, 42, self.polygons)
+        payloads = seed.generate_payloads(1000, 42, self.locations)
         self.assertEqual(len(payloads), 1000)
-        self.assertEqual(payloads, seed.generate_payloads(1000, 42, self.polygons))
-        self.assertNotEqual(payloads[:3], seed.generate_payloads(3, 43, self.polygons))
-        self.assertEqual(len(self.polygons), 23)
-        self.assertEqual(len({item["location_id"] for item in payloads}), 1000)
+        self.assertEqual(payloads, seed.generate_payloads(1000, 42, self.locations))
+        self.assertNotEqual(payloads[:3], seed.generate_payloads(3, 43, self.locations))
+        self.assertEqual(len(self.locations), 3423)
+        self.assertEqual(
+            len({location.source_province_id for location in self.locations}), 52
+        )
+        pairs = {
+            (
+                json.dumps(location.address, sort_keys=True),
+                json.dumps(location.coordinates, sort_keys=True),
+            )
+            for location in self.locations
+        }
+        seen_pairs = set()
         for index, payload in enumerate(payloads, start=1):
-            coordinates = payload["coordinates"]
-            point = (coordinates["longitude"], coordinates["latitude"])
-            self.assertTrue(seed.on_land(point, self.polygons), point)
-            # Validate every generated POST body against the unchanged API contract.
+            pair = (
+                json.dumps(payload["address"], sort_keys=True),
+                json.dumps(payload["coordinates"], sort_keys=True),
+            )
+            self.assertIn(pair, pairs)
+            seen_pairs.add(pair)
             parsed = CreateLocker.model_validate(payload)
             self.assertIs(parsed.active, True)
-            self.assertIsNone(parsed.address)
+            self.assertIsNotNone(parsed.address)
             self.assertEqual(parsed.location_id, f"DEMO-42-{index}")
             self.assertEqual(len(parsed.compartments), 1)
             batch = parsed.compartments[0]
@@ -47,70 +60,156 @@ class SeedGeometryTests(unittest.TestCase):
                 batch.dimensions.model_dump(),
                 {"width_mm": 400, "height_mm": 400, "depth_mm": 600},
             )
-            self.assertNotIn("occupied", payload)
-
-    def test_reference_land_and_sea_positions(self) -> None:
-        for point in (
-            (-3.7038, 40.4168),  # Madrid
-            (2.65, 39.60),  # Mallorca
-            (-16.31, 28.46),  # Tenerife
-            (-5.35, 35.90),  # Ceuta
-            (-2.95, 35.29),  # Melilla
-            (1.981, 42.464),  # Llívia
-        ):
-            with self.subTest(point=point):
-                self.assertTrue(seed.on_land(point, self.polygons))
-        for point in ((-9.14, 38.72), (2.35, 48.86), (0.0, 38.0), (-12.0, 30.0)):
-            with self.subTest(point=point):
-                self.assertFalse(seed.on_land(point, self.polygons))
-
-    def test_shell_holes_and_edges(self) -> None:
-        shell = ((0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0))
-        hole = ((1.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0), (1.0, 1.0))
-        polygon = seed.Polygon((shell, hole), (0.0, 0.0, 4.0, 4.0))
-        self.assertTrue(seed.on_land((0.5, 0.5), (polygon,)))
-        for point in ((2.0, 2.0), (1.0, 2.0), (0.0, 2.0), (4.1, 2.0)):
-            self.assertFalse(seed.on_land(point, (polygon,)))
-        generated = seed.generate_payloads(100, 42, (polygon,))
-        for payload in generated:
-            point = payload["coordinates"]
-            self.assertFalse(
-                1 <= point["longitude"] <= 3 and 1 <= point["latitude"] <= 3
+            self.assertEqual(
+                set(payload),
+                {"location_id", "active", "address", "coordinates", "compartments"},
             )
+        self.assertEqual(len(seen_pairs), 1000)
 
-    def test_rounding_is_checked_again_before_emitting_coordinates(self) -> None:
-        shell = (
-            (0.0000004, 0.0),
-            (1.0, 0.0),
-            (1.0, 1.0),
-            (0.0000004, 1.0),
-            (0.0000004, 0.0),
-        )
-        polygon = seed.Polygon((shell,), (0.0000004, 0.0, 1.0, 1.0))
-        with patch("scripts.seed_lockers.random.Random") as random:
-            random.return_value.uniform.side_effect = [0.00000049, 0.5, 0.5, 0.5]
-            payload = seed.generate_payloads(1, 42, (polygon,))[0]
-        self.assertEqual(payload["coordinates"], {"longitude": 0.5, "latitude": 0.5})
-
-    def test_corrupt_boundary_is_rejected(self) -> None:
-        for data in (
-            {},
-            {"type": "Polygon", "coordinates": []},
-            {"type": "MultiPolygon", "coordinates": []},
-            {
-                "type": "MultiPolygon",
-                "coordinates": [[[[0, 0], [1, 0], [1, 1], [2, 2]]]],
-            },
-            {
-                "type": "MultiPolygon",
-                "coordinates": [[[[0, 0], [1, 0], [1, 999], [0, 0]]]],
-            },
+    def test_every_normalized_field_matches_its_preserved_source_record(self) -> None:
+        for location, raw in zip(
+            self.locations, self.catalogue["records"], strict=True
         ):
-            with self.subTest(data=data), tempfile.TemporaryDirectory() as directory:
-                path = Path(directory) / "boundary.json"
-                path.write_text(json.dumps(data))
-                with self.assertRaises(ValueError):
-                    seed.load_boundary(path)
+            self.assertEqual(location.source_id, raw["IDEESS"])
+            self.assertEqual(location.source_address, raw["Dirección"])
+            self.assertEqual(location.source_latitude, raw["Latitud"])
+            self.assertEqual(location.source_longitude, raw["Longitud (WGS84)"])
+            self.assertEqual(location.address["postal_code"], raw["C.P."])
+            self.assertEqual(location.address["postal_code"][:2], raw["IDProvincia"])
+            self.assertEqual(location.address["city"], raw["Localidad"])
+            self.assertEqual(location.address["province"], raw["Provincia"])
+            self.assertEqual(location.address["country_code"], "ES")
+            street, number = raw["Dirección"].split(",")
+            self.assertEqual(location.address["street"], street)
+            self.assertEqual(location.address["street_number"], number.strip())
+            self.assertEqual(
+                location.coordinates["latitude"],
+                float(raw["Latitud"].replace(",", ".")),
+            )
+            self.assertEqual(
+                location.coordinates["longitude"],
+                float(raw["Longitud (WGS84)"].replace(",", ".")),
+            )
+        # Concrete pinned-source example, preserving the leading-zero postal code.
+        example = next(
+            location for location in self.locations if location.source_id == "4375"
+        )
+        self.assertEqual(
+            example.address,
+            {
+                "country_code": "ES",
+                "postal_code": "02250",
+                "province": "ALBACETE",
+                "city": "ABENGIBRE",
+                "street": "AVENIDA CASTILLA LA MANCHA",
+                "street_number": "26",
+            },
+        )
+        self.assertEqual(
+            example.coordinates, {"latitude": 39.211417, "longitude": -1.539167}
+        )
+        self.assertNotIn("12883", {location.source_id for location in self.locations})
+
+    def test_rounds_exhaust_all_records_before_repeating_and_do_not_mutate_catalogue(
+        self,
+    ) -> None:
+        locations = self.locations[:3]
+        before = json.dumps([location.address for location in locations])
+        payloads = seed.generate_payloads(8, 7, locations)
+        pairs = [(payload["address"], payload["coordinates"]) for payload in payloads]
+        expected = [(location.address, location.coordinates) for location in locations]
+        for start in (0, 3):
+            self.assertCountEqual(pairs[start : start + 3], expected)
+        self.assertEqual(len(payloads), 8)
+        self.assertEqual(len({item["location_id"] for item in payloads}), 8)
+        payloads[0]["address"]["street"] = "changed locally"
+        self.assertEqual(
+            json.dumps([location.address for location in locations]), before
+        )
+
+    def test_ambiguous_addresses_are_excluded_instead_of_inventing_numbers(
+        self,
+    ) -> None:
+        example = self.catalogue["records"][0]
+        for address in (
+            "CR CM-332, 46,4",
+            "CARRETERA A-1 KM 14",
+            "CALLE MAYOR",
+            "CALLE MAYOR, S/N",
+            "CALLE MAYOR, 1,4",
+        ):
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                seed.source_record({**example, "Dirección": address})
+        self.assertEqual(
+            seed.source_record({**example, "Dirección": "CALLE MAYOR, 14B"}).address[
+                "street_number"
+            ],
+            "14B",
+        )
+
+    def test_invalid_or_duplicate_catalogue_records_fail_before_any_http(self) -> None:
+        example = self.catalogue["records"][0]
+        invalid_rows = [
+            {**example, "Dirección": "CR CM-332, 46,4"},
+            {**example, "IDEESS": ""},
+            {**example, "IDEESS": "unknown"},
+            {**example, "C.P.": 2250},
+            {**example, "C.P.": "28001"},
+            {**example, "Provincia": ""},
+            {**example, "Municipio": ""},
+            {**example, "Localidad": None},
+            {**example, "Latitud": "NaN"},
+            {**example, "Latitud": "91,0"},
+            {**example, "Longitud (WGS84)": "Infinity"},
+            {**example, "Latitud": "0", "Longitud (WGS84)": "0"},
+        ]
+        invalid_catalogues = [
+            {},
+            {**self.catalogue, "records": []},
+            {
+                **self.catalogue,
+                "source": {
+                    "snapshot_date": "unknown",
+                    "snapshot_sha256": seed.SNAPSHOT_SHA256,
+                },
+            },
+            {**self.catalogue, "records": [example, example]},
+            *[
+                {**self.catalogue, "records": [example, invalid]}
+                for invalid in invalid_rows
+            ],
+        ]
+        real_load = seed.load_catalogue
+        for catalogue in invalid_catalogues:
+            with (
+                self.subTest(catalogue=str(catalogue)[-100:]),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                path = Path(directory) / "catalogue.json"
+                path.write_text(json.dumps(catalogue), encoding="utf-8")
+                with (
+                    redirect_stderr(io.StringIO()) as errors,
+                    patch(
+                        "scripts.seed_lockers.load_catalogue",
+                        side_effect=lambda: real_load(path),
+                    ),
+                    patch("scripts.seed_lockers.build_opener") as http,
+                ):
+                    self.assertEqual(seed.main(["--count", "2"]), 1)
+                http.assert_not_called()
+                self.assertIn("antes de escribir", errors.getvalue())
+
+    def test_catalogue_fingerprint_matches_documented_extract(self) -> None:
+        import hashlib
+
+        self.assertEqual(
+            hashlib.sha256(seed.CATALOGUE_PATH.read_bytes()).hexdigest(),
+            "5fa87d383d0f42cfa48f032098b0210731461e838f6fdd8e4107a345900d01d6",
+        )
+        self.assertEqual(self.catalogue["source"]["snapshot_date"], seed.SNAPSHOT_DATE)
+        self.assertEqual(
+            self.catalogue["source"]["snapshot_sha256"], seed.SNAPSHOT_SHA256
+        )
 
 
 class SeedCliTests(unittest.TestCase):
@@ -153,7 +252,7 @@ class SeedCliTests(unittest.TestCase):
             with (
                 self.subTest(arguments=arguments),
                 redirect_stderr(io.StringIO()),
-                patch("scripts.seed_lockers.load_boundary") as load,
+                patch("scripts.seed_lockers.load_catalogue") as load,
                 patch("scripts.seed_lockers.build_opener") as http,
             ):
                 with self.assertRaises(SystemExit) as result:
@@ -162,12 +261,13 @@ class SeedCliTests(unittest.TestCase):
                 load.assert_not_called()
                 http.assert_not_called()
 
-    def test_invalid_geography_is_reported_before_http(self) -> None:
+    def test_unreadable_catalogue_is_reported_before_http(self) -> None:
         errors = io.StringIO()
         with (
             redirect_stderr(errors),
             patch(
-                "scripts.seed_lockers.load_boundary", side_effect=ValueError("geometry")
+                "scripts.seed_lockers.load_catalogue",
+                side_effect=OSError("unreadable catalogue"),
             ),
             patch("scripts.seed_lockers.build_opener") as http,
         ):
@@ -242,7 +342,7 @@ class SeedHttpTests(unittest.TestCase):
         self.assertIn("puede haberse creado", errors.getvalue())
 
     def test_request_contract_timeout_and_confirmed_response(self) -> None:
-        payload = seed.generate_payloads(1, 42, seed.load_boundary())[0]
+        payload = seed.generate_payloads(1, 42, seed.load_catalogue())[0]
         with patch("scripts.seed_lockers.build_opener") as factory:
             response = factory.return_value.open.return_value.__enter__.return_value
             response.status = 201
@@ -261,7 +361,7 @@ class SeedHttpTests(unittest.TestCase):
         self.assertEqual(UUID(json.loads(response.read.return_value)["id"]).version, 4)
 
     def test_unconfirmed_response_never_counts_as_success(self) -> None:
-        payload = seed.generate_payloads(1, 42, seed.load_boundary())[0]
+        payload = seed.generate_payloads(1, 42, seed.load_catalogue())[0]
         for status, body in (
             (200, b"{}"),
             (201, b"not-json"),

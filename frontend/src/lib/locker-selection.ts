@@ -16,3 +16,12 @@ export function matchingLockers(
     ).includes(needle),
   );
 }
+
+export function lockerSuggestionState(
+  query: string,
+  count: number,
+): 'empty' | 'none' | 'refine' | 'matches' {
+  if (!query.trim()) return 'empty';
+  if (count <= 0) return 'none';
+  return count > 20 ? 'refine' : 'matches';
+}

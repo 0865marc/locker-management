@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { matchingLockers } from '../src/lib/locker-selection';
+import {
+  matchingLockers,
+  lockerSuggestionState,
+} from '../src/lib/locker-selection';
 import type { AvailableLocker } from '../src/lib/lockers';
 
 const lockers: AvailableLocker[] = [
@@ -61,4 +64,19 @@ describe('local locker candidates', () => {
     expect(matchingLockers(many, 'centro')).toHaveLength(30);
     expect(many).toEqual(before);
   });
+});
+
+describe('bounded suggestion gate', () => {
+  it.each([
+    ['', 0, 'empty'],
+    [' ', 20, 'empty'],
+    ['', 21, 'empty'],
+    ['a', 0, 'none'],
+    ['a', 1, 'matches'],
+    ['a', 20, 'matches'],
+    ['a', 21, 'refine'],
+    [' a ', 1, 'matches'],
+  ])('gates query %j and count %s', (query, count, state) =>
+    expect(lockerSuggestionState(String(query), Number(count))).toBe(state),
+  );
 });

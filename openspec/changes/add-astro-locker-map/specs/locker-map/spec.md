@@ -58,7 +58,7 @@ A separate search panel above the tabs SHALL find Spanish directions or postal c
 
 ### Requirement: Select actual lockers for both shipment roles
 
-Pickup and delivery selectors SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Editing a role's text SHALL clear its selection and postal input. Selecting one role SHALL preserve the other and parcel values. Every matching locker, including coincident or unmapped ones, SHALL remain keyboard reachable.
+Pickup and delivery selectors SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Editing a role's text SHALL clear its selection and postal input. Selecting one role SHALL preserve the other and parcel values. All matches in an eligible result set, including coincident or unmapped lockers, SHALL remain keyboard reachable.
 
 #### Scenario: Local candidates and independent roles
 - **WHEN** a visitor searches by label, address or postcode and chooses a locker for each role
@@ -69,6 +69,25 @@ Pickup and delivery selectors SHALL filter loaded available lockers locally by l
 - **WHEN** the selected label is edited or a different locker is chosen for a role
 - **THEN** that role's previous selection or manual postal supplement and obsolete quotations are cleared, while the other role and parcel values remain
 - **AND** typing the old label back does not restore its UUID without selection; reopening suggestions or choosing the unchanged UUID does not erase a valid supplement
+
+### Requirement: Open locker suggestions only for bounded searches
+
+Both role selectors SHALL open candidates only for a nonempty trimmed query with 1..20 matches, showing all matches. Empty queries SHALL keep the list closed; more than 20 SHALL request refinement without displaying the first 20; zero SHALL announce no matches with the list closed. Focus, click, Enter and arrow keys SHALL obey the same rule. Opening, closing or choosing the unchanged UUID SHALL preserve selection and manual postal input.
+
+#### Scenario: Empty and oversized searches
+- **WHEN** the field is empty or contains a query matching 21 or more lockers
+- **THEN** focus, click and keyboard cannot open candidates; an oversized query announces "Concreta la búsqueda"
+- **AND** there is no fixed character minimum beyond nonempty text and no truncated candidate set
+
+#### Scenario: Zero, one and twenty matches
+- **WHEN** editing narrows a query to 20 matches, then one, then zero
+- **THEN** all 20 or the single candidate can be selected, while zero closes the list and announces "Sin coincidencias"
+- **AND** searching remains local, without requests or automatic selection
+
+#### Scenario: Animation and preserved selection
+- **WHEN** eligible and ineligible queries alternate rapidly, or an unchanged selected locker is inspected and chosen again
+- **THEN** hidden candidates immediately become inert, older animation callbacks cannot reopen them, reduced motion is respected and the unchanged UUID retains its manual postcode
+- **AND** editing the selected text still invalidates that role according to the selection requirement
 
 ### Requirement: Animate and dismiss geographic suggestions accessibly
 
@@ -93,7 +112,7 @@ Geographic search SHALL have independent loading, no-results and error states, w
 
 ### Requirement: Choose a shipment role from a locker popup
 
-Opening an available locker marker SHALL show a popup with its label, recorded address or absence, and "Seleccionar como locker de entrega"/"Seleccionar como locker de recogida". Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
+Opening an available locker marker SHALL show its label, recorded address or absence, shared text "Seleccionar como:" and buttons "Locker de entrega"/"Locker de recogida". Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
 
 #### Scenario: Inspect then choose explicitly
 - **WHEN** a visitor opens an available marker in either mode and then chooses a role
@@ -104,6 +123,15 @@ Opening an available locker marker SHALL show a popup with its label, recorded a
 - **WHEN** a keyboard user follows the quotation skip link or closes a marker popup with Escape
 - **THEN** the link activates quotation and focuses pickup selection, while popup dismissal restores marker focus when possible
 - **AND** choosing lockers remains possible without pointer interaction, including coincident and unmapped lockers
+
+### Requirement: Position inspection popups above their markers
+
+Inspection popups SHALL appear above the top of their associated icon with a visible gap, without covering the icon or changing its stored coordinates. This relation SHALL hold for available and tracking markers after opening, pan, zoom and viewport resize. Desktop and mobile layouts SHALL keep content, actions and focus reachable, using internal scrolling when needed rather than omitting actions.
+
+#### Scenario: Popup geometry across map and viewport changes
+- **WHEN** a popup is opened and the map pans, zooms or resizes on desktop or at 375×480
+- **THEN** the popup and its pointer remain above and separated from the icon, and its content/actions remain reachable
+- **AND** role selection, Escape and focus restoration retain their existing behavior
 
 ### Requirement: Read live lockers in the browser
 
