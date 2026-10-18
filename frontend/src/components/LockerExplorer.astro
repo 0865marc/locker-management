@@ -39,18 +39,8 @@ import LockerSelector from './LockerSelector.astro';
       </div>
       <div id="quote-view" role="tabpanel" aria-labelledby="quote-tab">
         <form id="shipping-form" novalidate autocomplete="off">
-          <LockerSelector
-            role="pickup"
-            label="Locker de recogida"
-            postalId="origin-postal"
-            postalLabel="CP de origen"
-          />
-          <LockerSelector
-            role="delivery"
-            label="Locker de entrega"
-            postalId="destination-postal"
-            postalLabel="CP de destino"
-          />
+          <LockerSelector role="pickup" label="Locker de origen" />
+          <LockerSelector role="delivery" label="Locker de destino" />
           <div id="parcel-form" role="group" aria-label="Medidas del paquete">
             <div class="parcel-fields">
               {[
@@ -102,8 +92,8 @@ import LockerSelector from './LockerSelector.astro';
             Reintentar consulta
           </button>
           <p id="tile-warning" class="tile-warning" role="status" hidden>
-            No se ha podido cargar el fondo del mapa. Puedes elegir los lockers en
-            los selectores del menú.
+            No se ha podido cargar el fondo del mapa. Puedes elegir los lockers
+            en los selectores del menú.
           </p>
         </div>
         <div class="metrics">

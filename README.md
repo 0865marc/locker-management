@@ -46,8 +46,8 @@ resultado solo centra y marca el mapa; no elige lockers, rellena CP, cambia modo
 ni invalida una cotización o un seguimiento. Enter no duplica consultas.
 
 Las pestañas admiten Tab, flechas izquierda/derecha y Home/End. El contenido
-inactivo queda oculto y sin foco. Cambiar conserva ambos lockers, suplementos
-postales y medidas, cierra sugerencias/resultados y detiene esperas locales,
+inactivo queda oculto y sin foco. Cambiar conserva ambos lockers y medidas,
+cierra sugerencias/resultados y detiene esperas locales,
 sin consultar de nuevo ni cancelar trabajos persistidos del worker.
 
 Las sugerencias geográficas y locales admiten teclado, click o toque, cierre con
@@ -156,7 +156,7 @@ locales hasta pulsar **Comparar envíos**. Buscar una dirección no los envía.
 
 ### Comparar envíos entre lockers
 
-En el menú, **Locker de recogida** y **Locker de entrega** buscan localmente entre
+En el menú, **Locker de origen** y **Locker de destino** buscan localmente entre
 los lockers disponibles ya cargados, por nombre, dirección o CP. No consultan
 Photon ni hacen peticiones adicionales, y no prometen proximidad geográfica.
 La lista se abre cuando la consulta no está vacía y quedan entre **1 y 20
@@ -167,31 +167,33 @@ el nombre exacto, no establece su UUID. Los resultados de una búsqueda acotada,
 incluidos lockers coincidentes o sin coordenadas, son accesibles con scroll y
 teclado. La selección de un rol conserva el otro y las
 medidas. El enlace de teclado **Elegir lockers y cotizar** activa cotización y
-enfoca recogida sin abrir resultados.
+enfoca origen sin abrir resultados.
 
 Un marcador abre un popup de nombre/dirección por encima del icono, con separación
 visible, sin seleccionar ni cambiar modo. Bajo **Seleccionar como:**, los botones
-**Locker de entrega** y **Locker de recogida** fijan solo ese rol, activan cotización,
+**Locker de destino** y **Locker de origen** fijan solo ese rol, activan cotización,
 cierran el popup y enfocan su campo. El popup conserva su anclaje al mover o acercar
 el mapa y al cambiar el tamaño de la pantalla. Escape o el botón de cierre devuelve
 foco al marcador. No reserva capacidad ni crea envíos.
 
-Cada locker aporta su CP español registrado de cinco dígitos como solo lectura.
-Cuando no lo tiene aparece **CP del locker no registrado** y se pide un suplemento
-manual para ese rol y UUID, conservando ceros iniciales. No se infiere desde
-Photon, nombre o coordenadas ni se modifica el locker en la API. Editar un selector
-borra su selección y CP; cambiar a otro locker elimina el suplemento anterior.
-Abrir/cerrar sugerencias o elegir el mismo UUID sin editar conserva su suplemento.
-Los campos del paquete siguen locales y empiezan vacíos.
+Cada CP procede exclusivamente del locker seleccionado, como texto de cinco
+dígitos ASCII de país ES, conservando ceros iniciales. La dirección registrada
+permanece visible; no hay campos de CP independientes ni suplemento manual,
+visible u oculto. Si falta o es inválido aparece **Este locker no tiene un CP válido.
+Elige otro** junto al selector, y la comparación se bloquea hasta elegir uno
+completo. No se infiere desde Photon, nombre o coordenadas ni se actualiza la API.
+Editar un selector borra su UUID e invalida la comparación; elegir otro usa solo
+su CP registrado, incluso si el anterior tenía uno válido.
 
-**Comparar envíos** está en el menú y permanece deshabilitado hasta elegir ambos
-UUID y completar CP, dimensiones y peso válidos, y mientras hay trabajo en curso.
+**Comparar envíos** está en el menú y permanece deshabilitado hasta elegir dos
+lockers con CP registrado válido y completar dimensiones y peso válidos; también
+se bloquea mientras hay trabajo en curso.
 El panel derecho muestra únicamente estados y resultados, aviso demo, cierre y
 continuación. **Ver comparación existente** lo reabre sin crear otra solicitud;
 si corresponde, **Seguir consultando** continúa el GET de la misma referencia.
-Editar cualquier UUID, CP o medida invalida la comparación y su referencia,
-incluso al cambiar de locker por otro con el mismo CP. La búsqueda geográfica
-no afecta esa comparación.
+Cambiar cualquier UUID, su CP registrado o medida invalida la comparación y su
+referencia, incluso al cambiar de locker por otro con el mismo CP. La búsqueda
+geográfica no afecta esa comparación.
 
 **Comparar envíos** valida dimensiones entre 0,1 y 200 cm (milímetros enteros) y
 peso entre 0,001 y 30 kg (gramos enteros). No redondea fracciones incompatibles:

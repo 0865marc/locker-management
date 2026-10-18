@@ -23,6 +23,7 @@ export function setupShipping(
   const status = element('quotation-status');
   const offers = element('quotation-offers');
   const reopen = element<HTMLButtonElement>('reopen-results');
+  const missingPostalMessage = 'Este locker no tiene un CP válido. Elige otro';
   let generation = 0;
   let controller: AbortController | null = null;
   let known: { id: string; input: ShippingInput } | null = null;
@@ -57,8 +58,6 @@ export function setupShipping(
       'parcel-width',
       'parcel-height',
       'parcel-weight',
-      'origin-postal',
-      'destination-postal',
     ]) {
       field(id).removeAttribute('aria-invalid');
       element(`${id}-error`).hidden = true;
@@ -69,21 +68,9 @@ export function setupShipping(
     'parcel-width',
     'parcel-height',
     'parcel-weight',
-    'origin-postal',
-    'destination-postal',
   ])
     field(id).addEventListener('input', () => {
       invalidate();
-      if (!id.startsWith('parcel-')) {
-        const input = field(id);
-        const invalid = input.value !== '' && !postalPattern.test(input.value);
-        input.setAttribute('aria-invalid', String(invalid));
-        const error = element(`${id}-error`);
-        error.textContent = 'Introduce cinco dígitos de código postal.';
-        error.hidden = !invalid;
-        updateReady();
-        return;
-      }
       const input = field(id);
       const invalid =
         input.validity.badInput ||
@@ -108,8 +95,8 @@ export function setupShipping(
       width: field('parcel-width').value,
       height: field('parcel-height').value,
       weight: field('parcel-weight').value,
-      origin: field('origin-postal').value,
-      destination: field('destination-postal').value,
+      origin: roles.pickup?.postalCode ?? '',
+      destination: roles.delivery?.postalCode ?? '',
     });
   }
   function updateReady() {
@@ -256,14 +243,22 @@ export function setupShipping(
     }
     const validation = validationInput();
     if (!validation.ok) {
+      let first: HTMLElement | null = null;
       for (const [id, message] of Object.entries(validation.errors)) {
-        field(id).setAttribute('aria-invalid', 'true');
-        const error = element(`${id}-error`);
-        error.textContent = message;
+        const role =
+          id === 'origin-postal'
+            ? 'pickup'
+            : id === 'destination-postal'
+              ? 'delivery'
+              : null;
+        const input = role ? element(`${role}-locker`) : field(id);
+        input.setAttribute('aria-invalid', 'true');
+        const error = element(role ? `${role}-postal-warning` : `${id}-error`);
+        error.textContent = role ? missingPostalMessage : message;
         error.hidden = false;
+        first ??= input;
       }
-      const first = Object.keys(validation.errors)[0];
-      if (first) field(first).focus();
+      first?.focus();
       return;
     }
     known = null;
@@ -284,16 +279,15 @@ export function setupShipping(
       if (roles[role]?.id === locker?.id) return;
       invalidate();
       roles[role] = locker;
-      const postalId =
-        role === 'pickup' ? 'origin-postal' : 'destination-postal';
-      const postal = field(postalId);
-      postal.value = locker?.postalCode ?? '';
-      postal.readOnly = !!locker?.postalCode;
-      element(`${role}-postal-fields`).hidden = !locker;
-      element(`${postalId}-note`).textContent =
-        locker && !locker.postalCode
-          ? 'CP del locker no registrado. Introduce su CP para este locker.'
-          : '';
+      const missingPostal =
+        !!locker &&
+        (!locker.postalCode || !postalPattern.test(locker.postalCode));
+      const warning = element(`${role}-postal-warning`);
+      warning.hidden = !missingPostal;
+      warning.textContent = missingPostal ? missingPostalMessage : '';
+      const selector = element(`${role}-locker`);
+      if (missingPostal) selector.setAttribute('aria-invalid', 'true');
+      else selector.removeAttribute('aria-invalid');
       element(`${role}-selection-status`).textContent = locker
         ? `${locker.address ?? 'Dirección no registrada'}${locker.position ? '' : ' · Sin ubicación en el mapa'}`
         : 'Selecciona un locker de la lista.';

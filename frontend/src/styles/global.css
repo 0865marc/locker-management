@@ -627,21 +627,8 @@ select:focus-visible {
   padding: 10px;
   font-size: 14px;
 }
-#shipping-form input[readonly] {
-  background: #edf3f5;
-  color: #586e7d;
-}
 #destination-address {
   margin: 10px 0;
-}
-.postal-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
-}
-#destination-postal-note {
-  margin: 8px 0 14px;
 }
 #compare-shipping {
   width: 100%;
@@ -816,15 +803,13 @@ select:focus-visible {
 .locker-selector {
   margin-bottom: 16px;
 }
-.locker-selector > label,
-.role-postal > label {
+.locker-selector > label {
   display: block;
   font-size: 11px;
   font-weight: 650;
   margin-bottom: 7px;
 }
-.locker-selector > input,
-.role-postal > input {
+.locker-selector > input {
   width: 100%;
   padding: 10px;
   background: #fafcfd;
@@ -840,16 +825,6 @@ select:focus-visible {
   line-height: 1.5;
   color: var(--muted);
   overflow-wrap: anywhere;
-}
-.role-postal {
-  margin-top: 10px;
-}
-.role-postal input[readonly] {
-  background: #edf3f5;
-  color: #586e7d;
-}
-.role-postal .address {
-  margin: 6px 0 0;
 }
 .locker-options {
   list-style: none;
@@ -920,8 +895,7 @@ select:focus-visible {
   text-align: center;
 }
 @media (max-width: 760px) {
-  .locker-selector > input,
-  .role-postal > input {
+  .locker-selector > input {
     font-size: 16px;
   }
   .geography-panel {

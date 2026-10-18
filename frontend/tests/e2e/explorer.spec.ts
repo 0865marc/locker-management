@@ -12,7 +12,7 @@ function locker(
     id: id(n),
     location_id: label,
     active: true,
-    address: null,
+    address: { ...address },
     coordinates,
     compartments: [{ enabled: true, occupied: false }],
   };
@@ -469,7 +469,7 @@ async function selectRole(page: Page, role: 'pickup' | 'delivery', n: number) {
     .click();
   await expect(input).toHaveAttribute('data-selected-id', id(n));
 }
-async function fillShipping(page: Page, manual = true) {
+async function fillShipping(page: Page) {
   if (!(await page.locator('#pickup-locker').getAttribute('data-selected-id')))
     await selectRole(page, 'pickup', 1);
   if (
@@ -483,19 +483,6 @@ async function fillShipping(page: Page, manual = true) {
     ['weight', '1.001'],
   ])
     await page.locator(`#parcel-${field}`).fill(value!);
-  if (
-    !(await page
-      .locator('#origin-postal')
-      .evaluate((node: HTMLInputElement) => node.readOnly))
-  )
-    await page.locator('#origin-postal').fill('28001');
-  if (
-    manual &&
-    !(await page
-      .locator('#destination-postal')
-      .evaluate((node: HTMLInputElement) => node.readOnly))
-  )
-    await page.locator('#destination-postal').fill('01001');
 }
 async function reopenResults(page: Page) {
   await page.locator('#reopen-results').click();
@@ -581,8 +568,7 @@ test('real cross-origin FastAPI completes POST/preflight and polling without int
   );
   await openPanel(page);
   await selectRole(page, 'delivery', 1);
-  await fillShipping(page, false);
-  await expect(page.locator('#destination-postal')).toHaveValue('01001');
+  await fillShipping(page);
   const post = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().endsWith('/quotations'),
   );
@@ -654,10 +640,8 @@ for (const viewport of [
     await selectRole(page, 'pickup', 2);
     await selectRole(page, 'delivery', 2);
     await expect(page.locator('#delivery-options')).toBeHidden();
-    await expect(page.locator('#destination-postal-note')).toContainText(
-      'no registrado',
-    );
     await fillShipping(page);
+
     await page.screenshot({
       path: `test-results/shipping-${viewport.name}-form.png`,
     });
@@ -668,7 +652,7 @@ for (const viewport of [
     expect(gets).toBe(2);
     expect(submitted).toEqual({
       origin_country_code: 'ES',
-      origin_postal_code: '28001',
+      origin_postal_code: '01001',
       destination_country_code: 'ES',
       destination_postal_code: '01001',
       weight_grams: 1001,
@@ -682,12 +666,6 @@ for (const viewport of [
     });
     await selectRole(page, 'delivery', 1);
     await expect(page.locator('#quotation-offers')).toBeEmpty();
-    await expect(page.locator('#destination-postal')).toHaveValue('01001');
-    await expect(page.locator('#destination-postal')).toHaveAttribute(
-      'readonly',
-      '',
-    );
-    await expect(page.locator('#origin-postal')).toHaveValue('28001');
     const marker = page.locator('.locker-marker[title="Madrid · 1"]');
     expect(
       await marker.evaluate((node) => {
@@ -844,7 +822,7 @@ test('retained POST blocks duplicates, edit discards its late acceptance', async
     );
   });
   expect(await page.evaluate(() => Reflect.get(window, 'postCount'))).toBe(1);
-  await page.locator('#origin-postal').fill('28002');
+  await page.locator('#parcel-weight').fill('1.002');
   await page.evaluate(() => Reflect.get(window, 'finishPost')());
   await expect(page.locator('#quotation-status')).toBeEmpty();
   await expect(page.locator('#quotation-resume')).toBeHidden();
@@ -1242,72 +1220,101 @@ test('tracking cancels stale reads on edit/new attempt/tab change even when abor
   }
 });
 
-test('both UUID roles are mandatory; local matching and postal supplements stay independent', async ({
+test('roles require registered postal codes and no independent postal controls exist', async ({
   page,
 }) => {
-  let lockerReads = 0,
-    photonReads = 0;
+  await page.setViewportSize({ width: 1280, height: 800 });
+  let posts = 0,
+    reads = 0;
   await tiles(page);
   await page.route('**/lockers', (r) => {
-    lockerReads++;
+    reads++;
     return r.fulfill({
       json: [
-        { ...locker(1, 'Álava Centro'), address },
-        locker(2, 'Sin CP', null),
+        {
+          ...locker(1, 'Completo'),
+          address: { ...address, postal_code: '01001' },
+        },
+        { ...locker(2, 'Sin CP', null), address: null },
+        {
+          ...locker(3, 'Inválido'),
+          address: { ...address, postal_code: '１２３４５' },
+        },
+        {
+          ...locker(4, 'Extranjero'),
+          address: { ...address, country_code: 'FR' },
+        },
       ],
     });
   });
-  await page.route(photon, (r) => {
-    photonReads++;
-    return r.fulfill({ json: places(place()) });
+  await page.route('**/quotations', (r) => {
+    posts++;
+    return r.abort();
   });
   await page.goto('/');
+  await expect(
+    page.getByRole('combobox', { name: 'Locker de origen', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('combobox', { name: 'Locker de destino', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.locator('#origin-postal,#destination-postal,input[type=hidden]'),
+  ).toHaveCount(0);
+  await expect(page.locator('[aria-describedby]')).not.toHaveCount(0);
+  await fillShipping(page);
+  await expect(page.locator('#compare-shipping')).toBeEnabled();
+  await expect(page.locator('#pickup-locker')).not.toHaveAccessibleDescription(
+    /no tiene un CP/,
+  );
+  await expect(
+    page.locator('#delivery-locker'),
+  ).not.toHaveAccessibleDescription(/no tiene un CP/);
+  for (const role of ['pickup', 'delivery'] as const) {
+    for (const n of [2, 3, 4]) {
+      await selectRole(page, role, n);
+      await expect(page.locator(`#${role}-postal-warning`)).toHaveText(
+        'Este locker no tiene un CP válido. Elige otro',
+      );
+      await expect(page.locator(`#${role}-postal-warning`)).toBeVisible();
+
+      await expect(page.locator(`#${role}-locker`)).toHaveAccessibleDescription(
+        /no tiene un CP/,
+      );
+      await expect(page.locator('#compare-shipping')).toBeDisabled();
+      await page
+        .locator('#shipping-form')
+        .evaluate((form) =>
+          form.dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+          ),
+        );
+      await expect(page.locator(`#${role}-locker`)).toBeFocused();
+      expect(posts).toBe(0);
+      await selectRole(page, role, 1);
+      await expect(page.locator(`#${role}-postal-warning`)).toBeHidden();
+      await expect(page.locator('#compare-shipping')).toBeEnabled();
+      await expect(
+        page.locator('#pickup-locker'),
+      ).not.toHaveAccessibleDescription(/no tiene un CP/);
+      await expect(
+        page.locator('#delivery-locker'),
+      ).not.toHaveAccessibleDescription(/no tiene un CP/);
+    }
+  }
+  await page.locator('#delivery-locker').fill('Completo');
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    '',
+  );
   await expect(page.locator('#compare-shipping')).toBeDisabled();
-  for (const [field, value] of [
-    ['length', '25.5'],
-    ['width', '15'],
-    ['height', '10'],
-    ['weight', '1.001'],
-  ])
-    await page.locator(`#parcel-${field}`).fill(value!);
-  await page.locator('#pickup-locker').fill('alava');
-  await expect(page.locator('#pickup-options [role=option]')).toHaveCount(1);
-  await expect(page.locator('#compare-shipping')).toBeDisabled();
-  await page.locator('#pickup-locker').press('ArrowDown');
-  await page.keyboard.press('Enter');
   await expect(page.locator('#pickup-locker')).toHaveAttribute(
     'data-selected-id',
     id(1),
   );
-  await expect(page.locator('#origin-postal')).toHaveValue('01001');
-  await expect(page.locator('#origin-postal')).toHaveAttribute('readonly', '');
-  await page.locator('#delivery-locker').fill('Sin CP');
-  await expect(page.locator('#delivery-options [role=option]')).toHaveCount(1);
-  await expect(page.locator('#compare-shipping')).toBeDisabled();
-  await page.locator('#delivery-options [role=option]').click();
-  await expect(page.locator('#destination-postal')).toHaveValue('');
-  await expect(page.locator('#compare-shipping')).toBeDisabled();
-  await page.locator('#destination-postal').fill('07001');
-  await expect(page.locator('#compare-shipping')).toBeEnabled();
-  await page.locator('#delivery-locker').click();
-  await page.locator(`#delivery-options [data-id="${id(2)}"]`).click();
-  await expect(page.locator('#destination-postal')).toHaveValue('07001');
-  await page.locator('#delivery-locker').fill('Sin CP editado');
-  await expect(page.locator('#delivery-locker')).toHaveAttribute(
-    'data-selected-id',
-    '',
-  );
-  await expect(page.locator('#destination-postal')).toHaveValue('');
-  await expect(page.locator('#compare-shipping')).toBeDisabled();
-  await page.locator('#delivery-locker').fill('Sin CP');
-  await expect(page.locator('#delivery-locker')).toHaveAttribute(
-    'data-selected-id',
-    '',
-  );
-  await expect(page.locator('#origin-postal')).toHaveValue('01001');
   await expect(page.locator('#parcel-length')).toHaveValue('25.5');
-  expect(lockerReads).toBe(1);
-  expect(photonReads).toBe(0);
+  expect(reads).toBe(1);
+  expect(posts).toBe(0);
 });
 
 test('local candidates preserve duplicates, unmapped identities and safe literal labels', async ({
@@ -1318,7 +1325,10 @@ test('local candidates preserve duplicates, unmapped identities and safe literal
     [
       locker(1, '<img src=x onerror=alert(1)>'),
       ...Array.from({ length: 12 }, (_, i) => locker(i + 2, 'Duplicado', null)),
-      { ...locker(20, 'Postal'), address },
+      {
+        ...locker(20, 'Postal'),
+        address: { ...address, postal_code: '07009' },
+      },
     ],
     false,
   );
@@ -1329,7 +1339,7 @@ test('local candidates preserve duplicates, unmapped identities and safe literal
     'data-selected-id',
     id(13),
   );
-  await page.locator('#pickup-locker').fill('01001');
+  await page.locator('#pickup-locker').fill('07009');
   await expect(page.locator('#pickup-options [role=option]')).toHaveCount(1);
   await page.locator('#pickup-options [role=option]').click();
   await expect(page.locator('#pickup-locker')).toHaveAttribute(
@@ -1389,8 +1399,6 @@ test('map geography remains above both tabs without supplying role postal input'
     'data-selected-id',
     id(2),
   );
-  await expect(page.locator('#origin-postal')).toHaveValue('28001');
-  await expect(page.locator('#destination-postal')).toHaveValue('01001');
 });
 
 for (const viewport of [
@@ -1417,11 +1425,11 @@ for (const viewport of [
       '',
     );
     const delivery = page.getByRole('button', {
-        name: 'Locker de entrega',
+        name: 'Locker de destino',
         exact: true,
       }),
       pickup = page.getByRole('button', {
-        name: 'Locker de recogida',
+        name: 'Locker de origen',
         exact: true,
       });
     await expect(delivery).toBeVisible();
@@ -1463,15 +1471,14 @@ for (const viewport of [
     );
     await expect(page.locator('#pickup-locker')).toBeFocused();
     await expectRoleUncovered(page, 'pickup');
-    await page.locator('#origin-postal').fill('28001');
-    // With pickup's manual-CP block present, selecting delivery must reveal its
-    // input even if the menu was scrolled to the bottom before the popup action.
+    // Selecting a role must reveal its input after the menu has been scrolled.
     await page.locator('.left-stack').evaluate((panel) => {
       panel.scrollTop = panel.scrollHeight;
     });
-    expect(
-      await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
-    ).toBeGreaterThan(0);
+    if (viewport.height === 480)
+      expect(
+        await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
+      ).toBeGreaterThan(0);
     await marker.focus();
     await page.keyboard.press('Enter');
     await delivery.click();
@@ -1481,19 +1488,18 @@ for (const viewport of [
     );
     await expect(page.locator('#delivery-locker')).toBeFocused();
     await expectRoleUncovered(page, 'delivery');
-    await expect(page.locator('#origin-postal')).toHaveValue('28001');
     await page.locator('.left-stack').evaluate((panel) => {
       panel.scrollTop = panel.scrollHeight;
     });
-    expect(
-      await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
-    ).toBeGreaterThan(0);
+    if (viewport.height === 480)
+      expect(
+        await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
+      ).toBeGreaterThan(0);
     await marker.focus();
     await page.keyboard.press('Enter');
     await pickup.click();
     await expect(page.locator('#pickup-locker')).toBeFocused();
     await expectRoleUncovered(page, 'pickup');
-    await expect(page.locator('#origin-postal')).toHaveValue('28001');
     await page.screenshot({
       path: `test-results/roles-${viewport.name}-selected.png`,
     });
@@ -1533,7 +1539,7 @@ test('changing either UUID invalidates a completed result even with identical po
   );
   await selectRole(page, 'pickup', 1);
   await selectRole(page, 'delivery', 2);
-  await fillShipping(page, false);
+  await fillShipping(page);
   await page.locator('#compare-shipping').click();
   await expect(page.locator('#quotation-offers')).toContainText('12,34');
   await expect(
@@ -1549,8 +1555,6 @@ test('changing either UUID invalidates a completed result even with identical po
   await expect(page.locator('#results')).toBeHidden();
   await expect(page.locator('#quotation-offers')).toBeEmpty();
   await expect(page.locator('#reopen-results')).toBeHidden();
-  await expect(page.locator('#origin-postal')).toHaveValue('01001');
-  await expect(page.locator('#destination-postal')).toHaveValue('01001');
   await page.locator('#compare-shipping').click();
   await expect(page.locator('#quotation-offers')).toContainText('12,34');
   expect(posts).toBe(2);
@@ -1709,15 +1713,12 @@ for (const viewport of [
       await page.keyboard.press('Enter');
       await expect(input).toHaveAttribute('data-selected-id', id(20));
       await expect(suggestions).toBeHidden();
-      const postal = page.locator(
-        role === 'pickup' ? '#origin-postal' : '#destination-postal',
-      );
-      await postal.fill('01001');
       await input.click();
       await expect(options).toHaveCount(1);
       await input.press('ArrowDown');
       await page.keyboard.press('Enter');
-      await expect(postal).toHaveValue('01001');
+      await expect(input).toHaveAttribute('data-selected-id', id(20));
+      await expect(page.locator(`#${role}-postal-warning`)).toBeHidden();
       await input.fill('Veinte');
       await input.fill('Grupo');
       await expect(input).toHaveAttribute('aria-expanded', 'false');
@@ -1806,10 +1807,10 @@ for (const viewport of [
           'Seleccionar como:',
         );
         await expect(
-          page.getByRole('button', { name: 'Locker de entrega', exact: true }),
+          page.getByRole('button', { name: 'Locker de destino', exact: true }),
         ).toBeVisible();
         await expect(
-          page.getByRole('button', { name: 'Locker de recogida', exact: true }),
+          page.getByRole('button', { name: 'Locker de origen', exact: true }),
         ).toBeVisible();
         await expect(page.locator('.locker-popup')).not.toContainText(
           'Seleccionar como locker',
@@ -1884,7 +1885,7 @@ for (const viewport of [
       ).toHaveCount(1);
       if (kind === 'available') {
         await page
-          .getByRole('button', { name: 'Locker de entrega', exact: true })
+          .getByRole('button', { name: 'Locker de destino', exact: true })
           .click();
         await expect(page.locator('#delivery-locker')).toHaveAttribute(
           'data-selected-id',
@@ -1927,3 +1928,54 @@ for (const viewport of [
     });
   }
 }
+
+test('postal request uses the selected origin and destination records with leading zeroes', async ({
+  page,
+}) => {
+  const captured: unknown[] = [];
+  let snapshot: unknown;
+  await data(
+    page,
+    [
+      {
+        ...locker(1, 'Origen registrado'),
+        address: { ...address, postal_code: '01001' },
+      },
+      {
+        ...locker(2, 'Destino registrado'),
+        address: { ...address, postal_code: '28009' },
+      },
+    ],
+    false,
+  );
+  await page.route('**/quotations', (r) => {
+    snapshot = r.request().postDataJSON();
+    captured.push(snapshot);
+    return r.fulfill({ status: 202, json: { id: quoteId, status: 'PENDING' } });
+  });
+  await page.route(`**/quotations/${quoteId}`, (r) =>
+    r.fulfill({ json: quote(snapshot) }),
+  );
+  await selectRole(page, 'pickup', 1);
+  await selectRole(page, 'delivery', 2);
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-status')).toContainText('finalizada');
+  expect(captured[0]).toEqual({
+    origin_country_code: 'ES',
+    origin_postal_code: '01001',
+    destination_country_code: 'ES',
+    destination_postal_code: '28009',
+    weight_grams: 1001,
+    dimensions: { depth_mm: 255, width_mm: 150, height_mm: 100 },
+  });
+  await page.locator('#close-results').click();
+  await selectRole(page, 'pickup', 2);
+  await selectRole(page, 'delivery', 1);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-status')).toContainText('finalizada');
+  expect(captured[1]).toMatchObject({
+    origin_postal_code: '28009',
+    destination_postal_code: '01001',
+  });
+});

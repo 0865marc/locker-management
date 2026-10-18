@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Let people locate available lockers across Spain and compare shipping quotations between selected pickup and delivery lockers through an accessible static frontend backed by existing APIs.
+Let people locate available lockers across Spain and compare shipping quotations between selected origin and destination lockers through an accessible static frontend backed by existing APIs.
 
 ## ADDED Requirements
 
@@ -25,7 +25,7 @@ The menu SHALL retain accessible "Cotizar envío" and "Localizar paquete" tabs, 
 
 ### Requirement: Keep the quotation menu compact
 
-The quotation tab SHALL contain pickup/delivery locker selectors, their postal input, parcel fields, "Comparar envíos" and live counts. The availability-success sentence, "Ver lockers", "Actualizar", timestamp, "Ver España" and informational note SHALL remain absent. Loading, empty, error/retry and tile warnings SHALL appear only when applicable. Tracking SHALL not depend on a successful available-locker load.
+The quotation tab SHALL contain "Locker de origen"/"Locker de destino" selectors, parcel fields, "Comparar envíos" and live counts. The availability-success sentence, "Ver lockers", "Actualizar", timestamp, "Ver España" and informational note SHALL remain absent. Loading, empty, error/retry and tile warnings SHALL appear only when applicable. Tracking SHALL not depend on a successful available-locker load.
 
 #### Scenario: Compact and independent modes
 - **WHEN** lockers load or fail and the visitor switches to tracking
@@ -48,7 +48,7 @@ The quotation tab SHALL contain visibly labelled length, width and height fields
 
 ### Requirement: Search geography independently of locker selection
 
-A separate search panel above the tabs SHALL find Spanish directions or postal codes after 350 ms without edits and at least three trimmed characters, preserving five-digit postal text. It SHALL offer at most five candidates requiring selection. Choosing one SHALL only fill that search, reveal its map position and close suggestions; it SHALL NOT change tabs, locker selections, postal input, tracking results or quotations.
+A separate search panel above the tabs SHALL find Spanish directions or postal codes after 350 ms without edits and at least three trimmed characters, preserving five-digit postal text. It SHALL offer at most five candidates requiring selection. Choosing one SHALL only fill that search, reveal its map position and close suggestions; it SHALL NOT change tabs, locker selections, derived postcodes, tracking results or quotations.
 
 #### Scenario: Debounced suggestions and geographic choice
 - **WHEN** the visitor types an eligible query and selects a returned place
@@ -58,21 +58,21 @@ A separate search panel above the tabs SHALL find Spanish directions or postal c
 
 ### Requirement: Select actual lockers for both shipment roles
 
-Pickup and delivery selectors SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Editing a role's text SHALL clear its selection and postal input. Selecting one role SHALL preserve the other and parcel values. All matches in an eligible result set, including coincident or unmapped lockers, SHALL remain keyboard reachable.
+"Locker de origen" and "Locker de destino" SHALL filter loaded available lockers locally by label, recorded address or postcode. Each role SHALL require explicit selection identified by UUID; free text SHALL NOT qualify. Editing a role's text SHALL clear its selection and derived postcode. Selecting one role SHALL preserve the other and parcel values. All matches in an eligible result set, including coincident or unmapped lockers, SHALL remain keyboard reachable.
 
 #### Scenario: Local candidates and independent roles
 - **WHEN** a visitor searches by label, address or postcode and chooses a locker for each role
-- **THEN** the chosen UUIDs identify pickup and delivery without Photon or additional API requests
+- **THEN** the chosen UUIDs identify origin and destination without Photon or additional API requests
 - **AND** arbitrary geographic addresses can instead be explored through the separate map search, without being accepted as lockers
 
 #### Scenario: Edit or replace a selected role
 - **WHEN** the selected label is edited or a different locker is chosen for a role
-- **THEN** that role's previous selection or manual postal supplement and obsolete quotations are cleared, while the other role and parcel values remain
-- **AND** typing the old label back does not restore its UUID without selection; reopening suggestions or choosing the unchanged UUID does not erase a valid supplement
+- **THEN** that role's previous selection, derived postcode and obsolete quotations are cleared, while the other role and parcel values remain
+- **AND** typing the old label back does not restore its UUID without selection; reopening suggestions or choosing the unchanged UUID preserves the selected record
 
 ### Requirement: Open locker suggestions only for bounded searches
 
-Both role selectors SHALL open candidates only for a nonempty trimmed query with 1..20 matches, showing all matches. Empty queries SHALL keep the list closed; more than 20 SHALL request refinement without displaying the first 20; zero SHALL announce no matches with the list closed. Focus, click, Enter and arrow keys SHALL obey the same rule. Opening, closing or choosing the unchanged UUID SHALL preserve selection and manual postal input.
+Both role selectors SHALL open candidates only for a nonempty trimmed query with 1..20 matches, showing all matches. Empty queries SHALL keep the list closed; more than 20 SHALL request refinement without displaying the first 20; zero SHALL announce no matches with the list closed. Focus, click, Enter and arrow keys SHALL obey the same rule. Opening, closing or choosing the unchanged UUID SHALL preserve the selected record.
 
 #### Scenario: Empty and oversized searches
 - **WHEN** the field is empty or contains a query matching 21 or more lockers
@@ -86,7 +86,7 @@ Both role selectors SHALL open candidates only for a nonempty trimmed query with
 
 #### Scenario: Animation and preserved selection
 - **WHEN** eligible and ineligible queries alternate rapidly, or an unchanged selected locker is inspected and chosen again
-- **THEN** hidden candidates immediately become inert, older animation callbacks cannot reopen them, reduced motion is respected and the unchanged UUID retains its manual postcode
+- **THEN** hidden candidates immediately become inert, older animation callbacks cannot reopen them, reduced motion is respected and the unchanged UUID retains its selected record and derived postcode
 - **AND** editing the selected text still invalidates that role according to the selection requirement
 
 ### Requirement: Animate and dismiss geographic suggestions accessibly
@@ -112,7 +112,7 @@ Geographic search SHALL have independent loading, no-results and error states, w
 
 ### Requirement: Choose a shipment role from a locker popup
 
-Opening an available locker marker SHALL show its label, recorded address or absence, shared text "Seleccionar como:" and buttons "Locker de entrega"/"Locker de recogida". Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
+Opening an available locker marker SHALL show its label, recorded address or absence, shared text "Seleccionar como:" and buttons "Locker de destino"/"Locker de origen". Opening SHALL NOT change tabs, select a role or open quotation results. Either action SHALL activate quotation, assign only its role and close the popup. The popup SHALL remain keyboard usable at mobile sizes without omitting its actions.
 
 #### Scenario: Inspect then choose explicitly
 - **WHEN** a visitor opens an available marker in either mode and then chooses a role
@@ -121,7 +121,7 @@ Opening an available locker marker SHALL show its label, recorded address or abs
 
 #### Scenario: Keyboard entry and popup dismissal
 - **WHEN** a keyboard user follows the quotation skip link or closes a marker popup with Escape
-- **THEN** the link activates quotation and focuses pickup selection, while popup dismissal restores marker focus when possible
+- **THEN** the link activates quotation and focuses origin selection, while popup dismissal restores marker focus when possible
 - **AND** choosing lockers remains possible without pointer interaction, including coincident and unmapped lockers
 
 ### Requirement: Position inspection popups above their markers
@@ -229,22 +229,28 @@ The page SHALL use Spanish content, preserve a usable map and readable panels at
 - **WHEN** the page is used at 375×480 CSS pixels or with keyboard alone
 - **THEN** search, parcel fields, both role selectors, popup actions and quotation controls/results and map attribution remain accessible without covering the selected position or losing focus
 
-### Requirement: Use explicit postal data for each selected locker
+### Requirement: Derive postal codes only from selected lockers
 
-Pickup SHALL supply origin and delivery SHALL supply destination. Each valid structured Spanish locker postcode SHALL remain read-only; otherwise the visitor SHALL enter a supplement explicitly for that role and UUID with a missing-code indication. Both countries SHALL be ES and postcodes five-digit ASCII strings. Labels, coordinates and geographic search SHALL NOT supply inferred codes; manual input SHALL NOT modify locker data.
+Quotation origin/destination codes SHALL come only from the corresponding selected locker records, as five-digit ASCII strings with country ES. The UI SHALL contain no independent postal-code inputs, visible or hidden, and no manual supplement. Missing/invalid codes SHALL show a warning beside the affected selector and block comparison until a valid locker is selected. Labels, coordinates and geographic search SHALL NOT provide inferred codes or modify locker data.
 
-#### Scenario: Recorded codes and leading zeroes
-- **WHEN** selected pickup and delivery lockers contain "01001" and "28001"
-- **THEN** comparison uses those exact origin/destination strings with countries ES and read-only registered codes
+#### Scenario: Recorded codes without duplicate fields
+- **WHEN** selected origin and destination lockers contain "01001" and "28001"
+- **THEN** comparison uses those exact strings with countries ES, while the existing address display remains visible without additional postal inputs
 
-#### Scenario: Missing codes and role replacement
-- **WHEN** either selected locker lacks a valid postcode or is replaced by another such locker
-- **THEN** that role requires explicit supplemental postal input before comparison without carrying a previous locker's manual code
-- **AND** the other role and parcel measurements remain; no address is invented or saved
+#### Scenario: Missing code and recovery
+- **WHEN** either selected locker has no valid postcode
+- **THEN** it remains visible/selectable but its role shows "Este locker no tiene un CP válido. Elige otro", comparison stays disabled and submission makes no POST
+- **AND** choosing a complete locker clears that warning and enables comparison only when all remaining input is valid
+- **AND** postal validation feedback and focus target the affected locker selector rather than removed controls
+
+#### Scenario: Public role names and unchanged tracking states
+- **WHEN** a visitor uses the quotation form, marker popup or related messages
+- **THEN** the roles are named "Locker de origen" and "Locker de destino" consistently
+- **AND** package tracking states such as "pendiente de recogida" remain unchanged
 
 ### Requirement: Submit only explicitly validated shipping input
 
-"Comparar envíos" SHALL be in the main menu and enabled only with both selected locker UUIDs, valid postal/parcel input and no request or waiting in progress. Submit SHALL revalidate. Dimensions SHALL convert exactly from cm to integer mm in 1..2000 and weight from kg to integer grams in 1..30000. Invalid input SHALL identify the field without HTTP. Editing, selection and search SHALL NOT submit; duplicate clicks SHALL NOT duplicate requests.
+"Comparar envíos" SHALL be in the main menu and enabled only with both selected locker UUIDs, valid stored postcodes and parcel input and no request or waiting in progress. Submit SHALL revalidate. Dimensions SHALL convert exactly from cm to integer mm in 1..2000 and weight from kg to integer grams in 1..30000. Invalid input SHALL identify the field without HTTP. Editing, selection and search SHALL NOT submit; duplicate clicks SHALL NOT duplicate requests.
 
 #### Scenario: Exact conversion and payload
 - **WHEN** the visitor compares two selected lockers with valid codes, 25.5/15/10 cm and 2.5 kg
@@ -271,7 +277,7 @@ After accepted creation, the browser SHALL read that quotation sequentially abou
 
 ### Requirement: Invalidate obsolete quotation interaction
 
-Closing results, switching tabs or leaving SHALL stop local waiting and reject late responses. Changing either locker UUID, postal or parcel input SHALL also invalidate results and the resumable reference, even when the postal payload is unchanged. Known quotations SHALL resume only explicitly for their unchanged snapshot. Browser cancellation SHALL NOT claim to cancel worker processing. Geographic search alone SHALL NOT invalidate a quotation.
+Closing results, switching tabs or leaving SHALL stop local waiting and reject late responses. Changing either locker UUID, its stored postal data or parcel input SHALL also invalidate results and the resumable reference, even when the postal payload is unchanged. Known quotations SHALL resume only explicitly for their unchanged snapshot. Browser cancellation SHALL NOT claim to cancel worker processing. Geographic search alone SHALL NOT invalidate a quotation.
 
 #### Scenario: Changed identity with unchanged postal payload
 - **WHEN** a different locker with the same postcode replaces either role while a POST or GET is pending

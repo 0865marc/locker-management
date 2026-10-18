@@ -214,8 +214,8 @@ function bindInspection(
     actions.className = 'popup-role-actions';
     content.append(caption, actions);
     for (const [role, label] of [
-      ['delivery', 'Locker de entrega'],
-      ['pickup', 'Locker de recogida'],
+      ['delivery', 'Locker de destino'],
+      ['pickup', 'Locker de origen'],
     ] as const) {
       const button = document.createElement('button');
       button.type = 'button';

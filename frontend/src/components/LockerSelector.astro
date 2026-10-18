@@ -2,10 +2,8 @@
 interface Props {
   role: 'pickup' | 'delivery';
   label: string;
-  postalId: string;
-  postalLabel: string;
 }
-const { role, label, postalId, postalLabel } = Astro.props;
+const { role, label } = Astro.props;
 ---
 
 <div class="locker-selector" id={`${role}-selector`}>
@@ -17,7 +15,7 @@ const { role, label, postalId, postalLabel } = Astro.props;
     aria-haspopup="listbox"
     aria-expanded="false"
     aria-controls={`${role}-options`}
-    aria-describedby={`${role}-selection-status ${role}-search-status`}
+    aria-describedby={`${role}-selection-status ${role}-search-status ${role}-postal-warning`}
     data-selected-id=""
     placeholder="Nombre, dirección o CP"
     autocomplete="off"
@@ -53,16 +51,11 @@ const { role, label, postalId, postalLabel } = Astro.props;
   >
     Selecciona un locker de la lista.
   </p>
-  <div id={`${role}-postal-fields`} class="role-postal" hidden>
-    <label for={postalId}>{postalLabel}</label>
-    <input
-      id={postalId}
-      inputmode="numeric"
-      maxlength="5"
-      aria-describedby={`${postalId}-note ${postalId}-error`}
-      placeholder="Cinco dígitos"
-    />
-    <p id={`${postalId}-note`} class="address"></p>
-    <span id={`${postalId}-error`} class="field-error" hidden></span>
-  </div>
+  <p
+    id={`${role}-postal-warning`}
+    class="field-error"
+    role="status"
+    aria-live="polite"
+    hidden
+  ></p>
 </div>
