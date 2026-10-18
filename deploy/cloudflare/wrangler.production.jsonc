@@ -1,35 +1,35 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "locker-management-demo",
-  "main": ".production/entrypoints/cloudflare/api.py",
-  "compatibility_date": "2026-08-01",
-  "compatibility_flags": [
-    "python_workers"
-  ],
-  "workers_dev": true,
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "locker-management-demo",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
-    }
-  ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "QUOTATIONS",
-        "queue": "locker-management-quotations"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "locker-management-quotations",
-        "max_batch_size": 1,
-        "max_concurrency": 1,
-        "max_retries": 0
-      }
-    ]
-  },
-  "base_dir": ".production"
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "locker-management-demo",
+	"main": ".production/entrypoints/cloudflare/api.py",
+	"compatibility_date": "2026-08-01",
+	"compatibility_flags": [
+		"python_workers"
+	],
+	"workers_dev": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "locker-management-demo",
+			"database_id": "6e05da93-a14a-445f-b9bb-06d379a4c986",
+			"migrations_dir": "migrations"
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "QUOTATIONS",
+				"queue": "locker-management-quotations"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "locker-management-quotations",
+				"max_batch_size": 1,
+				"max_concurrency": 1,
+				"max_retries": 0
+			}
+		]
+	},
+	"base_dir": ".production"
 }
