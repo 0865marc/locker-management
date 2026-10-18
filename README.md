@@ -352,10 +352,13 @@ stacks desechables y conservan los datos del usuario.
 FastAPI lee `CORS_ALLOWED_ORIGINS` al arrancar: orígenes HTTP(S) exactos separados
 por comas, recortando espacios. Sin variable o con valor vacío no permite ningún
 origen de navegador. Rechaza comodines, credenciales, rutas (también `/` final),
-query, fragmentos y entradas inválidas. Permite GET general y, exclusivamente en
-la ruta exacta `/quotations`, POST JSON con `Content-Type` y su preflight. No
-permite POST en otras rutas, credenciales ni cabeceras personalizadas adicionales;
-CORS no es autenticación ni impide que un cliente HTTP use las rutas existentes.
+query, fragmentos y entradas inválidas. El `CORSMiddleware` estándar aplica una
+política común a toda la API: permite preflight GET/POST con `Content-Type`, sin
+reglas por ruta ni acceso con credenciales. PATCH, DELETE y cabeceras adicionales
+como `Authorization` o `X-Admin` no están permitidos en preflight. Permitir un
+preflight no crea endpoints, valida JSON ni autoriza operaciones: las peticiones
+reales siguen sujetas a sus handlers y contratos. CORS no es autenticación ni
+impide que un cliente HTTP use las rutas existentes.
 
 Compose configura solo en API los orígenes locales explícitos
 `http://localhost:4321,http://127.0.0.1:4321`. Para una API fuera de Compose,

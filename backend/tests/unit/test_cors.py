@@ -36,23 +36,25 @@ class CorsTests(unittest.TestCase):
                 "postgresql+asyncpg://unused/unused", publisher=self.publisher
             )
 
-    def test_quotation_json_preflight_is_scoped_to_exact_route(self) -> None:
+    def test_json_preflight_is_uniform_across_paths(self) -> None:
         allowed = "https://project.pages.dev"
         with TestClient(self.make_app(allowed)) as client:
             for path, origin, method, headers, status in (
                 ("/quotations", allowed, "POST", "content-type", 200),
                 ("/quotations", allowed, "GET", "", 200),
-                ("/quotations/", allowed, "POST", "content-type", 400),
+                ("/quotations/", allowed, "POST", "content-type", 200),
                 (
                     "/quotations/00000000-0000-4000-8000-000000000001",
                     allowed,
                     "POST",
                     "content-type",
-                    400,
+                    200,
                 ),
-                ("/lockers", allowed, "POST", "content-type", 400),
-                ("/deliveries", allowed, "POST", "content-type", 400),
-                ("/returns", allowed, "POST", "content-type", 400),
+                ("/lockers", allowed, "POST", "content-type", 200),
+                ("/deliveries", allowed, "POST", "content-type", 200),
+                ("/returns", allowed, "POST", "content-type", 200),
+                ("/missing", allowed, "GET", "content-type", 200),
+                ("/missing", allowed, "POST", "content-type", 200),
                 ("/quotations", allowed, "PATCH", "content-type", 400),
                 ("/quotations", allowed, "DELETE", "content-type", 400),
                 ("/quotations", allowed, "POST", "content-type,x-admin", 400),
@@ -85,6 +87,15 @@ class CorsTests(unittest.TestCase):
                             "content-type",
                             response.headers["access-control-allow-headers"].lower(),
                         )
+            for method in ("GET", "POST"):
+                response = client.request(
+                    method, "/missing", headers={"Origin": allowed}
+                )
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {"detail": "Not Found"})
+                self.assertEqual(
+                    response.headers["access-control-allow-origin"], allowed
+                )
             self.quotation_repository.save.assert_not_awaited()
             self.publisher.publish.assert_not_awaited()
 
@@ -169,13 +180,13 @@ class CorsTests(unittest.TestCase):
                     self.assertEqual(response.json(), [])
                     self.assertNotIn("access-control-allow-origin", response.headers)
 
-    def test_preflight_only_grants_get_to_allowed_origin(self) -> None:
+    def test_preflight_grants_get_and_post_to_allowed_origin(self) -> None:
         allowed = "http://localhost:4321"
         with TestClient(self.make_app(allowed)) as client:
             for origin, method, status in (
                 (allowed, "GET", 200),
                 ("http://localhost:4322", "GET", 400),
-                (allowed, "POST", 400),
+                (allowed, "POST", 200),
                 (allowed, "PATCH", 400),
                 (allowed, "DELETE", 400),
             ):
@@ -185,11 +196,12 @@ class CorsTests(unittest.TestCase):
                         headers={
                             "Origin": origin,
                             "Access-Control-Request-Method": method,
+                            "Access-Control-Request-Headers": "content-type",
                         },
                     )
                     self.assertEqual(response.status_code, status)
                     self.assertEqual(
-                        response.headers["access-control-allow-methods"], "GET"
+                        response.headers["access-control-allow-methods"], "GET, POST"
                     )
                     self.assertNotIn(
                         "access-control-allow-credentials", response.headers
