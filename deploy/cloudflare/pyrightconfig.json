@@ -1,0 +1,45 @@
+{
+  "include": [
+    "runtime_spike",
+    "tests",
+    "../../scripts/cloudflare",
+    "../../backend/entrypoints/cloudflare"
+  ],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.13",
+  "venvPath": ".",
+  "venv": ".venv",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "runtime_spike",
+        "../../backend",
+        "../../scripts/cloudflare"
+      ]
+    },
+    {
+      "root": "../../backend/entrypoints/cloudflare",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "../../backend"
+      ]
+    },
+    {
+      "root": "../../backend",
+      "pythonVersion": "3.11",
+      "extraPaths": [
+        "../../backend"
+      ]
+    },
+    {
+      "root": "../../scripts/cloudflare",
+      "pythonVersion": "3.13",
+      "extraPaths": [
+        "../../backend",
+        "../../scripts/cloudflare"
+      ]
+    }
+  ],
+  "stubPath": "typings"
+}

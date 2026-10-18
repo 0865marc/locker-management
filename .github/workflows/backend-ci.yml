@@ -36,9 +36,9 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra dev
       - name: Check lint and imports
-        run: uv run --extra dev ruff check .
+        run: uv run --extra dev ruff check . ../deploy/cloudflare/runtime_spike ../deploy/cloudflare/tests ../deploy/cloudflare/typings ../scripts/cloudflare
       - name: Check format
-        run: uv run --extra dev ruff format --check .
+        run: uv run --extra dev ruff format --check . ../deploy/cloudflare/runtime_spike ../deploy/cloudflare/tests ../deploy/cloudflare/typings ../scripts/cloudflare
 
   pyright:
     name: Pyright
@@ -132,3 +132,37 @@ jobs:
       - name: Ensure disposable stack cleanup
         if: ${{ always() }}
         run: docker compose --project-name "$CI_SMOKE_PROJECT" -f compose.yaml -f compose.ci.yaml down --volumes --remove-orphans --timeout 10
+
+  cloudflare:
+    name: Cloudflare local
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install uv and Python for Workers
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.13.1"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: |
+            deploy/cloudflare/uv.lock
+            backend/uv.lock
+      - name: Select Node for locked Wrangler
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: deploy/cloudflare/package-lock.json
+      - name: Install locked backend analysis and contract tools
+        run: uv sync --project backend --locked --extra dev
+      - name: Install locked Python Workers tools
+        run: uv sync --project deploy/cloudflare --locked
+      - name: Install locked Wrangler packages
+        run: npm ci --ignore-scripts --prefix deploy/cloudflare
+      - name: Prepare current production sources
+        run: python scripts/cloudflare/prepare.py
+      - name: Verify production Workers and local bindings
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: scripts/cloudflare/check.sh

@@ -1,6 +1,6 @@
 # Locker Management Demo
 
-Recientemente sentí la necesidad de volver a experimentar como desarrollador y alejarme un poco de la gestión de proyectos y la mejora de productos.
+Recientemente sentí la necesidad de volver a experimentar como desarrollador y alejarme un poco de la gestión y coordinación de proyectos.
 Quería poner en práctica de nuevo todos esos conceptos con mis propias manos en un proyecto desde cero, únicamente por curiosidad técnica y diversión: arquitectura hexagonal, testing, integración continua, iteraciones de mejora (plantear hipótesis → medir → mejorar) y workflows agénticos.
 
 ## Idea inicial

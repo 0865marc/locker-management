@@ -18,24 +18,109 @@ const status = element('status'),
   retry = element<HTMLButtonElement>('retry'),
   results = element('results');
 let activeMode: 'quote' | 'tracking' = 'quote';
-let opener: HTMLElement = element('compare-shipping');
+const mobile = matchMedia('(max-width: 760px)');
+const menuContent = element('menu-content');
+const menuToggle = element('menu-toggle');
+let menuExpanded = false;
+let lastFocused: EventTarget | null = document.activeElement;
+document.addEventListener('focusin', (event) => {
+  lastFocused = event.target;
+});
+function hadFocusWithin(node: HTMLElement) {
+  return (
+    node.contains(document.activeElement) ||
+    (document.activeElement === document.body &&
+      lastFocused instanceof Node &&
+      node.contains(lastFocused))
+  );
+}
+function renderMenu() {
+  const open = !mobile.matches || menuExpanded;
+  if (!open && hadFocusWithin(menuContent))
+    menuToggle.focus({ preventScroll: true });
+  menuContent.hidden = !open;
+  menuContent.inert = !open;
+  menuToggle.setAttribute('aria-expanded', String(open));
+  element('menu-label').textContent = open ? 'Volver al mapa' : 'Abrir menú';
+  if (!mobile.matches && hadFocusWithin(menuToggle))
+    element(`${activeMode}-tab`).focus({ preventScroll: true });
+}
+function setMenuOpen(open: boolean, focus = false) {
+  camera.cancel();
+  if (open && mobile.matches && !results.hidden) setResultsOpen(false, false);
+  if (open && mobile.matches) map.closePopup();
+  if (!open) {
+    pickup.close();
+    delivery.close();
+    geography.close();
+  }
+  menuExpanded = open;
+  renderMenu();
+  if (focus) menuToggle.focus({ preventScroll: true });
+}
+renderMenu();
+mobile.addEventListener('change', () => {
+  camera.cancel();
+  if (mobile.matches && !results.hidden) menuExpanded = false;
+  renderMenu();
+});
+menuToggle.addEventListener('click', () => setMenuOpen(!menuExpanded, true));
+// Check before selector handlers, which also consume Escape on closed lists.
+element('map-panels').addEventListener(
+  'keydown',
+  (event) => {
+    if (event.key !== 'Escape' || !mobile.matches || !menuExpanded) return;
+    if (menuContent.querySelector('[aria-expanded="true"]')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setMenuOpen(false, true);
+  },
+  true,
+);
+function updateMenuStatus() {
+  element('menu-status').textContent = [
+    !status.hidden ? status.textContent : '',
+    !element('tile-warning').hidden ? 'Fondo del mapa no disponible.' : '',
+    activeMode === 'tracking' ? element('tracking-status').textContent : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+new MutationObserver(updateMenuStatus).observe(menuContent, {
+  subtree: true,
+  childList: true,
+  characterData: true,
+  attributes: true,
+  attributeFilter: ['hidden', 'class'],
+});
+updateMenuStatus();
 function hideResults() {
+  if (results.contains(document.activeElement) && mobile.matches) {
+    menuExpanded = true;
+    renderMenu();
+    menuToggle.focus({ preventScroll: true });
+  }
   results.hidden = true;
   element('explorer').dataset.resultsOpen = 'false';
 }
 function setResultsOpen(open: boolean, focus = true) {
-  if (open && results.hidden && document.activeElement instanceof HTMLElement)
-    opener = document.activeElement;
+  camera.cancel();
+  if (open && mobile.matches) setMenuOpen(false);
   results.hidden = !open;
+  if (!open && mobile.matches) map.closePopup();
   element('explorer').dataset.resultsOpen = String(open);
-  if (!open) shipping.close();
-  if (focus)
-    (open
-      ? element('results-title')
-      : opener.isConnected
-        ? opener
-        : element('compare-shipping')
-    ).focus({ preventScroll: true });
+  if (!open) {
+    shipping.close();
+    if (focus && mobile.matches) {
+      menuExpanded = true;
+      renderMenu();
+    }
+  }
+  if (focus) {
+    const target = element(open ? 'results-title' : 'compare-shipping');
+    target.focus();
+    if (!open) target.scrollIntoView({ block: 'nearest' });
+  }
 }
 const shipping = setupShipping(
   element,
@@ -57,6 +142,7 @@ results.addEventListener('keydown', (event) => {
 });
 element('skip-results').addEventListener('click', (event) => {
   event.preventDefault();
+  setMenuOpen(true);
   setMode('quote');
   element(
     element<HTMLInputElement>('pickup-locker').readOnly
@@ -105,26 +191,36 @@ tiles.on('tileerror', () => {
   element('tracking-tile-warning').hidden = false;
 });
 new ResizeObserver(() => map.invalidateSize()).observe(element('map'));
-// Pan to the space between overlays; the stored marker coordinates stay unchanged.
-function revealPosition(position: [number, number]): boolean {
+// Use the full mobile width below the menu or above results.
+function visibleMapArea() {
   const menu = element('map-panels').getBoundingClientRect();
   const panel = results.hidden ? null : results.getBoundingClientRect();
   const size = map.getSize();
-  const left = menu.right + 12;
-  let right = panel ? panel.left - 12 : size.x - 24;
-  let top = 24;
-  let bottom = size.y - 24;
-  if (window.matchMedia('(max-width: 760px)').matches) {
-    // On mobile the list is below the menu, leaving a narrow strip on its right.
-    right = size.x - 12;
-    top = (zoom.getContainer()?.getBoundingClientRect().bottom ?? 80) + 48;
-    bottom = panel ? panel.top - 12 : size.y - 24;
-  }
-  const target = L.point((left + right) / 2, (top + bottom) / 2);
+  const zoomBottom = zoom.getContainer()?.getBoundingClientRect().bottom ?? 80;
+  return mobile.matches
+    ? {
+        left: 12,
+        right: size.x - 12,
+        top: Math.max(menu.bottom + 12, zoomBottom + 12),
+        bottom: panel ? panel.top - 12 : size.y - 28,
+      }
+    : {
+        left: menu.right + 12,
+        right: panel ? panel.left - 12 : size.x - 24,
+        top: zoomBottom + 12,
+        bottom: size.y - 28,
+      };
+}
+function revealPosition(position: [number, number]): boolean {
+  const area = visibleMapArea();
+  const target = L.point(
+    (area.left + area.right) / 2,
+    (area.top + area.bottom) / 2,
+  );
   map.panBy(map.latLngToContainerPoint(position).subtract(target), {
     animate: false,
   });
-  return right - left >= 280;
+  return area.right - area.left >= 280;
 }
 const roleIds: Partial<Record<LockerRole, string>> = {};
 let lockers: AvailableLocker[] = [];
@@ -146,24 +242,12 @@ if (inspection) {
 const markerView = setupLockerMarkers(map, camera, (marker, locker) =>
   showInspection(marker, locker.label, locker.address, locker),
 );
-const route = setupLockerRoute(map, camera, element('route-status'), () => {
-  const menu = element('map-panels').getBoundingClientRect();
-  const panel = results.hidden ? null : results.getBoundingClientRect();
-  const size = map.getSize();
-  return {
-    left: menu.right + 6,
-    right: window.matchMedia('(max-width: 760px)').matches
-      ? size.x - 8
-      : panel
-        ? panel.left - 12
-        : size.x - 16,
-    top: (zoom.getContainer()?.getBoundingClientRect().bottom ?? 80) + 12,
-    bottom:
-      panel && window.matchMedia('(max-width: 760px)').matches
-        ? panel.top - 12
-        : size.y - 28,
-  };
-});
+const route = setupLockerRoute(
+  map,
+  camera,
+  element('route-status'),
+  visibleMapArea,
+);
 function selectRole(role: LockerRole, locker: AvailableLocker | null) {
   shipping.setRole(role, locker);
   map.closePopup();
@@ -179,12 +263,51 @@ function text(tag: string, value: string) {
   return node;
 }
 function chooseRole(role: LockerRole, locker: AvailableLocker) {
+  setMenuOpen(true);
   setMode('quote', false);
   map.closePopup();
   (role === 'pickup' ? pickup : delivery).select(locker);
 }
 let inspected: { marker: L.Marker; popup: L.Popup } | null = null;
 let fittingInspection = false;
+function sizeInspection() {
+  if (!mobile.matches || !inspected) return;
+  const popupNode = inspected.popup.getElement();
+  const content = popupNode?.querySelector<HTMLElement>('.locker-popup');
+  const iconNode = inspected.marker.getElement();
+  if (!popupNode || !content || !iconNode) return;
+  const popup = popupNode.getBoundingClientRect();
+  const icon = iconNode.getBoundingClientRect();
+  const painted =
+    iconNode.querySelector('span')?.getBoundingClientRect() ?? icon;
+  const tip =
+    popupNode
+      .querySelector('.leaflet-popup-tip-container')
+      ?.getBoundingClientRect() ?? popup;
+  const top = Math.min(popup.top, icon.top, painted.top);
+  const bottom = Math.max(
+    popup.bottom,
+    tip.bottom,
+    icon.bottom,
+    painted.bottom,
+  );
+  const area = visibleMapArea();
+  // Measure the real frame, pointer and pin; retain a whole 48px role action.
+  const height = Math.max(
+    48,
+    Math.floor(
+      content.getBoundingClientRect().height +
+        area.bottom -
+        area.top -
+        (bottom - top),
+    ),
+  );
+  const value = `${height}px`;
+  if (content.style.getPropertyValue('--popup-max-height') !== value) {
+    content.style.setProperty('--popup-max-height', value);
+    inspected.popup.update();
+  }
+}
 function fitInspection() {
   if (
     camera.moving ||
@@ -193,6 +316,7 @@ function fitInspection() {
     !map.hasLayer(inspected.popup)
   )
     return;
+  sizeInspection();
   const popupNode = inspected.popup.getElement();
   const iconNode = inspected.marker.getElement();
   if (!popupNode || !iconNode) return;
@@ -222,17 +346,21 @@ function fitInspection() {
         ? right - size.x + padding
         : 0;
   const dy =
-    top < padding
-      ? top - padding
-      : bottom > size.y - padding
-        ? bottom - size.y + padding
+    top < (mobile.matches ? visibleMapArea().top : padding)
+      ? top - (mobile.matches ? visibleMapArea().top : padding)
+      : bottom > (mobile.matches ? visibleMapArea().bottom : size.y - padding)
+        ? bottom - (mobile.matches ? visibleMapArea().bottom : size.y - padding)
         : 0;
   if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
   fittingInspection = true;
   map.panBy([dx, dy], { animate: false });
   fittingInspection = false;
 }
-map.on('moveend zoomend resize', fitInspection);
+map.on('moveend zoomend', fitInspection);
+map.on('resize', () => {
+  camera.cancel();
+  fitInspection();
+});
 let sharedPopup: L.Popup | null = null;
 let inspectionHandlersCleanup = () => {};
 let promoted: { icon: HTMLElement; parent: HTMLElement } | null = null;
@@ -249,8 +377,13 @@ map.on('popupclose', (event) => {
   promoted = null;
   marker.getElement()?.classList.remove('is-inspected');
   inspected = null;
+  element('explorer').dataset.inspectionOpen = 'false';
   markerView.inspect(null);
   camera.cancel();
+  if (mobile.matches && !results.hidden) {
+    const position = marker.getLatLng();
+    revealPosition([position.lat, position.lng]);
+  }
 });
 function showInspection(
   marker: L.Marker,
@@ -259,9 +392,11 @@ function showInspection(
   available: AvailableLocker | null,
 ) {
   camera.cancel();
+  if (mobile.matches) setMenuOpen(false);
   map.closePopup();
   markerView.closeMembers();
   if (available) markerView.inspect(available.id);
+  element('explorer').dataset.inspectionOpen = 'true';
   const content = document.createElement('div');
   content.className = 'locker-popup';
   content.append(
@@ -306,16 +441,13 @@ function showInspection(
     inspection.append(icon);
   }
   icon?.classList.add('is-inspected');
+  sizeInspection();
+  const area = visibleMapArea();
   const size = map.getSize();
   const point = map.latLngToContainerPoint(marker.getLatLng());
-  const menu = element('map-panels').getBoundingClientRect();
-  const panel = results.hidden ? null : results.getBoundingClientRect();
-  const desired = matchMedia('(max-width:760px)').matches
-    ? L.point(size.x / 2, Math.min(size.y - 52, Math.max(250, size.y * 0.78)))
-    : L.point(
-        (menu.right + 12 + (panel ? panel.left - 12 : size.x - 24)) / 2,
-        size.y / 2,
-      );
+  const desired = mobile.matches
+    ? L.point((area.left + area.right) / 2, area.bottom - 24)
+    : L.point((area.left + area.right) / 2, size.y / 2);
   const popupBox = popup.getElement()!.getBoundingClientRect();
   const iconBox = marker.getElement()!.getBoundingClientRect();
   const painted =
@@ -340,8 +472,11 @@ function showInspection(
     Math.min(desired.x - point.x, size.x - 12 - right),
   );
   const dy = Math.max(
-    12 - top,
-    Math.min(desired.y - point.y, size.y - 12 - bottom),
+    (mobile.matches ? area.top : 12) - top,
+    Math.min(
+      desired.y - point.y,
+      (mobile.matches ? area.bottom : size.y - 12) - bottom,
+    ),
   );
   camera.panBy([-dx, -dy]);
   const popupNode = popup.getElement();
@@ -512,6 +647,7 @@ function setMode(mode: 'quote' | 'tracking', restoreRoute = true) {
     view.inert = !selected;
   }
   route.setVisible(mode === 'quote', restoreRoute);
+  updateMenuStatus();
 }
 const tabs = [
   element<HTMLButtonElement>('quote-tab'),

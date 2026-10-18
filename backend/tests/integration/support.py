@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from domain.deliveries import Delivery
 from domain.lockers import Dimensions
 from domain.returns import Return
@@ -164,10 +164,12 @@ class PostgresTestCase(unittest.IsolatedAsyncioTestCase):
             return definitions, rows
 
     async def application(self):
-        from main import create_app
+        from entrypoints.server.api import create_app
 
         engine, sessions = self.database()
-        with patch("main.create_database", return_value=(engine, sessions)):
+        with patch(
+            "entrypoints.server.api.create_database", return_value=(engine, sessions)
+        ):
             app = create_app(str(self.url), publisher=AsyncMock())
         lifetime = AsyncExitStack()
         self.resources.push_async_callback(lifetime.aclose)

@@ -36,7 +36,16 @@ async function data(page: Page, payload: unknown, open = true) {
     route.fulfill({ json: payload }),
   );
   await page.goto('/');
+  await showMenu(page);
   if (open) await openPanel(page);
+}
+async function showMenu(page: Page) {
+  const toggle = page.locator('#menu-toggle');
+  if (
+    (await toggle.isVisible()) &&
+    (await toggle.getAttribute('aria-expanded')) === 'false'
+  )
+    await toggle.click();
 }
 async function openPanel(page: Page) {
   await page.locator('#skip-results').focus();
@@ -97,6 +106,7 @@ for (const viewport of [
       });
     });
     await page.goto('/');
+    await showMenu(page);
     await expect(page.locator('#available-count')).toHaveText('1');
     await expect(page.locator('#map-panels .panel')).toHaveCount(2);
     expect(
@@ -462,6 +472,7 @@ const address = {
   street_number: '2',
 };
 async function selectRole(page: Page, role: 'pickup' | 'delivery', n: number) {
+  await showMenu(page);
   const input = page.locator(`#${role}-locker`);
   if ((await input.getAttribute('readonly')) !== null)
     await page.locator(`#${role}-clear`).click();
@@ -563,6 +574,7 @@ test('real cross-origin FastAPI completes POST/preflight and polling without int
   await tiles(page);
   const response = page.waitForResponse('http://127.0.0.1:8765/lockers');
   await page.goto('/');
+  await showMenu(page);
   await expect(page.locator('#available-count')).toHaveText('1');
   expect((await response).headers()['access-control-allow-origin']).toBe(
     'http://127.0.0.1:4321',
@@ -627,6 +639,7 @@ for (const viewport of [
       });
     });
     await page.goto('/');
+    await showMenu(page);
     await expect(page.locator('#available-count')).toHaveText('3');
     await expect(page.locator('#results')).toBeHidden();
     await expect(page.locator('#status')).toBeHidden();
@@ -761,6 +774,7 @@ test('availability failure and tile warning are independent; retry clears stale 
       : r.fulfill({ json: [locker(1)] });
   });
   await page.goto('/');
+  await showMenu(page);
   await expect(page.locator('#retry')).toBeVisible();
   await expect(page.locator('#tile-warning')).toBeVisible();
   await page.locator('#retry').click();
@@ -828,6 +842,7 @@ test('retained POST blocks duplicates, edit discards its late acceptance', async
     );
   });
   expect(await page.evaluate(() => Reflect.get(window, 'postCount'))).toBe(1);
+  await showMenu(page);
   await page.locator('#parcel-weight').fill('1.002');
   await page.evaluate(() => Reflect.get(window, 'finishPost')());
   await expect(page.locator('#quotation-status')).toBeEmpty();
@@ -862,7 +877,10 @@ test('late GET after editing or closing cannot restore offers; terminal reopen p
     await expect
       .poll(() => page.evaluate(() => typeof Reflect.get(window, 'finishRead')))
       .toBe('function');
-    if (action === 'edit') await page.locator('#parcel-weight').fill('2');
+    if (action === 'edit') {
+      await showMenu(page);
+      await page.locator('#parcel-weight').fill('2');
+    }
     if (action === 'close') await page.locator('#close-results').click();
     await page.evaluate((payload) => {
       Reflect.get(window, 'finishRead')(payload);
@@ -976,6 +994,7 @@ function tracked(
   };
 }
 async function track(page: Page, n: number) {
+  await showMenu(page);
   await page.locator('#tracking-id').fill(trackingId(n));
   await page.locator('#tracking-id').press('Enter');
 }
@@ -995,9 +1014,12 @@ for (const viewport of [
         apiRequests.push(`${r.method()} ${new URL(r.url()).pathname}`);
     });
     await page.goto('/');
+    await showMenu(page);
     await expect(page.locator('#available-count')).toHaveText('1');
     await fillShipping(page);
+    await showMenu(page);
     await page.locator('#tracking-tab').click();
+    await showMenu(page);
     await page.locator('#tracking-id').fill('invalid');
     await page.locator('#tracking-submit').click();
     await expect(page.locator('#tracking-error')).toBeVisible();
@@ -1026,6 +1048,7 @@ for (const viewport of [
       'No se ha encontrado',
     );
     const requestCount = apiRequests.length;
+    await showMenu(page);
     await page.locator('#quote-tab').click();
     await expect(page.locator('#pickup-locker')).toHaveAttribute(
       'data-selected-id',
@@ -1037,6 +1060,7 @@ for (const viewport of [
     );
     await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
     await expect(page.locator('#compare-shipping')).toBeEnabled();
+    await showMenu(page);
     await page.locator('#tracking-tab').click();
     await expect(page.locator('#tracking-result')).toBeHidden();
     await expect(page.locator('#tracking-status')).toBeEmpty();
@@ -1073,7 +1097,9 @@ test('tracking displays all five custody states and null coordinates despite ava
     return r.fulfill({ json: payload });
   });
   await page.goto('/');
+  await showMenu(page);
   await expect(page.locator('#retry')).toBeVisible();
+  await showMenu(page);
   await page.locator('#tracking-tab').click();
   for (const [i, label] of [
     'Pendiente de recogida',
@@ -1106,6 +1132,7 @@ test('tracking cancels stale reads on edit/new attempt/tab change even when abor
         : original(input, init);
   });
   await data(page, [locker(1)], false);
+  await showMenu(page);
   await page.locator('#tracking-tab').click();
   for (const action of ['edit', 'new', 'tab']) {
     await track(page, 1001);
@@ -1116,8 +1143,10 @@ test('tracking cancels stale reads on edit/new attempt/tab change even when abor
     const previous = await page
       .locator('.leaflet-map-pane')
       .getAttribute('style');
-    if (action === 'edit')
+    if (action === 'edit') {
+      await showMenu(page);
       await page.locator('#tracking-id').fill(trackingId(1002));
+    }
     if (action === 'new') {
       await page.evaluate(() =>
         Reflect.set(
@@ -1128,7 +1157,10 @@ test('tracking cancels stale reads on edit/new attempt/tab change even when abor
       );
       await track(page, 1002);
     }
-    if (action === 'tab') await page.locator('#quote-tab').click();
+    if (action === 'tab') {
+      await showMenu(page);
+      await page.locator('#quote-tab').click();
+    }
     await page.evaluate(
       ({ payload, older }) =>
         Reflect.get(
@@ -1150,6 +1182,7 @@ test('tracking cancels stale reads on edit/new attempt/tab change even when abor
       await expect(page.locator('#tracking-result')).toContainText('Recogido');
     }
     if (action === 'tab') {
+      await showMenu(page);
       await page.locator('#tracking-tab').click();
       await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1001));
       await expect(page.locator('#tracking-form')).not.toHaveAttribute(
@@ -1192,6 +1225,7 @@ test('roles require registered postal codes and no independent postal controls e
     return r.abort();
   });
   await page.goto('/');
+  await showMenu(page);
   await expect(
     page.getByRole('combobox', { name: 'Locker de origen', exact: true }),
   ).toBeVisible();
@@ -1321,7 +1355,9 @@ test('map geography remains above both tabs without supplying role postal input'
       }),
     }),
   );
+  await showMenu(page);
   await page.locator('#tracking-tab').click();
+  await showMenu(page);
   await page.locator('#location-query').fill('Madrid');
   await page.locator('#location-results button').click();
   await expect(page.locator('#tracking-tab')).toHaveAttribute(
@@ -1332,6 +1368,7 @@ test('map geography remains above both tabs without supplying role postal input'
     'Mapa independiente, 99999',
   );
   await expect(page.locator('.search-location')).toHaveCount(1);
+  await showMenu(page);
   await page.locator('#quote-tab').click();
   await expect(page.locator('#pickup-locker')).toHaveAttribute(
     'data-selected-id',
@@ -1352,6 +1389,7 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport);
     await data(page, [locker(1, 'Popup seguro')], false);
+    await showMenu(page);
     await page.locator('#tracking-tab').click();
     const marker = page.locator('.locker-marker');
     await marker.focus();
@@ -1414,12 +1452,16 @@ for (const viewport of [
     await expect(page.locator('#pickup-clear')).toBeFocused();
     await expectRoleUncovered(page, 'pickup');
     // Selecting a role must reveal its input after the menu has been scrolled.
-    await page.locator('.left-stack').evaluate((panel) => {
-      panel.scrollTop = panel.scrollHeight;
-    });
+    await page
+      .locator(viewport.width <= 760 ? '#menu-content' : '.left-stack')
+      .evaluate((panel) => {
+        panel.scrollTop = panel.scrollHeight;
+      });
     if (viewport.height === 480)
       expect(
-        await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
+        await page
+          .locator(viewport.width <= 760 ? '#menu-content' : '.left-stack')
+          .evaluate((panel) => panel.scrollTop),
       ).toBeGreaterThan(0);
     await marker.focus();
     await page.keyboard.press('Enter');
@@ -1430,12 +1472,16 @@ for (const viewport of [
     );
     await expect(page.locator('#delivery-clear')).toBeFocused();
     await expectRoleUncovered(page, 'delivery');
-    await page.locator('.left-stack').evaluate((panel) => {
-      panel.scrollTop = panel.scrollHeight;
-    });
+    await page
+      .locator(viewport.width <= 760 ? '#menu-content' : '.left-stack')
+      .evaluate((panel) => {
+        panel.scrollTop = panel.scrollHeight;
+      });
     if (viewport.height === 480)
       expect(
-        await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
+        await page
+          .locator(viewport.width <= 760 ? '#menu-content' : '.left-stack')
+          .evaluate((panel) => panel.scrollTop),
       ).toBeGreaterThan(0);
     await marker.focus();
     await page.keyboard.press('Enter');
@@ -1558,6 +1604,7 @@ test('tabs preserve both role identities and parcel data while cancelling pendin
   await fillShipping(page);
   await page.locator('#compare-shipping').click();
   await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await showMenu(page);
   await page.locator('#quote-tab').focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('#tracking-tab')).toBeFocused();
@@ -1567,7 +1614,9 @@ test('tabs preserve both role identities and parcel data while cancelling pendin
   ).toBe(true);
   await expect(page.locator('#results')).toBeHidden();
   await page.evaluate(() => Reflect.get(window, 'finishTabPost')());
+  await showMenu(page);
   await page.locator('#tracking-id').fill(trackingId(1001));
+  await showMenu(page);
   await page.locator('#tracking-tab').focus();
   await page.keyboard.press('Home');
   await expect(page.locator('#quote-tab')).toBeFocused();
@@ -1615,6 +1664,7 @@ for (const viewport of [
         otherReads++;
     });
     await page.goto('/');
+    await showMenu(page);
     await expect(page.locator('#available-count')).toHaveText('21');
     for (const role of ['pickup', 'delivery'] as const) {
       const input = page.locator(`#${role}-locker`),
@@ -1711,6 +1761,8 @@ async function popupGap(page: Page, markerSelector: string) {
 for (const viewport of [
   { width: 1280, height: 800, name: 'desktop' },
   { width: 375, height: 480, name: 'mobile-short' },
+  { width: 320, height: 568, name: 'mobile-narrow' },
+  { width: 667, height: 375, name: 'mobile-landscape' },
 ]) {
   for (const kind of ['available', 'tracking'] as const) {
     test(`popup clears real ${kind} icon after map changes ${viewport.name}`, async ({
@@ -1741,6 +1793,7 @@ for (const viewport of [
         await page.route('**/tracking/*', (r) =>
           r.fulfill({ json: tracked() }),
         );
+        await showMenu(page);
         await page.locator('#tracking-tab').click();
         await track(page, 1001);
         await expect(page.locator('.tracking-marker')).toHaveCount(1);
@@ -1869,6 +1922,7 @@ for (const viewport of [
         ).toHaveCount(0);
         await expect(page.locator('.locker-cluster')).toHaveText('2');
       } else {
+        await showMenu(page);
         await page.locator('#quote-tab').click();
         await expect(
           page.locator('.inspection-pane .tracking-marker'),
@@ -1951,7 +2005,8 @@ async function routeGeometry(page: Page, labels: string[]) {
           right: box.right,
           y: box.y,
           bottom: box.bottom,
-          menuRight: menu.right,
+          menuRight: innerWidth <= 760 ? 12 : menu.right,
+          menuBottom: innerWidth <= 760 ? menu.bottom : 78,
           width: innerWidth,
           height: innerHeight,
           dx: Math.abs((box.left + box.right) / 2 - (pin.left + pin.right) / 2),
@@ -1965,7 +2020,7 @@ async function routeGeometry(page: Page, labels: string[]) {
         return (
           g.x >= g.menuRight &&
           g.right <= g.width &&
-          g.y >= 90 &&
+          g.y >= Math.max(90, g.menuBottom) &&
           g.bottom <= g.height - 16 &&
           g.dx <= 1 &&
           g.dy <= 1
@@ -2003,6 +2058,8 @@ async function routeGeometry(page: Page, labels: string[]) {
 for (const viewport of [
   { width: 1280, height: 800, name: 'desktop' },
   { width: 375, height: 480, name: 'mobile-short' },
+  { width: 320, height: 568, name: 'mobile-narrow' },
+  { width: 667, height: 375, name: 'mobile-landscape' },
 ]) {
   test(`illustrative route preserves real endpoints and independent navigation ${viewport.name}`, async ({
     page,
@@ -2032,6 +2089,7 @@ for (const viewport of [
       r.fulfill({ json: places(place('Barcelona', 2.17, 41.39)) }),
     );
     await page.goto('/');
+    await showMenu(page);
     await expect(page.locator('#available-count')).toHaveText('6');
     await selectRole(page, 'pickup', 1);
     await expect(page.locator('.locker-route')).toHaveCount(0);
@@ -2066,6 +2124,7 @@ for (const viewport of [
     expect(afterPan).not.toEqual(beforePan);
     await page.waitForTimeout(200);
     expect(await origin.boundingBox()).toEqual(afterPan);
+    await showMenu(page);
     await page.locator('#location-query').fill('Barcelona');
     await page.locator('#location-results button').click();
     await expect(page.locator('.search-location')).toHaveCount(1);
@@ -2073,10 +2132,12 @@ for (const viewport of [
     const afterGeo = await origin.boundingBox();
     await page.waitForTimeout(200);
     expect(await origin.boundingBox()).toEqual(afterGeo);
+    await showMenu(page);
     await page.locator('#tracking-tab').click();
     await expect(page.locator('.route-endpoint,.locker-route')).toHaveCount(0);
     await track(page, 1001);
     await expect(page.locator('.tracking-marker')).toHaveCount(1);
+    await showMenu(page);
     await page.locator('#quote-tab').click();
     await routeGeometry(page, ['Origen visual', 'Destino visual']);
     await expect(page.locator('.tracking-marker')).toHaveCount(0);
@@ -2228,8 +2289,7 @@ for (const viewport of [
     await input.focus();
     await input.click();
     await input.pressSequentially('otro');
-    for (const key of ['Enter', 'ArrowDown', 'ArrowUp', 'Escape'])
-      await input.press(key);
+    for (const key of ['Enter', 'ArrowDown', 'ArrowUp']) await input.press(key);
     await expect(input).toHaveValue('Origen animado');
     await expect(input).toHaveAttribute('data-selected-id', id(1));
     await expect(input).toHaveAttribute('readonly', '');
@@ -2246,6 +2306,7 @@ for (const viewport of [
     await expect(page.locator('#pickup-suggestions')).toBeHidden();
     await expectPositionStopped(page, 'Origen animado');
     await selectRole(page, 'pickup', 1);
+    await showMenu(page);
     await page.locator('#parcel-weight').fill('1.001');
     await selectRole(page, 'delivery', 2);
     // Observe an in-flight fractional zoom before cancelling it with X.
@@ -2353,6 +2414,7 @@ for (const viewport of [
       await expectPositionStopped(page, 'Origen animado');
       await marker.focus();
       await marker.press('Enter');
+      await showMenu(page);
       await page.locator('#location-query').fill('Barcelona');
       await expectPositionStopped(page, 'Origen animado');
       await page.locator('#location-results button').click();
@@ -2370,6 +2432,7 @@ for (const viewport of [
       await expectPositionStopped(page, 'Origen animado');
       await other.focus();
       await other.press('Enter');
+      await showMenu(page);
       await page.locator('#tracking-tab').click();
       await expect(page.locator('.leaflet-popup')).toHaveCount(0);
       await expectPositionStopped(page, 'Origen animado');
@@ -2435,11 +2498,13 @@ for (const viewport of [
     await group.focus();
     await group.press('Escape');
     await expect(group).toHaveCSS('opacity', '1');
+    await showMenu(page);
     await page.locator('#tracking-tab').click();
     await expect(page.locator('.locker-cluster').first()).toHaveCSS(
       'opacity',
       '1',
     );
+    await showMenu(page);
     await page.locator('#quote-tab').click();
     await expect(page.locator('.locker-cluster').first()).toHaveCSS(
       'opacity',
@@ -2470,6 +2535,7 @@ for (const viewport of [
       return r.fulfill({ json: records });
     });
     await page.goto('/');
+    await showMenu(page);
     await expect(page.locator('#available-count')).toHaveText('45');
     await expect(page.locator('.locker-cluster')).toHaveText('45');
     await expect(page.locator('.locker-marker')).toHaveCount(0);
@@ -2565,17 +2631,21 @@ for (const viewport of [
     await page.locator('.leaflet-popup-close-button').focus();
     await page.keyboard.press('Escape');
     await expect(page.locator('.locker-cluster')).toBeFocused();
+    await showMenu(page);
     await page.locator('#parcel-weight').focus();
     await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '0.3');
     await openMembers();
+    await showMenu(page);
     await page.locator('#tracking-tab').focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('.cluster-members')).toHaveCount(0);
+    await showMenu(page);
     await page.locator('#quote-tab').click();
     await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '0.3');
     await openMembers();
     await page.mouse.click(viewport.width - 5, viewport.height - 55);
     await expect(page.locator('.cluster-members')).toHaveCount(0);
+    await showMenu(page);
     await page.locator('#parcel-weight').focus();
     await expect(page.locator('.locker-cluster')).toHaveCSS('opacity', '0.3');
     await page.locator('#pickup-clear').click();
@@ -2601,6 +2671,7 @@ test('tracking edit removes its shared inspection popup immediately', async ({
   parcel.locker.location_id = 'Locker de seguimiento';
   await page.route('**/tracking/*', (route) => route.fulfill({ json: parcel }));
   await page.goto('/');
+  await showMenu(page);
   await page.locator('#tracking-tab').click();
   await track(page, 1001);
   await page.locator('.tracking-marker').focus();
@@ -2608,6 +2679,7 @@ test('tracking edit removes its shared inspection popup immediately', async ({
   await expect(page.locator('.locker-popup')).toContainText(
     'Locker de seguimiento',
   );
+  await showMenu(page);
   await page.locator('#tracking-id').fill('');
   await expect(page.locator('.leaflet-popup,.tracking-marker')).toHaveCount(0);
   await expect(page.locator('#tracking-id')).toBeFocused();
@@ -2627,9 +2699,11 @@ test('viewport eviction recreates keyboard activation without selecting a role',
     }),
   );
   await expect(page.locator('.locker-marker')).toHaveCount(1);
+  await showMenu(page);
   await page.locator('#location-query').fill('Canarias');
   await page.locator('#location-results button').click();
   await expect(page.locator('.locker-marker')).toHaveCount(0);
+  await showMenu(page);
   await page.locator('#location-query').fill('Madrid');
   await page.locator('#location-results button').click();
   await expect(page.locator('.locker-marker')).toHaveCount(1);
@@ -2644,4 +2718,373 @@ test('viewport eviction recreates keyboard activation without selecting a role',
     'data-selected-id',
     '',
   );
+});
+
+for (const viewport of [
+  { width: 320, height: 568 },
+  { width: 375, height: 480 },
+  { width: 667, height: 375 },
+]) {
+  test(`compact mobile menu preserves work and accessible map ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    let reads = 0;
+    await tiles(page);
+    await page.route('**/lockers', (route) => {
+      reads++;
+      return route.fulfill({ json: [locker(1)] });
+    });
+    await page.goto('/');
+    const toggle = page.getByRole('button', {
+      name: 'Abrir menú',
+      exact: true,
+    });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#menu-content')).toBeHidden();
+    await expect(page.locator('#available-count')).toHaveText('1');
+    await page.screenshot({
+      path: `test-results/compact-${viewport.width}-initial.png`,
+    });
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    const footprint = await page.locator('#map-panels').boundingBox();
+    expect(footprint!.height).toBeLessThanOrEqual(viewport.height * 0.6 + 1);
+    await selectRole(page, 'pickup', 1);
+    await page.locator('#parcel-weight').fill('1.001');
+    await page.locator('#parcel-weight').press('Escape');
+    await expect(page.locator('#menu-toggle')).toBeFocused();
+    await expect(page.locator('#menu-content')).toBeHidden();
+    // Hidden controls cannot receive keyboard focus.
+    await page
+      .locator('#parcel-weight')
+      .evaluate((node) => (node as HTMLElement).focus());
+    await expect(page.locator('#menu-toggle')).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#parcel-weight')).toHaveCSS('font-size', '16px');
+    await page.locator('#tracking-tab').click();
+    await page.locator('#tracking-id').fill(id(1001));
+    await page.locator('#tracking-submit').scrollIntoViewIfNeeded();
+    await expect(page.locator('#menu-toggle')).toBeInViewport();
+    await page.screenshot({
+      path: `test-results/compact-${viewport.width}-expanded.png`,
+    });
+    await page.locator('#menu-toggle').click();
+    await page.locator('#menu-toggle').click();
+    await expect(page.locator('#tracking-tab')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.locator('#tracking-id')).toHaveValue(id(1001));
+    expect(reads).toBe(1);
+    const freeMap = await page.evaluate(() => {
+      const menu = document
+        .querySelector('#map-panels')!
+        .getBoundingClientRect();
+      return (
+        document
+          .elementFromPoint(
+            innerWidth / 2,
+            (menu.bottom + innerHeight - 30) / 2,
+          )
+          ?.closest('#map') === document.querySelector('#map')
+      );
+    });
+    expect(freeMap).toBe(true);
+    await expect(
+      page.getByRole('button', { name: 'Acercar mapa' }),
+    ).toBeInViewport();
+    await expect(page.locator('.leaflet-control-attribution')).toBeInViewport();
+    await page.locator('#menu-toggle').click();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator('#tracking-tab')).toBeFocused();
+    await expect(page.locator('#menu-toggle')).toBeHidden();
+    await expect(page.locator('#menu-content')).toBeVisible();
+    await page.setViewportSize(viewport);
+    await expect(page.locator('#menu-toggle')).toBeFocused();
+    await expect(page.locator('#menu-content')).toBeHidden();
+    await openPanel(page);
+    await expect(page.locator('#pickup-clear')).toBeFocused();
+    await page.route(photon, (route) =>
+      route.fulfill({ json: places(place()) }),
+    );
+    await page.locator('#location-query').fill('Madrid');
+    await page.locator('#location-results button').click();
+    expect(await markerHit(page)).toBe(true);
+    const markerBox = await page.locator('.search-location').boundingBox();
+    const menuBox = await page.locator('#map-panels').boundingBox();
+    expect(markerBox!.y).toBeGreaterThan(menuBox!.y + menuBox!.height);
+  });
+}
+
+test('compact status exposes failure and retry without automatic expansion', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 480 });
+  await tiles(page, true);
+  let reads = 0;
+  await page.route('**/lockers', (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ status: 503, body: 'unavailable' })
+      : route.fulfill({ json: [] });
+  });
+  await page.goto('/');
+  await expect(page.locator('#menu-status')).toContainText('HTTP 503');
+  await expect(page.locator('#menu-content')).toBeHidden();
+  await showMenu(page);
+  await page.locator('#retry').click();
+  await page.locator('#menu-toggle').click();
+  await expect(page.locator('#menu-status')).toContainText('No hay lockers');
+  await expect(page.locator('#menu-status')).toContainText('Fondo del mapa');
+  await expect(page.locator('#menu-content')).toBeHidden();
+  expect(reads).toBe(2);
+});
+
+test('pending mobile tracking survives collapse and its response never reopens menu', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 480 });
+  await data(page, [locker(1)]);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reads = 0;
+  await page.route('**/tracking/*', async (route) => {
+    reads++;
+    await pending;
+    await route.fulfill({ json: tracked() });
+  });
+  await page.locator('#tracking-tab').click();
+  await page.locator('#tracking-id').fill(id(1001));
+  await page.locator('#tracking-submit').click();
+  await expect.poll(() => reads).toBe(1);
+  await page.locator('#menu-toggle').click();
+  release();
+  await expect(page.locator('.tracking-marker')).toHaveCount(1);
+  await expect(page.locator('#menu-content')).toBeHidden();
+  await expect(page.locator('#menu-toggle')).toBeFocused();
+  await showMenu(page);
+  await expect(page.locator('#tracking-result')).toBeVisible();
+  expect(reads).toBe(1);
+});
+
+test('mobile results keep polling and reopen without a duplicate submission', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 480 });
+  await data(page, [locker(1)]);
+  let posts = 0,
+    gets = 0;
+  let submitted: any;
+  await page.route('**/quotations', async (route) => {
+    posts++;
+    submitted = route.request().postDataJSON();
+    await route.fulfill({
+      status: 202,
+      json: { id: quoteId, status: 'PENDING' },
+    });
+  });
+  await page.route(`**/quotations/${quoteId}`, (route) => {
+    gets++;
+    return route.fulfill({
+      json: quote(submitted, gets === 1 ? 'PENDING' : 'COMPLETED'),
+    });
+  });
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#menu-content')).toBeHidden();
+  await expect(page.locator('#results-title')).toBeFocused();
+  await expect(page.locator('#quotation-status')).toContainText('finalizada');
+  expect(gets).toBe(2);
+  await page.screenshot({ path: 'test-results/compact-375-results.png' });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#compare-shipping')).toBeFocused();
+  await expect(page.locator('#menu-content')).toBeVisible();
+  await reopenResults(page);
+  await page.locator('#menu-toggle').click();
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#menu-content')).toBeVisible();
+  await reopenResults(page);
+  await expect(page.locator('#quotation-offers')).toContainText('12,34');
+  expect(posts).toBe(1);
+  expect(gets).toBe(2);
+});
+
+test('mobile menu responds to touch and Escape dismisses suggestions before menu', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 375, height: 480 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await tiles(page);
+  await page.route('**/lockers', (route) =>
+    route.fulfill({ json: [locker(1)] }),
+  );
+  await page.goto('/');
+  await page.locator('#menu-toggle').tap();
+  await page.locator('#pickup-locker').fill('Locker');
+  await expect(page.locator('#pickup-options button')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#pickup-locker')).toBeFocused();
+  await expect(page.locator('#menu-content')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#menu-toggle')).toBeFocused();
+  await expect(page.locator('#menu-content')).toBeHidden();
+  await page.locator('#menu-toggle').tap();
+  await page.locator('#menu-toggle').tap();
+  await expect(page.locator('#menu-content')).toBeHidden();
+  await context.close();
+});
+
+test.describe('mobile inspection alongside quotation results', () => {
+  test.use({ hasTouch: true });
+  for (const viewport of [
+    { width: 375, height: 480 },
+    { width: 667, height: 375 },
+  ]) {
+    test(`keeps whole popup actions and pin clear of live results ${viewport.width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(viewport);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await data(page, [locker(1, 'Inspección con resultados')]);
+      let posts = 0,
+        gets = 0;
+      let submitted: any;
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route('**/quotations', (route) => {
+        posts++;
+        submitted = route.request().postDataJSON();
+        return route.fulfill({
+          status: 202,
+          json: { id: quoteId, status: 'PENDING' },
+        });
+      });
+      await page.route(`**/quotations/${quoteId}`, async (route) => {
+        gets++;
+        if (gets > 1) await pending;
+        await route.fulfill({
+          json: quote(submitted, gets === 1 ? 'PENDING' : 'COMPLETED'),
+        });
+      });
+      await fillShipping(page);
+      await page.locator('#compare-shipping').click();
+      await expect.poll(() => gets).toBe(2);
+      const marker = page.locator('.locker-marker');
+      await marker.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#results')).toBeVisible();
+      await expect(page.locator('#results .results-scroll')).toBeHidden();
+      async function hit(selector: string) {
+        return page.locator(selector).evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return node.contains(
+            document.elementFromPoint(
+              box.x + box.width / 2,
+              box.y + box.height / 2,
+            ),
+          );
+        });
+      }
+      async function geometry() {
+        const bounds = await page.evaluate(() => {
+          const rect = (selector: string) =>
+            document.querySelector(selector)!.getBoundingClientRect();
+          return {
+            popup: rect('.leaflet-popup').toJSON(),
+            pin: rect('.locker-marker').toJSON(),
+            results: rect('#results').toJSON(),
+            menu: rect('#map-panels').toJSON(),
+            zoom: rect('.leaflet-control-zoom').toJSON(),
+          };
+        });
+        expect(bounds.popup.y).toBeGreaterThanOrEqual(
+          Math.max(bounds.menu.bottom, bounds.zoom.bottom) + 11,
+        );
+        expect(bounds.pin.bottom).toBeLessThanOrEqual(bounds.results.y - 11);
+        expect(await hit('.locker-marker')).toBe(true);
+        expect(await hit('#menu-toggle')).toBe(true);
+        expect(await hit('.leaflet-control-zoom-in')).toBe(true);
+        expect(await hit('#close-results')).toBe(true);
+        await expect(page.locator('#results-title')).toBeInViewport();
+        await expect(
+          page.locator('.leaflet-control-attribution'),
+        ).toBeInViewport();
+        for (const action of await page
+          .locator('.popup-role-actions button')
+          .all()) {
+          await action.focus();
+          await action.evaluate((node) =>
+            node.scrollIntoView({ block: 'nearest' }),
+          );
+          await expect(action).toBeFocused();
+          expect(
+            await action.evaluate((node) => {
+              const box = node.getBoundingClientRect();
+              const content = node
+                .closest('.locker-popup')!
+                .getBoundingClientRect();
+              return (
+                box.height >= 48 &&
+                box.top >= content.top - 1 &&
+                box.bottom <= content.bottom + 1 &&
+                node.contains(
+                  document.elementFromPoint(
+                    box.x + box.width / 2,
+                    box.y + box.height / 2,
+                  ),
+                )
+              );
+            }),
+          ).toBe(true);
+        }
+      }
+      await geometry();
+      release();
+      await expect(page.locator('#quotation-status')).toContainText(
+        'finalizada',
+      );
+      await page.screenshot({
+        path: `test-results/compact-results-popup-${viewport.width}.png`,
+      });
+      await page.setViewportSize(
+        viewport.width === 375
+          ? { width: 667, height: 375 }
+          : { width: 375, height: 480 },
+      );
+      await geometry();
+      await page.locator('.leaflet-popup-close-button').tap();
+      await expect(marker).toBeFocused();
+      await expect(page.locator('#results .results-scroll')).toBeVisible();
+      await expect(page.locator('#quotation-offers')).toContainText('12,34');
+      expect(await hit('.locker-marker')).toBe(true);
+      const normal = await page.locator('#results').boundingBox();
+      expect(normal!.height).toBeCloseTo(
+        page.viewportSize()!.height * 0.5 - 12,
+      );
+      await marker.press('Enter');
+      await geometry();
+      await page
+        .getByRole('button', { name: 'Locker de destino', exact: true })
+        .tap();
+      await expect(page.locator('#delivery-clear')).toBeFocused();
+      await expect(page.locator('#menu-content')).toBeVisible();
+      await expect(page.locator('#results')).toBeHidden();
+      expect(posts).toBe(1);
+      expect(gets).toBe(2);
+    });
+  }
 });

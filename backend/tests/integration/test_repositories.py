@@ -8,8 +8,8 @@ from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from domain.deliveries import Delivery
 from domain.returns import Return
 from tests.integration.support import PostgresTestCase, save_parcel

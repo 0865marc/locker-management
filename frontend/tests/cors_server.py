@@ -27,7 +27,7 @@ from application.quotations.models import (
 from application.quotations.ports import QuotationRepository
 from domain.lockers import Address, Compartment, Coordinates, Dimensions, Locker
 from domain.shipping_quotes import ShippingOffer
-from main import create_app
+from entrypoints.server.api import create_app
 
 locker_id = UUID("00000000-0000-4000-8000-000000000001")
 locker = Locker(
@@ -91,9 +91,14 @@ quotation_repository = AsyncMock(spec=QuotationRepository)
 quotation_repository.save.side_effect = save
 quotation_repository.get.side_effect = get
 with (
-    patch("main.create_database", return_value=(AsyncMock(), object())),
-    patch("main.SqlModelLockerRepository", return_value=repository),
-    patch("main.SqlModelQuotationRepository", return_value=quotation_repository),
+    patch(
+        "entrypoints.server.api.create_database", return_value=(AsyncMock(), object())
+    ),
+    patch("entrypoints.server.api.SqlModelLockerRepository", return_value=repository),
+    patch(
+        "entrypoints.server.api.SqlModelQuotationRepository",
+        return_value=quotation_repository,
+    ),
 ):
     app = create_app("postgresql+asyncpg://unused/unused", publisher=AsyncMock())
 

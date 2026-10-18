@@ -13,6 +13,7 @@ dist/
 /.aws/
 
 # Python caches and coverage
+/.cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -32,6 +33,32 @@ coverage.xml
 .DS_Store
 Thumbs.db
 
+# Generated Cloudflare runtime and source staging
+/cloudflare/node_modules/
+/cloudflare/.venv-workers/
+/cloudflare/.wrangler/
+/cloudflare/python_modules/
+/cloudflare/.prepared/
+/cloudflare/.pywrangler/
+# Local Cloudflare feasibility evidence
+/cloudflare/evidence/
+
+# Generated production Workers sources and local binding secrets
+/cloudflare/.production/
+/cloudflare/.dev.vars
+/cloudflare/.dev.vars.*
+
+# Current Cloudflare distribution; retain old ignores for manual transitions
+/deploy/cloudflare/node_modules/
+/deploy/cloudflare/.venv-workers/
+/deploy/cloudflare/.wrangler/
+/deploy/cloudflare/python_modules/
+/deploy/cloudflare/.prepared/
+/deploy/cloudflare/.pywrangler/
+/deploy/cloudflare/evidence/
+/deploy/cloudflare/.production/
+/deploy/cloudflare/.dev.vars
+/deploy/cloudflare/.dev.vars.*
 # Frontend tools and browser test artifacts
 /frontend/node_modules/
 /frontend/.astro/

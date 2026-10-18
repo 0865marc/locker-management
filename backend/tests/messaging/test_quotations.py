@@ -9,7 +9,7 @@ from uuid import uuid4
 import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 
-from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
+from adapters.database.sqlmodel.quotations import SqlModelQuotationRepository
 from adapters.queue.rabbitmq import RabbitMQ, handle_delivery
 from application.quotations.comparison import ShippingQuoteComparator
 from application.quotations.models import (

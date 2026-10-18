@@ -261,7 +261,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
     ):
         from unittest.mock import patch
 
-        from worker import run_worker
+        from entrypoints.server.consumer import run_worker
 
         engine, broker = AsyncMock(), AsyncMock()
         old_settings = {
@@ -275,12 +275,15 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch.dict("os.environ", old_settings),
-            patch("worker.create_database", return_value=(engine, object())),
-            patch("worker.RabbitMQ", return_value=broker),
-            patch("worker.SimulatedEconomyProvider") as economy,
-            patch("worker.SimulatedStandardProvider") as standard,
-            patch("worker.SimulatedExpressProvider") as express,
-            patch("worker.ShippingQuoteComparator") as comparator,
+            patch(
+                "entrypoints.server.consumer.create_database",
+                return_value=(engine, object()),
+            ),
+            patch("entrypoints.server.consumer.RabbitMQ", return_value=broker),
+            patch("entrypoints.server.consumer.SimulatedEconomyProvider") as economy,
+            patch("entrypoints.server.consumer.SimulatedStandardProvider") as standard,
+            patch("entrypoints.server.consumer.SimulatedExpressProvider") as express,
+            patch("entrypoints.server.consumer.ShippingQuoteComparator") as comparator,
         ):
             await run_worker()
         for factory in (economy, standard, express):
@@ -296,7 +299,7 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import patch
 
         from domain.shipping_quotes import QuoteOffers
-        from worker import run_worker
+        from entrypoints.server.consumer import run_worker
 
         entered, cancelled = asyncio.Event(), asyncio.Event()
 
@@ -320,11 +323,17 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
 
         broker.consume.side_effect = consume
         with (
-            patch("worker.create_database", return_value=(engine, object())),
-            patch("worker.RabbitMQ", return_value=broker),
-            patch("worker.SqlModelQuotationRepository", return_value=repository),
             patch(
-                "worker.ShippingQuoteComparator",
+                "entrypoints.server.consumer.create_database",
+                return_value=(engine, object()),
+            ),
+            patch("entrypoints.server.consumer.RabbitMQ", return_value=broker),
+            patch(
+                "entrypoints.server.consumer.SqlModelQuotationRepository",
+                return_value=repository,
+            ),
+            patch(
+                "entrypoints.server.consumer.ShippingQuoteComparator",
                 return_value=ShippingQuoteComparator([WaitingProvider()]),
             ),
         ):
@@ -342,13 +351,16 @@ class QuotationTests(unittest.IsolatedAsyncioTestCase):
     async def test_worker_startup_failure_closes_broker_and_database(self):
         from unittest.mock import patch
 
-        from worker import run_worker
+        from entrypoints.server.consumer import run_worker
 
         engine, broker = AsyncMock(), AsyncMock()
         broker.open.side_effect = ConnectionError("unavailable")
         with (
-            patch("worker.create_database", return_value=(engine, object())),
-            patch("worker.RabbitMQ", return_value=broker),
+            patch(
+                "entrypoints.server.consumer.create_database",
+                return_value=(engine, object()),
+            ),
+            patch("entrypoints.server.consumer.RabbitMQ", return_value=broker),
         ):
             with self.assertRaises(ConnectionError):
                 await run_worker()
