@@ -139,6 +139,13 @@ p {
   gap: 12px;
   padding: 2px 4px 5px 2px;
 }
+#menu-toggle {
+  display: none;
+}
+.menu-content {
+  display: grid;
+  gap: 12px;
+}
 .parcel-panel {
   padding: 20px;
 }
@@ -441,7 +448,11 @@ input[aria-invalid='true'] {
     left: 12px;
     width: calc(100% - 76px);
     max-width: 304px;
-    max-height: calc(100% - 44px);
+    max-height: 60vh;
+    max-height: 60dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     gap: 10px;
     padding: 2px 3px 4px 2px;
   }
@@ -496,7 +507,7 @@ input[aria-invalid='true'] {
     font-size: 17px;
   }
   .explorer[data-results-open='true'] .left-stack {
-    max-height: calc(50% - 38px);
+    max-height: 60dvh;
   }
   .leaflet-top.leaflet-right,
   .explorer[data-results-open='true'] .leaflet-top.leaflet-right {
@@ -1017,4 +1028,106 @@ select:focus-visible {
   width: 32px;
   padding: 0;
   font-size: 22px;
+}
+
+@media (max-width: 760px) {
+  #menu-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    min-height: 44px;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    box-shadow: var(--shadow);
+    text-align: left;
+  }
+  #menu-label {
+    font-size: 12px;
+  }
+  #menu-status {
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  #menu-status:empty {
+    display: none;
+  }
+  .menu-content {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    gap: 7px;
+    padding: 2px 3px 4px 2px;
+  }
+  .left-stack {
+    gap: 6px;
+  }
+  .parcel-panel {
+    padding: 12px;
+  }
+  .geography-panel {
+    padding: 10px 12px;
+  }
+  .mode-tabs {
+    margin-bottom: 12px;
+  }
+  .locker-selector {
+    margin-bottom: 11px;
+  }
+  .parcel-fields {
+    gap: 9px 8px;
+  }
+  #shipping-form label,
+  .location-search > label {
+    margin-bottom: 5px;
+  }
+  #compare-shipping {
+    margin-top: 11px;
+  }
+  .metrics {
+    margin-top: 9px;
+    padding-top: 9px;
+    gap: 9px;
+  }
+  .metrics strong {
+    font-size: 16px;
+  }
+  #tracking-form label,
+  #tracking-status,
+  #tracking-result {
+    font-size: 11px;
+  }
+  #tracking-help {
+    margin: 8px 0 10px;
+  }
+  #tracking-status,
+  #tracking-result {
+    margin-top: 12px;
+  }
+  #tracking-result {
+    padding-top: 12px;
+  }
+  #tracking-result h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+  .locker-popup {
+    max-height: var(--popup-max-height, 250px);
+  }
+}
+
+@media (max-width: 760px) {
+  /* Keep quotation state alive while inspection uses the remaining map area. */
+  .explorer[data-inspection-open='true'] .results-panel {
+    height: auto;
+  }
+  .explorer[data-inspection-open='true'] .results-scroll {
+    display: none;
+  }
 }
