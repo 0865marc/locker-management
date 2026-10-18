@@ -6,23 +6,31 @@ import {
 import {
   validateShipping,
   scaledInteger,
+  postalPattern,
   type ShippingInput,
   type Quotation,
 } from '../lib/quotations';
 import type { AvailableLocker } from '../lib/lockers';
+import type { LockerRole } from './locker-selector';
 export function setupShipping(
   element: <T extends HTMLElement>(id: string) => T,
+  showResults: () => void,
+  hideResults: () => void,
 ) {
   const form = element<HTMLFormElement>('shipping-form');
   const compare = element<HTMLButtonElement>('compare-shipping');
   const resume = element<HTMLButtonElement>('quotation-resume');
   const status = element('quotation-status');
   const offers = element('quotation-offers');
-  const reference = element('quotation-reference');
+  const reopen = element<HTMLButtonElement>('reopen-results');
   let generation = 0;
   let controller: AbortController | null = null;
   let known: { id: string; input: ShippingInput } | null = null;
-  let destination: AvailableLocker | null = null;
+  const roles: Record<LockerRole, AvailableLocker | null> = {
+    pickup: null,
+    delivery: null,
+  };
+  let hasComparison = false;
   let busy = false;
   let terminal = false;
   const field = (id: string) => element<HTMLInputElement>(id);
@@ -31,7 +39,7 @@ export function setupShipping(
     controller?.abort();
     controller = null;
     busy = false;
-    compare.disabled = false;
+    updateReady();
     resume.hidden = !known || terminal;
   }
   function invalidate() {
@@ -41,7 +49,9 @@ export function setupShipping(
     resume.hidden = true;
     status.textContent = '';
     offers.replaceChildren();
-    reference.hidden = true;
+    hasComparison = false;
+    reopen.hidden = true;
+    hideResults();
     for (const id of [
       'parcel-length',
       'parcel-width',
@@ -64,7 +74,16 @@ export function setupShipping(
   ])
     field(id).addEventListener('input', () => {
       invalidate();
-      if (!id.startsWith('parcel-')) return;
+      if (!id.startsWith('parcel-')) {
+        const input = field(id);
+        const invalid = input.value !== '' && !postalPattern.test(input.value);
+        input.setAttribute('aria-invalid', String(invalid));
+        const error = element(`${id}-error`);
+        error.textContent = 'Introduce cinco dígitos de código postal.';
+        error.hidden = !invalid;
+        updateReady();
+        return;
+      }
       const input = field(id);
       const invalid =
         input.validity.badInput ||
@@ -81,10 +100,21 @@ export function setupShipping(
           ? 'Introduce de 0,001 a 30 kg, en gramos enteros.'
           : 'Introduce de 0,1 a 200 cm, en décimas de cm (milímetros enteros).';
       error.hidden = !invalid;
+      updateReady();
     });
-  function showReference() {
-    reference.textContent = known ? `Referencia: ${known.id}` : '';
-    reference.hidden = true;
+  function validationInput() {
+    return validateShipping({
+      length: field('parcel-length').value,
+      width: field('parcel-width').value,
+      height: field('parcel-height').value,
+      weight: field('parcel-weight').value,
+      origin: field('origin-postal').value,
+      destination: field('destination-postal').value,
+    });
+  }
+  function updateReady() {
+    compare.disabled =
+      busy || !roles.pickup || !roles.delivery || !validationInput().ok;
   }
   function node(tag: string, content: string) {
     const n = document.createElement(tag);
@@ -154,6 +184,9 @@ export function setupShipping(
   async function run(input: ShippingInput, continuation: boolean) {
     if (busy) return;
     busy = true;
+    hasComparison = true;
+    reopen.hidden = false;
+    showResults();
     compare.disabled = true;
     resume.hidden = true;
     offers.replaceChildren();
@@ -173,7 +206,6 @@ export function setupShipping(
         );
         if (token !== generation) return;
         known = { id, input };
-        showReference();
       }
       if (!known) return;
       const quotation = await waitForQuotation(
@@ -201,12 +233,12 @@ export function setupShipping(
         error instanceof Error
           ? error.message
           : 'No se ha podido completar la consulta.';
-      showReference();
+
       resume.hidden = !known || terminal;
     } finally {
       if (token === generation) {
         busy = false;
-        compare.disabled = false;
+        updateReady();
         controller = null;
       }
     }
@@ -214,19 +246,15 @@ export function setupShipping(
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (busy) return;
-    if (!destination) {
-      element('destination-locker').focus();
-      status.textContent = 'Elige un locker de destino.';
-      return;
+    for (const role of ['pickup', 'delivery'] as const) {
+      if (!roles[role]) {
+        element(`${role}-selection-status`).textContent =
+          'Selecciona un locker de la lista.';
+        element(`${role}-locker`).focus();
+        return;
+      }
     }
-    const validation = validateShipping({
-      length: field('parcel-length').value,
-      width: field('parcel-width').value,
-      height: field('parcel-height').value,
-      weight: field('parcel-weight').value,
-      origin: field('origin-postal').value,
-      destination: field('destination-postal').value,
-    });
+    const validation = validationInput();
     if (!validation.ok) {
       for (const [id, message] of Object.entries(validation.errors)) {
         field(id).setAttribute('aria-invalid', 'true');
@@ -240,27 +268,36 @@ export function setupShipping(
     }
     known = null;
     terminal = false;
-    reference.hidden = true;
     void run(validation.input, false);
   });
   resume.addEventListener('click', () => {
     if (known) void run(known.input, true);
   });
+  reopen.addEventListener('click', () => {
+    if (hasComparison) showResults();
+  });
   window.addEventListener('pagehide', stop);
+  updateReady();
   return {
     invalidate,
-    setDestination(locker: AvailableLocker | null) {
+    setRole(role: LockerRole, locker: AvailableLocker | null) {
+      if (roles[role]?.id === locker?.id) return;
       invalidate();
-      destination = locker;
-      element('destination-address').textContent =
-        locker?.address ?? (locker ? 'Dirección no registrada' : '');
-      element('destination-position').hidden = !locker || !!locker.position;
-      field('destination-postal').value = locker?.postalCode ?? '';
-      field('destination-postal').readOnly = !!locker?.postalCode;
-      element('destination-postal-note').textContent =
+      roles[role] = locker;
+      const postalId =
+        role === 'pickup' ? 'origin-postal' : 'destination-postal';
+      const postal = field(postalId);
+      postal.value = locker?.postalCode ?? '';
+      postal.readOnly = !!locker?.postalCode;
+      element(`${role}-postal-fields`).hidden = !locker;
+      element(`${postalId}-note`).textContent =
         locker && !locker.postalCode
-          ? 'CP del locker no registrado. Introduce su CP de destino.'
+          ? 'CP del locker no registrado. Introduce su CP para este locker.'
           : '';
+      element(`${role}-selection-status`).textContent = locker
+        ? `${locker.address ?? 'Dirección no registrada'}${locker.position ? '' : ' · Sin ubicación en el mapa'}`
+        : 'Selecciona un locker de la lista.';
+      updateReady();
     },
     close() {
       const wasBusy = busy;
@@ -271,7 +308,6 @@ export function setupShipping(
       if (known && !terminal) {
         status.textContent =
           'Consulta local detenida. El trabajo puede continuar en el servidor.';
-        showReference();
       }
     },
   };

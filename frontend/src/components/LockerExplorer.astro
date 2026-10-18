@@ -1,5 +1,6 @@
 ---
 import LocationSearch from './LocationSearch.astro';
+import LockerSelector from './LockerSelector.astro';
 ---
 
 <section
@@ -10,6 +11,9 @@ import LocationSearch from './LocationSearch.astro';
 >
   <div id="map" aria-label="Mapa de España con lockers disponibles"></div>
   <div class="left-stack" id="map-panels">
+    <section class="geography-panel panel" aria-label="Buscar en el mapa">
+      <LocationSearch id="location" label="Dirección o código postal" />
+    </section>
     <section class="parcel-panel panel" aria-label="Consulta de paquetes">
       <div class="mode-tabs" role="tablist" aria-label="Consulta de paquetes">
         <button
@@ -34,40 +38,58 @@ import LocationSearch from './LocationSearch.astro';
         </button>
       </div>
       <div id="quote-view" role="tabpanel" aria-labelledby="quote-tab">
-        <LocationSearch id="pickup" label="Dirección de recogida" />
-        <LocationSearch id="delivery" label="Dirección de entrega" />
-        <form id="parcel-form" aria-labelledby="quote-tab" autocomplete="off">
-          <div class="parcel-fields">
-            {[
-              ['length', 'Largo', 'cm'],
-              ['width', 'Ancho', 'cm'],
-              ['height', 'Alto', 'cm'],
-              ['weight', 'Peso', 'kg'],
-            ].map(([id, label, unit]) => (
-              <div class="parcel-field">
-                <label for={`parcel-${id}`}>
-                  {label} <span>({unit})</span>
-                </label>
-                <div class="input-wrap">
-                  <input
-                    id={`parcel-${id}`}
-                    name={id}
-                    type="number"
-                    inputmode="decimal"
-                    step="any"
-                    min="0"
-                    placeholder="—"
-                    aria-describedby={`parcel-${id}-error`}
-                  />
-                  <span aria-hidden="true">{unit}</span>
+        <form id="shipping-form" novalidate autocomplete="off">
+          <LockerSelector
+            role="pickup"
+            label="Locker de recogida"
+            postalId="origin-postal"
+            postalLabel="CP de origen"
+          />
+          <LockerSelector
+            role="delivery"
+            label="Locker de entrega"
+            postalId="destination-postal"
+            postalLabel="CP de destino"
+          />
+          <div id="parcel-form" role="group" aria-label="Medidas del paquete">
+            <div class="parcel-fields">
+              {[
+                ['length', 'Largo', 'cm'],
+                ['width', 'Ancho', 'cm'],
+                ['height', 'Alto', 'cm'],
+                ['weight', 'Peso', 'kg'],
+              ].map(([id, label, unit]) => (
+                <div class="parcel-field">
+                  <label for={`parcel-${id}`}>
+                    {label} <span>({unit})</span>
+                  </label>
+                  <div class="input-wrap">
+                    <input
+                      id={`parcel-${id}`}
+                      name={id}
+                      type="number"
+                      inputmode="decimal"
+                      step="any"
+                      min="0"
+                      placeholder="—"
+                      aria-describedby={`parcel-${id}-error`}
+                    />
+                    <span aria-hidden="true">{unit}</span>
+                  </div>
+                  <span class="field-error" id={`parcel-${id}-error`} hidden>
+                    Introduce un número mayor que cero.
+                  </span>
                 </div>
-                <span class="field-error" id={`parcel-${id}-error`} hidden>
-                  Introduce un número mayor que cero.
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+          <button id="compare-shipping" class="primary" type="submit" disabled>
+            Comparar envíos
+          </button>
         </form>
+        <button id="reopen-results" type="button" hidden>
+          Ver comparación existente
+        </button>
         <div
           class="availability-panel"
           role="group"
@@ -80,8 +102,8 @@ import LocationSearch from './LocationSearch.astro';
             Reintentar consulta
           </button>
           <p id="tile-warning" class="tile-warning" role="status" hidden>
-            No se ha podido cargar el fondo del mapa. Puedes consultar todos los
-            lockers en el selector de destino.
+            No se ha podido cargar el fondo del mapa. Puedes elegir los lockers en
+            los selectores del menú.
           </p>
         </div>
         <div class="metrics">
@@ -149,59 +171,18 @@ import LocationSearch from './LocationSearch.astro';
     <div class="results-heading">
       <div>
         <p class="eyebrow">COTIZADOR DEMO</p>
-        <h2 id="results-title">Enviar a este locker</h2>
+        <h2 id="results-title" tabindex="-1">
+          Opciones de envío
+        </h2>
       </div>
-      <button id="close-results" type="button" aria-label="Cerrar cotizador">
+      <button id="close-results" type="button" aria-label="Cerrar resultados">
         ×
       </button>
     </div>
     <div class="results-scroll">
-      <form id="shipping-form" novalidate>
-        <label for="destination-locker">Locker de destino</label>
-        <select id="destination-locker">
-          <option value="">Elige un locker disponible</option>
-        </select>
-        <p id="destination-address" class="address"></p>
-        <p id="destination-position" class="unmapped" hidden>
-          Ubicación no disponible en el mapa.
-        </p>
-        <div class="postal-fields">
-          <div>
-            <label for="origin-postal">CP de origen</label>
-            <input
-              id="origin-postal"
-              inputmode="numeric"
-              autocomplete="postal-code"
-              maxlength="5"
-              placeholder="28001"
-              aria-describedby="origin-postal-error"
-            />
-            <span class="field-error" id="origin-postal-error" hidden></span>
-          </div>
-          <div>
-            <label for="destination-postal">CP de destino</label>
-            <input
-              id="destination-postal"
-              inputmode="numeric"
-              maxlength="5"
-              placeholder="01001"
-              aria-describedby="destination-postal-note destination-postal-error"
-            />
-            <span
-              class="field-error"
-              id="destination-postal-error"
-              hidden
-            ></span>
-          </div>
-        </div>
-        <p id="destination-postal-note" class="address"></p>
-        <button id="compare-shipping" class="primary" type="submit">
-          Comparar envíos
-        </button>
-      </form>
       <p class="demo-note">
-        Simulación demo: proveedores, precios y plazos simulados. No reserva el
-        locker ni crea un envío.
+        Simulación demo: proveedores, precios y plazos simulados. No reserva
+        lockers ni crea un envío.
       </p>
       <div
         id="quotation-status"
@@ -209,7 +190,6 @@ import LocationSearch from './LocationSearch.astro';
         aria-live="polite"
         aria-atomic="true"
       ></div>
-      <p id="quotation-reference" class="address" hidden></p>
       <button id="quotation-resume" type="button" hidden>
         Seguir consultando
       </button>
@@ -219,7 +199,7 @@ import LocationSearch from './LocationSearch.astro';
 </section>
 <noscript>
   <p class="noscript">
-    Activa JavaScript para consultar la disponibilidad y utilizar el mapa.
+    Activa JavaScript para consultar disponibilidad y utilizar el mapa.
   </p>
 </noscript>
 <script>

@@ -1,0 +1,64 @@
+---
+interface Props {
+  role: 'pickup' | 'delivery';
+  label: string;
+  postalId: string;
+  postalLabel: string;
+}
+const { role, label, postalId, postalLabel } = Astro.props;
+---
+
+<div class="locker-selector" id={`${role}-selector`}>
+  <label for={`${role}-locker`}>{label}</label>
+  <input
+    id={`${role}-locker`}
+    role="combobox"
+    aria-autocomplete="list"
+    aria-haspopup="listbox"
+    aria-expanded="false"
+    aria-controls={`${role}-options`}
+    aria-describedby={`${role}-selection-status`}
+    data-selected-id=""
+    placeholder="Nombre, dirección o CP"
+    autocomplete="off"
+  />
+  <div
+    id={`${role}-suggestions`}
+    class="search-suggestions"
+    aria-hidden="true"
+    hidden
+    inert
+  >
+    <div class="suggestions-content">
+      <ul
+        id={`${role}-options`}
+        class="locker-options"
+        role="listbox"
+        aria-label={`Opciones de ${label.toLowerCase()}`}
+      ></ul>
+      <p id={`${role}-empty`} class="address" hidden>
+        No hay lockers disponibles que coincidan.
+      </p>
+    </div>
+  </div>
+  <p
+    id={`${role}-selection-status`}
+    class="selection-status"
+    role="status"
+    aria-live="polite"
+  >
+    Selecciona un locker de la lista.
+  </p>
+  <div id={`${role}-postal-fields`} class="role-postal" hidden>
+    <label for={postalId}>{postalLabel}</label>
+    <input
+      id={postalId}
+      inputmode="numeric"
+      maxlength="5"
+      aria-describedby={`${postalId}-note ${postalId}-error`}
+      placeholder="Cinco dígitos"
+    />
+    <p id={`${postalId}-note`} class="address"></p>
+    <span id={`${postalId}-error`} class="field-error" hidden></span>
+  </div>
+</div>

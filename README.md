@@ -38,30 +38,21 @@ La vista inicial se acerca a la península. Usa la rueda sobre el mapa para
 acercar o alejar, o sus controles de zoom. Puedes navegar también a Baleares,
 Canarias, Ceuta y Melilla. Las cargas vacías conservan tu encuadre. La rueda dentro de un panel desplaza ese panel sin cambiar el mapa.
 
-El panel ofrece dos pestañas: **Cotizar envío**, seleccionada al entrar, y
-**Localizar paquete**. Usa Tab, flechas izquierda/derecha o Home/End para navegar.
-El contenido inactivo queda oculto y sin foco. Cambiar de pestaña conserva valores
-y destino, cierra sugerencias/cotizador y detiene las esperas locales; no vuelve
-a consultar automáticamente ni cancela trabajos persistidos del worker.
+Un buscador independiente aparece encima de las pestañas **Cotizar envío** y
+**Localizar paquete**. Escribe una dirección o CP de España: con tres caracteres
+aparecen hasta cinco sugerencias tras 350 ms sin cambios. Cinco dígitos ASCII
+usan búsqueda postal estructurada, conservando ceros como `01001`. Elegir un
+resultado solo centra y marca el mapa; no elige lockers, rellena CP, cambia modo
+ni invalida una cotización o un seguimiento. Enter no duplica consultas.
 
-Cotización contiene **Dirección de recogida** y **Dirección de entrega**, medidas
-y contadores vivos al final. Cada buscador tiene sus propias sugerencias, errores,
-petición y cancelación: al menos tres caracteres y 350 ms sin cambios, sin botón
-Buscar ni consultas duplicadas por Enter. Cinco dígitos ASCII usan búsqueda
-postal estructurada, conservando ceros iniciales como `01001`.
+Las pestañas admiten Tab, flechas izquierda/derecha y Home/End. El contenido
+inactivo queda oculto y sin foco. Cambiar conserva ambos lockers, suplementos
+postales y medidas, cierra sugerencias/resultados y detiene esperas locales,
+sin consultar de nuevo ni cancelar trabajos persistidos del worker.
 
-Selecciona siempre un resultado, incluso si solo aparece uno. Recogida rellena
-el CP de origen únicamente desde `properties.postcode` español de cinco dígitos;
-si falta, requiere entrada manual. Editar esa recogida borra solo el CP derivado:
-un CP introducido manualmente se conserva hasta elegir otra recogida. Elegir
-otra recogida reemplaza el CP o lo vacía si no dispone de uno, e invalida ofertas
-anteriores. No mueve la zona de entrega ni elige locker.
-
-Entrega sitúa el punto azul y encuadra la zona para explorar lockers, sin elegir
-uno automáticamente ni modificar su CP. Los dos campos conservan el texto ajeno,
-no filtran lockers ni envían medidas. Las sugerencias admiten flechas, Enter,
-click o toque; Escape devuelve foco al campo y salir cierra/cancela. La animación
-breve respeta movimiento reducido y las respuestas obsoletas no reabren listas.
+Las sugerencias geográficas y locales admiten teclado, click o toque, cierre con
+Escape y foco visible. La apertura/cierre breve respeta movimiento reducido;
+el contenido cerrado queda inerte y las respuestas antiguas no reabren listas.
 
 La consulta se envía directamente desde tu navegador al servicio público
 [Photon](https://photon.komoot.io/), basado en datos de OpenStreetMap, con país
@@ -159,22 +150,42 @@ La suite levanta su servidor estático y FastAPI con middleware CORS real y dobl
 de persistencia; no necesita PostgreSQL ni RabbitMQ. Deja libres los puertos
 4321 y 8765 antes de ejecutarla.
 
-El mapa ocupa toda la pantalla. «Tu paquete» permite introducir largo, ancho y
+El mapa ocupa toda la pantalla. El menú permite introducir largo, ancho y
 alto en centímetros y peso en kilogramos. Los datos empiezan vacíos y permanecen
 locales hasta pulsar **Comparar envíos**. Buscar una dirección no los envía.
 
-### Comparar envíos hacia un locker
+### Comparar envíos entre lockers
 
-Elige un marcador o usa el enlace de teclado **Elegir destino y cotizar**. El
-panel «Enviar a este locker» incluye un selector accesible con todos los lockers
-disponibles, también los que carecen de coordenadas. Los nombres repetidos se
-distinguen con un número. No hay catálogo técnico ni se muestran identificadores
-de lockers. Cierra con su botón o Escape para devolver el foco al origen.
+En el menú, **Locker de recogida** y **Locker de entrega** buscan localmente entre
+los lockers disponibles ya cargados, por nombre, dirección o CP. No consultan
+Photon ni hacen peticiones adicionales, y no prometen proximidad geográfica.
+Elige explícitamente un candidato: escribir un texto, incluso el nombre exacto,
+no establece su UUID. Todos los coincidentes y lockers sin coordenadas permanecen
+accesibles con scroll y teclado. La selección de un rol conserva el otro y las
+medidas. El enlace de teclado **Elegir lockers y cotizar** activa cotización y
+enfoca recogida sin abrir resultados.
 
-Introduce el CP de origen. El CP de destino procede exclusivamente de la dirección
-estructurada española del locker, si contiene cinco dígitos; de lo contrario,
-el panel pide introducirlo manualmente. Conserva ceros iniciales. Cambiar de
-locker borra el CP manual anterior y conserva origen, medidas y peso.
+Un marcador abre un popup de nombre/dirección sin seleccionar ni cambiar modo.
+**Seleccionar como locker de entrega** o **Seleccionar como locker de recogida**
+fija solo ese rol, activa cotización, cierra el popup y enfoca su campo. Escape o
+el botón de cierre devuelve foco al marcador. No reserva capacidad ni crea envíos.
+
+Cada locker aporta su CP español registrado de cinco dígitos como solo lectura.
+Cuando no lo tiene aparece **CP del locker no registrado** y se pide un suplemento
+manual para ese rol y UUID, conservando ceros iniciales. No se infiere desde
+Photon, nombre o coordenadas ni se modifica el locker en la API. Editar un selector
+borra su selección y CP; cambiar a otro locker elimina el suplemento anterior.
+Abrir/cerrar sugerencias o elegir el mismo UUID sin editar conserva su suplemento.
+Los campos del paquete siguen locales y empiezan vacíos.
+
+**Comparar envíos** está en el menú y permanece deshabilitado hasta elegir ambos
+UUID y completar CP, dimensiones y peso válidos, y mientras hay trabajo en curso.
+El panel derecho muestra únicamente estados y resultados, aviso demo, cierre y
+continuación. **Ver comparación existente** lo reabre sin crear otra solicitud;
+si corresponde, **Seguir consultando** continúa el GET de la misma referencia.
+Editar cualquier UUID, CP o medida invalida la comparación y su referencia,
+incluso al cambiar de locker por otro con el mismo CP. La búsqueda geográfica
+no afecta esa comparación.
 
 **Comparar envíos** valida dimensiones entre 0,1 y 200 cm (milímetros enteros) y
 peso entre 0,001 y 30 kg (gramos enteros). No redondea fracciones incompatibles:
@@ -198,11 +209,11 @@ obsoletas; no cancela el trabajo remoto. No se usa almacenamiento del navegador.
 Solo aparecen lockers activos con alguna celda habilitada y libre. Los contadores
 muestran lockers disponibles y posicionables, no celdas. La lectura inicial y el
 reintento tras fallo consultan disponibilidad; no hay actualización periódica.
-Los lockers sin coordenadas siguen siendo destinos seleccionables sin inventar
+Los lockers sin coordenadas siguen siendo seleccionables en ambos roles sin inventar
 ubicación. Una respuesta vacía o un error no mueve el mapa.
 
 El fondo utiliza teselas de [OpenStreetMap, © sus colaboradores](https://www.openstreetmap.org/copyright),
-con atribución visible. Si fallan, el selector y cotizador siguen utilizables.
+con atribución visible. Si fallan, ambos selectores y el cotizador siguen utilizables.
 Las pruebas controlan teselas y Photon; el recorrido CORS de cotización usa la
 aplicación FastAPI real con repositorios y publicación de prueba, sin interceptar
 las peticiones de lockers o cotizaciones. No demuestra conectividad del proveedor
@@ -228,7 +239,9 @@ su ausencia y nunca se infiere o geocodifica una ubicación.
 
 El marcador oscuro de seguimiento es independiente de destinos disponibles:
 puede mostrar un locker lleno o inactivo, sin cambiar contadores, destino o CP de
-cotización. Pulsar marcadores en seguimiento no abre el cotizador ni cambia modo.
+cotización. Inspeccionar un marcador no cambia modo. Solo si corresponde a un
+locker actualmente disponible ofrece acciones explícitas para elegir un rol y
+activar cotización; el marcador exclusivo lleno/inactivo permanece informativo.
 El resultado textual funciona aunque fallen disponibilidad o teselas.
 
 `GET /tracking/{id}` devuelve exclusivamente

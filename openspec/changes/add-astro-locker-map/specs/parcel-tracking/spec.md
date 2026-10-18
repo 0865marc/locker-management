@@ -73,9 +73,14 @@ The tracking view SHALL accept a parcel UUID and submit only on "Localizar paque
 
 ### Requirement: Keep the tracking marker independent of quotation availability
 
-A valid tracking position SHALL use a separate marker labelled as current or last registered locker, without changing available-locker counts, the quotation destination or its inputs. No coordinates SHALL mean no tracking marker. In tracking mode, clicks on either tracking or availability markers SHALL NOT open the quotation panel or change tabs. Leaving tracking SHALL remove or hide its marker.
+A tracking position SHALL use a separate current/last-registered marker without changing counts or quotation inputs. No coordinates SHALL mean no marker. Opening a marker popup SHALL NOT change modes or selections. Only an explicit pickup/delivery action for a currently available locker SHALL activate quotation and select that role. A tracking locker absent from the available collection SHALL remain informative without selection actions. Leaving tracking SHALL hide or remove its marker.
 
 #### Scenario: Historical or unavailable destination is tracked
 - **WHEN** tracking finds an inactive/full locker or a terminal parcel with coordinates
 - **THEN** its separate marker reveals the recorded location with the correct current/historical label while availability counts and quotation inputs remain unchanged
-- **AND** clicking markers does not start or open a quotation
+- **AND** inspecting a marker does not start a quotation or change tabs; an unavailable tracking locker offers no role-selection action
+
+#### Scenario: Explicitly use an available locker while tracking
+- **WHEN** a visitor opens a popup for a currently available locker in tracking mode and chooses pickup or delivery
+- **THEN** only that explicit action activates quotation, sets the chosen role from the available record and closes the popup
+- **AND** tracking metadata alone never establishes availability, counts remain unchanged and no quotation POST is triggered

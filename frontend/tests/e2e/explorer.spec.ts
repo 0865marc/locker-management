@@ -72,7 +72,7 @@ for (const viewport of [
   { width: 1280, height: 800, name: 'desktop' },
   { width: 375, height: 480, name: 'mobile-short' },
 ]) {
-  test(`one compact menu and selectable autocomplete ${viewport.name}`, async ({
+  test(`separate geography and quote menu with selectable autocomplete ${viewport.name}`, async ({
     page,
   }) => {
     await page.setViewportSize({
@@ -96,7 +96,7 @@ for (const viewport of [
     });
     await page.goto('/');
     await expect(page.locator('#available-count')).toHaveText('1');
-    await expect(page.locator('#map-panels .panel')).toHaveCount(1);
+    await expect(page.locator('#map-panels .panel')).toHaveCount(2);
     expect(
       await page
         .locator('#quote-view')
@@ -123,14 +123,14 @@ for (const viewport of [
     });
     await page.getByRole('spinbutton', { name: 'Largo (cm)' }).fill('25.5');
     const query = page.getByRole('combobox', {
-      name: 'Dirección de entrega',
+      name: 'Dirección o código postal',
     });
     const before = await page
       .locator('.leaflet-map-pane')
       .getAttribute('style');
     await query.fill(' 01001 ');
     expect(geoReads).toBe(0);
-    await expect(page.locator('#delivery-results button')).toHaveCount(1);
+    await expect(page.locator('#location-results button')).toHaveCount(1);
     await expect(page.locator('.search-location')).toHaveCount(0);
     expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
       before,
@@ -145,7 +145,7 @@ for (const viewport of [
     });
     await query.press('ArrowDown');
     await expect(
-      page.locator('#delivery-results button').first(),
+      page.locator('#location-results button').first(),
     ).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(query).toHaveValue('01001 Vitoria');
@@ -153,10 +153,10 @@ for (const viewport of [
     await expect(query).toHaveAttribute('aria-expanded', 'false');
     expect(
       await page
-        .locator('#delivery-suggestions')
+        .locator('#location-suggestions')
         .evaluate((node: HTMLElement) => node.inert),
     ).toBe(true);
-    await expect(page.locator('#delivery-suggestions')).toBeHidden();
+    await expect(page.locator('#location-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await expect(page.locator('#results')).toBeHidden();
     await page.waitForTimeout(400);
@@ -178,12 +178,12 @@ for (const viewport of [
       });
     });
     await query.fill('Plaza');
-    await expect(page.locator('#delivery-results button')).toHaveCount(5);
-    await page.locator('#delivery-results button').nth(1).click();
+    await expect(page.locator('#location-results button')).toHaveCount(5);
+    await page.locator('#location-results button').nth(1).click();
     await expect(query).toHaveValue('Plaza Mayor, Madrid');
-    await expect(page.locator('#delivery-suggestions')).toBeHidden();
+    await expect(page.locator('#location-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
-    await expect(page.locator('#results')).toBeVisible();
+    await expect(page.locator('#results')).toBeHidden();
     await expect(
       page.getByRole('spinbutton', { name: 'Largo (cm)' }),
     ).toHaveValue('25.5');
@@ -207,7 +207,7 @@ test('autocomplete debounces edits, ignores short text and never duplicates Ente
   await page.clock.install();
   await page.clock.pauseAt(new Date(Date.now() + 100));
   const query = page.getByRole('combobox', {
-    name: 'Dirección de entrega',
+    name: 'Dirección o código postal',
   });
   await query.fill('  ab ');
   await page.clock.fastForward(500);
@@ -220,7 +220,7 @@ test('autocomplete debounces edits, ignores short text and never duplicates Ente
   expect(requests).toBe(0);
   await page.clock.fastForward(1);
   await expect.poll(() => requests).toBe(1);
-  await expect(page.locator('#delivery-results button')).toHaveCount(1);
+  await expect(page.locator('#location-results button')).toHaveCount(1);
   await query.press('Enter');
   await page.clock.fastForward(700);
   expect(requests).toBe(1);
@@ -242,37 +242,37 @@ test('geographic errors, empty, malformed and timeout retain independent retry',
     return route.fulfill({ json: places(place('Madrid')) });
   });
   const query = page.getByRole('combobox', {
-    name: 'Dirección de entrega',
+    name: 'Dirección o código postal',
   });
   await query.fill('Madrid');
-  await expect(page.locator('#delivery-status')).toContainText('HTTP 503');
+  await expect(page.locator('#location-status')).toContainText('HTTP 503');
   await expect(page.locator('#status')).toBeHidden();
   await expect(page.locator('#available-count')).toHaveText('1');
   await page.getByRole('button', { name: 'Reintentar búsqueda' }).click();
-  await expect(page.locator('#delivery-status')).toContainText(
+  await expect(page.locator('#location-status')).toContainText(
     'No se han encontrado',
   );
   await query.fill('Madrid centro');
-  await expect(page.locator('#delivery-status')).toContainText(
+  await expect(page.locator('#location-status')).toContainText(
     'respuesta no válida',
   );
   await page.getByRole('button', { name: 'Reintentar búsqueda' }).focus();
   await page.keyboard.press('Enter');
   await expect(
-    page.getByRole('combobox', { name: 'Dirección de entrega' }),
+    page.getByRole('combobox', { name: 'Dirección o código postal' }),
   ).toBeFocused();
-  await expect(page.locator('#delivery-results button')).toHaveCount(1);
-  await page.locator('#delivery-results button').click();
+  await expect(page.locator('#location-results button')).toHaveCount(1);
+  await page.locator('#location-results button').click();
   await page.unroute(photon);
   await page.route(photon, () => {});
   await query.fill('Tardará');
-  await expect(page.locator('#delivery-status')).toContainText(
+  await expect(page.locator('#location-status')).toContainText(
     'cinco segundos',
     {
       timeout: 7000,
     },
   );
-  await expect(page.locator('#delivery-retry')).toBeVisible();
+  await expect(page.locator('#location-retry')).toBeVisible();
   await expect(page.locator('#available-count')).toHaveText('1');
   await expect(page.locator('#retry')).toBeHidden();
 });
@@ -314,35 +314,35 @@ test('Escape, blur and later edits discard even a transport that ignores cancell
     route.fulfill({ json: places(place('Última ubicación')) }),
   );
   const query = page.getByRole('combobox', {
-    name: 'Dirección de entrega',
+    name: 'Dirección o código postal',
   });
   const before = await page.locator('.leaflet-map-pane').getAttribute('style');
   for (const [index, close] of ['escape', 'blur'].entries()) {
     await query.fill(`Anterior ${index}`);
-    await expect(page.locator('#delivery-search')).toHaveAttribute(
+    await expect(page.locator('#location-search')).toHaveAttribute(
       'aria-busy',
       'true',
     );
     if (close === 'escape') await query.press('Escape');
     else await page.getByRole('spinbutton', { name: 'Largo (cm)' }).focus();
     await page.evaluate(() => Reflect.get(window, 'completeOldSearch')());
-    await expect(page.locator('#delivery-suggestions')).toBeHidden();
+    await expect(page.locator('#location-suggestions')).toBeHidden();
     await expect(query).toHaveAttribute('aria-expanded', 'false');
     expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
       before,
     );
   }
   await query.fill('Anterior otra');
-  await expect(page.locator('#delivery-search')).toHaveAttribute(
+  await expect(page.locator('#location-search')).toHaveAttribute(
     'aria-busy',
     'true',
   );
   await query.fill('Última');
-  await expect(page.locator('#delivery-results button')).toHaveText(
+  await expect(page.locator('#location-results button')).toHaveText(
     'Última ubicación',
   );
   await page.evaluate(() => Reflect.get(window, 'completeOldSearch')());
-  await expect(page.locator('#delivery-results button')).toHaveText(
+  await expect(page.locator('#location-results button')).toHaveText(
     'Última ubicación',
   );
   await expect(page.locator('.search-location')).toHaveCount(0);
@@ -358,44 +358,42 @@ test('suggestion animation can be interrupted and closed options immediately los
     }),
   );
   const query = page.getByRole('combobox', {
-    name: 'Dirección de entrega',
+    name: 'Dirección o código postal',
   });
   await query.fill('Madrid');
-  await expect(page.locator('#delivery-results button')).toHaveCount(2);
+  await expect(page.locator('#location-results button')).toHaveCount(2);
   await query.press('ArrowDown');
-  await expect(page.locator('#delivery-results button').first()).toBeFocused();
+  await expect(page.locator('#location-results button').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(query).toBeFocused();
   expect(
     await page
-      .locator('#delivery-suggestions')
+      .locator('#location-suggestions')
       .evaluate((node: HTMLElement) => node.inert),
   ).toBe(true);
   await page
-    .locator('#delivery-results button')
+    .locator('#location-results button')
     .first()
     .evaluate((node) => node.focus());
   await expect(query).toBeFocused();
   await query.press('Tab');
-  await expect(
-    page.getByRole('spinbutton', { name: 'Largo (cm)' }),
-  ).toBeFocused();
+  await expect(page.locator('#location-suggestions')).toBeHidden();
   await query.fill('Madrid nuevo');
-  await expect(page.locator('#delivery-results button')).toHaveCount(2);
+  await expect(page.locator('#location-results button')).toHaveCount(2);
   await expect(query).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('#delivery-suggestions')).toHaveCSS('opacity', '1');
-  await expect(page.locator('#delivery-suggestions')).not.toHaveAttribute(
+  await expect(page.locator('#location-suggestions')).toHaveCSS('opacity', '1');
+  await expect(page.locator('#location-suggestions')).not.toHaveAttribute(
     'hidden',
   );
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('#delivery-suggestions')).toHaveCSS(
+  await expect(page.locator('#location-suggestions')).toHaveCSS(
     'transition-duration',
     '0s',
   );
   await query.press('Escape');
   expect(
     await page
-      .locator('#delivery-suggestions')
+      .locator('#location-suggestions')
       .evaluate((node: HTMLElement) => node.hidden && node.inert),
   ).toBe(true);
 });
@@ -418,14 +416,14 @@ test('touching a suggestion selects before blur and does not trigger another sea
       return route.fulfill({ json: places(place('Gran Vía, Madrid')) });
     });
     const query = page.getByRole('combobox', {
-      name: 'Dirección de entrega',
+      name: 'Dirección o código postal',
     });
     await query.fill('Gran Vía');
-    await expect(page.locator('#delivery-results button')).toHaveCount(1);
-    await page.locator('#delivery-results button').tap();
+    await expect(page.locator('#location-results button')).toHaveCount(1);
+    await page.locator('#location-results button').tap();
     await expect(query).toHaveValue('Gran Vía, Madrid');
     await expect(query).toBeFocused();
-    await expect(page.locator('#delivery-suggestions')).toBeHidden();
+    await expect(page.locator('#location-suggestions')).toBeHidden();
     expect(await markerHit(page)).toBe(true);
     await page.waitForTimeout(400);
     expect(requests).toBe(1);
@@ -444,13 +442,13 @@ test('duplicate suggestion labels retain the selected candidate coordinates', as
     }),
   );
   const query = page.getByRole('combobox', {
-    name: 'Dirección de entrega',
+    name: 'Dirección o código postal',
   });
   await query.fill('Centro');
-  await expect(page.locator('#delivery-results button')).toHaveCount(2);
-  await page.locator('#delivery-results button').nth(1).click();
+  await expect(page.locator('#location-results button')).toHaveCount(2);
+  await page.locator('#location-results button').nth(1).click();
   await expect(query).toHaveValue('Centro');
-  await expect(page.locator('#delivery-suggestions')).toBeHidden();
+  await expect(page.locator('#location-suggestions')).toBeHidden();
   expect(await markerHit(page)).toBe(true);
 });
 const address = {
@@ -461,16 +459,69 @@ const address = {
   street: 'Calle Mayor',
   street_number: '2',
 };
+async function selectRole(page: Page, role: 'pickup' | 'delivery', n: number) {
+  const input = page.locator(`#${role}-locker`);
+  await input.fill('');
+  await page
+    .locator(`#${role}-options [role="option"][data-id="${id(n)}"]`)
+    .click();
+  await expect(input).toHaveAttribute('data-selected-id', id(n));
+}
 async function fillShipping(page: Page, manual = true) {
-  for (const [id, value] of [
+  if (!(await page.locator('#pickup-locker').getAttribute('data-selected-id')))
+    await selectRole(page, 'pickup', 1);
+  if (
+    !(await page.locator('#delivery-locker').getAttribute('data-selected-id'))
+  )
+    await selectRole(page, 'delivery', 1);
+  for (const [field, value] of [
     ['length', '25.5'],
     ['width', '15'],
     ['height', '10'],
     ['weight', '1.001'],
   ])
-    await page.locator(`#parcel-${id}`).fill(value!);
-  await page.locator('#origin-postal').fill('28001');
-  if (manual) await page.locator('#destination-postal').fill('01001');
+    await page.locator(`#parcel-${field}`).fill(value!);
+  if (
+    !(await page
+      .locator('#origin-postal')
+      .evaluate((node: HTMLInputElement) => node.readOnly))
+  )
+    await page.locator('#origin-postal').fill('28001');
+  if (
+    manual &&
+    !(await page
+      .locator('#destination-postal')
+      .evaluate((node: HTMLInputElement) => node.readOnly))
+  )
+    await page.locator('#destination-postal').fill('01001');
+}
+async function reopenResults(page: Page) {
+  await page.locator('#reopen-results').click();
+}
+async function expectRoleUncovered(page: Page, role: 'pickup' | 'delivery') {
+  await expect
+    .poll(() =>
+      page.locator(`#${role}-locker`).evaluate((input) => {
+        const box = input.getBoundingClientRect();
+        const panel = input.closest('.left-stack')!.getBoundingClientRect();
+        const tabs = document
+          .querySelector('.mode-tabs')!
+          .getBoundingClientRect();
+        return {
+          hit:
+            document.elementFromPoint(
+              box.x + box.width / 2,
+              box.y + box.height / 2,
+            ) === input,
+          contained:
+            box.top >= Math.max(panel.top, tabs.bottom, 0) - 1 &&
+            box.bottom <= Math.min(panel.bottom, window.innerHeight) + 1 &&
+            box.left >= 0 &&
+            box.right <= window.innerWidth,
+        };
+      }),
+    )
+    .toEqual({ hit: true, contained: true });
 }
 const quoteId = id(101);
 function quote(request: unknown, status = 'COMPLETED') {
@@ -526,7 +577,7 @@ test('real cross-origin FastAPI completes POST/preflight and polling without int
     'http://127.0.0.1:4321',
   );
   await openPanel(page);
-  await page.locator('#destination-locker').selectOption(id(1));
+  await selectRole(page, 'delivery', 1);
   await fillShipping(page, false);
   await expect(page.locator('#destination-postal')).toHaveValue('01001');
   const post = page.waitForResponse(
@@ -596,9 +647,10 @@ for (const viewport of [
       path: `test-results/shipping-${viewport.name}-initial.png`,
     });
     await openPanel(page);
-    await expect(page.locator('#destination-locker')).toBeFocused();
-    await page.locator('#destination-locker').selectOption(id(2));
-    await expect(page.locator('#destination-position')).toBeVisible();
+    await expect(page.locator('#pickup-locker')).toBeFocused();
+    await selectRole(page, 'pickup', 2);
+    await selectRole(page, 'delivery', 2);
+    await expect(page.locator('#delivery-options')).toBeHidden();
     await expect(page.locator('#destination-postal-note')).toContainText(
       'no registrado',
     );
@@ -625,7 +677,7 @@ for (const viewport of [
     await page.screenshot({
       path: `test-results/shipping-${viewport.name}-offers.png`,
     });
-    await page.locator('#destination-locker').selectOption(id(1));
+    await selectRole(page, 'delivery', 1);
     await expect(page.locator('#quotation-offers')).toBeEmpty();
     await expect(page.locator('#destination-postal')).toHaveValue('01001');
     await expect(page.locator('#destination-postal')).toHaveAttribute(
@@ -644,54 +696,9 @@ for (const viewport of [
         );
       }),
     ).toBe(true);
-    await page.locator('#destination-locker').focus();
-    await page.keyboard.press('Escape');
     await expect(page.locator('#results')).toBeHidden();
-    await expect(page.locator('#skip-results')).toBeFocused();
   });
 }
-test('destination selector preserves duplicates and literal unsafe text without exposing identifiers', async ({
-  page,
-}) => {
-  await data(page, [
-    locker(1, '<img src=x onerror=alert(1)>'),
-    locker(2, 'Same', null),
-    locker(3, 'Same', null),
-  ]);
-  await expect(page.locator('#destination-locker')).toContainText(
-    '<img src=x onerror=alert(1)>',
-  );
-  await expect(page.locator('#destination-locker option')).toHaveCount(4);
-  await page.locator('#destination-locker').selectOption(id(3));
-  await expect(page.locator('#destination-locker option:checked')).toHaveText(
-    'Same · 2',
-  );
-  await expect(page.locator('#results img')).toHaveCount(0);
-  await expect(page.locator('#results')).not.toContainText(id(3));
-});
-test('invalid exact units focus field and prevent POST, destination change resets only manual postal', async ({
-  page,
-}) => {
-  let posts = 0;
-  await data(page, [locker(1), locker(2, null, null)]);
-  await page.route('**/quotations', (r) => {
-    posts++;
-    return r.abort();
-  });
-  await page.locator('#destination-locker').selectOption(id(1));
-  await fillShipping(page);
-  await page.locator('#parcel-length').fill('1.01');
-  await page.locator('#compare-shipping').click();
-  await expect(page.locator('#parcel-length')).toBeFocused();
-  await expect(page.locator('#parcel-length-error')).toContainText(
-    'milímetros',
-  );
-  expect(posts).toBe(0);
-  await page.locator('#destination-locker').selectOption(id(2));
-  await expect(page.locator('#destination-postal')).toHaveValue('');
-  await expect(page.locator('#origin-postal')).toHaveValue('28001');
-  await expect(page.locator('#parcel-length')).toHaveValue('1.01');
-});
 test('GET failure resumes same reference without duplicate POST', async ({
   page,
 }) => {
@@ -710,9 +717,13 @@ test('GET failure resumes same reference without duplicate POST', async ({
       ? r.fulfill({ status: 503, json: { detail: 'unavailable' } })
       : r.fulfill({ json: quote(input) });
   });
-  await page.locator('#destination-locker').selectOption(id(1));
+  await selectRole(page, 'delivery', 1);
   await fillShipping(page);
   await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-resume')).toBeVisible();
+  await page.locator('#close-results').click();
+  await expect(page.locator('#results')).toBeHidden();
+  await reopenResults(page);
   await expect(page.locator('#quotation-resume')).toBeVisible();
   await page.locator('#quotation-resume').click();
   await expect(page.locator('#quotation-status')).toContainText('finalizada');
@@ -742,18 +753,18 @@ test('late accepted POST cannot reopen closed panel or attach stale quotation af
         : original(input, init);
   });
   await data(page, [locker(1)]);
-  await page.locator('#destination-locker').selectOption(id(1));
+  await selectRole(page, 'delivery', 1);
   await fillShipping(page);
   await page.locator('#compare-shipping').click();
   await expect(page.locator('#quotation-status')).toContainText('Creando');
   await page.locator('#close-results').click();
   await page.evaluate(() => Reflect.get(window, 'finishPost')());
   await expect(page.locator('#results')).toBeHidden();
-  await openPanel(page);
+  await reopenResults(page);
   await expect(page.locator('#quotation-status')).toContainText(
     'creación no se ha podido confirmar',
   );
-  await expect(page.locator('#quotation-reference')).toBeHidden();
+  await expect(page.locator('#quotation-reference')).toHaveCount(0);
   await expect(page.locator('#quotation-offers')).toBeEmpty();
 });
 test('availability failure and tile warning are independent; retry clears stale data', async ({
@@ -817,7 +828,7 @@ test('retained POST blocks duplicates, edit discards its late acceptance', async
     };
   });
   await data(page, [locker(1)]);
-  await page.locator('#destination-locker').selectOption(id(1));
+  await selectRole(page, 'delivery', 1);
   await fillShipping(page);
   await page.locator('#compare-shipping').click();
   await expect(page.locator('#compare-shipping')).toBeDisabled();
@@ -857,7 +868,7 @@ test('late GET after editing or closing cannot restore offers; terminal reopen p
     snapshot = r.request().postDataJSON();
     return r.fulfill({ status: 202, json: { id: quoteId, status: 'PENDING' } });
   });
-  await page.locator('#destination-locker').selectOption(id(1));
+  await selectRole(page, 'delivery', 1);
   await fillShipping(page);
   for (const action of ['edit', 'close', 'complete']) {
     await page.locator('#compare-shipping').click();
@@ -872,13 +883,13 @@ test('late GET after editing or closing cannot restore offers; terminal reopen p
     }, quote(snapshot));
     if (action !== 'complete') {
       await expect(page.locator('#quotation-offers')).toBeEmpty();
-      if (action === 'close') await openPanel(page);
+      if (action === 'close') await reopenResults(page);
     } else {
       await expect(page.locator('#quotation-status')).toContainText(
         'finalizada',
       );
       await page.locator('#close-results').click();
-      await openPanel(page);
+      await reopenResults(page);
       await expect(page.locator('#quotation-status')).toContainText(
         'finalizada',
       );
@@ -886,20 +897,6 @@ test('late GET after editing or closing cannot restore offers; terminal reopen p
       await expect(page.locator('#quotation-offers')).toContainText('12,34');
     }
   }
-});
-test('keyboard marker opens public destination and close restores marker focus', async ({
-  page,
-}) => {
-  await data(page, [locker(1, 'Madrid')], false);
-  const marker = page.locator('.locker-marker');
-  await marker.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#results')).toBeVisible();
-  await expect(page.locator('#destination-locker')).toBeFocused();
-  await expect(page.locator('#destination-locker')).toHaveValue(id(1));
-  await page.keyboard.press('Escape');
-  await expect(page.locator('#results')).toBeHidden();
-  await expect(marker).toBeFocused();
 });
 test('unknown provider and service identities remain distinct literal text', async ({
   page,
@@ -944,7 +941,7 @@ test('unknown provider and service identities remain distinct literal text', asy
     ];
     return r.fulfill({ json: payload });
   });
-  await page.locator('#destination-locker').selectOption(id(1));
+  await selectRole(page, 'delivery', 1);
   await fillShipping(page);
   await page.locator('#compare-shipping').click();
   await expect(page.locator('#quotation-offers')).toContainText(
@@ -995,127 +992,6 @@ async function track(page: Page, n: number) {
   await page.locator('#tracking-id').fill(trackingId(n));
   await page.locator('#tracking-id').press('Enter');
 }
-test('pickup derives only structured CP and delivery independently explores without selecting destination', async ({
-  page,
-}) => {
-  let posts = 0;
-  await data(page, [locker(1)]);
-  await page.route('**/quotations', (r) => {
-    posts++;
-    return r.abort();
-  });
-  await page.route(photon, (r) => {
-    const q = new URL(r.request().url()).searchParams.get('q');
-    const feature = place(q ?? '01001');
-    return r.fulfill({
-      json: places({
-        ...feature,
-        properties: {
-          ...feature.properties,
-          ...(q === 'Recogida' ? { postcode: '01001' } : {}),
-        },
-      }),
-    });
-  });
-  await page.locator('#destination-locker').selectOption(id(1));
-  await page.locator('#destination-postal').fill('08001');
-  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
-  await page.locator('#pickup-query').fill('Recogida');
-  await expect(page.locator('#pickup-results button')).toHaveCount(1);
-  await page.locator('#pickup-results button').click();
-  await expect(page.locator('#origin-postal')).toHaveValue('01001');
-  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-    before,
-  );
-  await expect(page.locator('#delivery-query')).toHaveValue('');
-  await page.locator('#delivery-query').fill('Entrega');
-  await expect(page.locator('#delivery-results button')).toHaveCount(1);
-  await page.locator('#delivery-results button').click();
-  await expect(page.locator('#pickup-query')).toHaveValue('Recogida, 01001');
-  await expect(page.locator('#origin-postal')).toHaveValue('01001');
-  await expect(page.locator('#destination-postal')).toHaveValue('08001');
-  await expect(page.locator('#destination-locker')).toHaveValue(id(1));
-  await page.locator('#pickup-query').fill('Recogida editada');
-  await expect(page.locator('#origin-postal')).toHaveValue('');
-  await page.locator('#origin-postal').fill('28001');
-  await page.locator('#pickup-query').fill('Sin código');
-  await expect(page.locator('#origin-postal')).toHaveValue('28001');
-  await expect(page.locator('#pickup-results button')).toHaveCount(1);
-  await page.locator('#pickup-results button').click();
-  await expect(page.locator('#origin-postal')).toHaveValue('');
-  expect(posts).toBe(0);
-});
-test('tabs have keyboard relationships, preserve inputs and cancel pending autocomplete and quotation', async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const original = window.fetch;
-    window.fetch = (input, init) =>
-      String(input).endsWith('/quotations')
-        ? new Promise((resolve) =>
-            Reflect.set(window, 'finishTabPost', () =>
-              resolve(
-                new Response(
-                  JSON.stringify({
-                    id: '00000000-0000-4000-8000-000000000101',
-                    status: 'PENDING',
-                  }),
-                  { status: 202 },
-                ),
-              ),
-            ),
-          )
-        : original(input, init);
-  });
-  await data(page, [locker(1)]);
-  await page.locator('#destination-locker').selectOption(id(1));
-  await fillShipping(page);
-  await page.locator('#compare-shipping').click();
-  await expect(page.locator('#compare-shipping')).toBeDisabled();
-  await page.locator('#quote-tab').focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.locator('#tracking-tab')).toBeFocused();
-  await expect(page.locator('#tracking-tab')).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  await expect(page.locator('#quote-view')).toBeHidden();
-  expect(
-    await page
-      .locator('#quote-view')
-      .evaluate((node: HTMLElement) => node.inert),
-  ).toBe(true);
-  await expect(page.locator('#results')).toBeHidden();
-  await page.evaluate(() => Reflect.get(window, 'finishTabPost')());
-  await page.locator('#tracking-id').fill(trackingId(1001));
-  await page.locator('#tracking-tab').focus();
-  await page.keyboard.press('Home');
-  await expect(page.locator('#quote-tab')).toBeFocused();
-  await expect(page.locator('#tracking-view')).toBeHidden();
-  await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
-  await expect(page.locator('#destination-locker')).toHaveValue(id(1));
-  await page.route(photon, () => {});
-  await page.locator('#pickup-query').fill('Pendiente');
-  await expect(page.locator('#pickup-search')).toHaveAttribute(
-    'aria-busy',
-    'true',
-  );
-  await page.locator('#tracking-tab').click();
-  await expect(page.locator('#pickup-query')).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
-  await expect(page.locator('#tracking-id')).toHaveValue(trackingId(1001));
-  await page.locator('#skip-results').focus();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#quote-tab')).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  await expect(page.locator('#results')).toBeVisible();
-  await expect(page.locator('#destination-locker')).toBeFocused();
-  await expect(page.locator('#quotation-status')).not.toContainText('Creando');
-});
 for (const viewport of [
   { width: 1280, height: 800, name: 'desktop' },
   { width: 375, height: 480, name: 'mobile-short' },
@@ -1174,7 +1050,10 @@ for (const viewport of [
       'true',
     );
     await expect(page.locator('#available-count')).toHaveText('1');
-    await expect(page.locator('#destination-locker')).toHaveValue('');
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      '',
+    );
     await page.locator('#tracking-result').scrollIntoViewIfNeeded();
     await page.screenshot({
       path: `test-results/tabs-${viewport.name}-tracking-current.png`,
@@ -1359,63 +1238,401 @@ test('tracking cancels stale reads on edit/new attempt/tab change even when abor
     }
   }
 });
-test('late pickup suggestions cannot overwrite delivery candidates or a manual origin', async ({
+
+test('both UUID roles are mandatory; local matching and postal supplements stay independent', async ({
+  page,
+}) => {
+  let lockerReads = 0,
+    photonReads = 0;
+  await tiles(page);
+  await page.route('**/lockers', (r) => {
+    lockerReads++;
+    return r.fulfill({
+      json: [
+        { ...locker(1, 'Álava Centro'), address },
+        locker(2, 'Sin CP', null),
+      ],
+    });
+  });
+  await page.route(photon, (r) => {
+    photonReads++;
+    return r.fulfill({ json: places(place()) });
+  });
+  await page.goto('/');
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  for (const [field, value] of [
+    ['length', '25.5'],
+    ['width', '15'],
+    ['height', '10'],
+    ['weight', '1.001'],
+  ])
+    await page.locator(`#parcel-${field}`).fill(value!);
+  await page.locator('#pickup-locker').fill('alava');
+  await expect(page.locator('#pickup-options [role=option]')).toHaveCount(1);
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#pickup-locker').press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#pickup-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(1),
+  );
+  await expect(page.locator('#origin-postal')).toHaveValue('01001');
+  await expect(page.locator('#origin-postal')).toHaveAttribute('readonly', '');
+  await page.locator('#delivery-locker').fill('Sin CP');
+  await expect(page.locator('#delivery-options [role=option]')).toHaveCount(1);
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#delivery-options [role=option]').click();
+  await expect(page.locator('#destination-postal')).toHaveValue('');
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#destination-postal').fill('07001');
+  await expect(page.locator('#compare-shipping')).toBeEnabled();
+  await page.locator('#delivery-locker').click();
+  await page.locator(`#delivery-options [data-id="${id(2)}"]`).click();
+  await expect(page.locator('#destination-postal')).toHaveValue('07001');
+  await page.locator('#delivery-locker').fill('Sin CP editado');
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    '',
+  );
+  await expect(page.locator('#destination-postal')).toHaveValue('');
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#delivery-locker').fill('Sin CP');
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    '',
+  );
+  await expect(page.locator('#origin-postal')).toHaveValue('01001');
+  await expect(page.locator('#parcel-length')).toHaveValue('25.5');
+  expect(lockerReads).toBe(1);
+  expect(photonReads).toBe(0);
+});
+
+test('local candidates preserve duplicates, unmapped identities and safe literal labels', async ({
+  page,
+}) => {
+  await data(
+    page,
+    [
+      locker(1, '<img src=x onerror=alert(1)>'),
+      ...Array.from({ length: 12 }, (_, i) => locker(i + 2, 'Duplicado', null)),
+      { ...locker(20, 'Postal'), address },
+    ],
+    false,
+  );
+  await page.locator('#delivery-locker').fill('Duplicado');
+  await expect(page.locator('#delivery-options [role=option]')).toHaveCount(12);
+  await page.locator(`#delivery-options [data-id="${id(13)}"]`).click();
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(13),
+  );
+  await page.locator('#pickup-locker').fill('01001');
+  await expect(page.locator('#pickup-options [role=option]')).toHaveCount(1);
+  await page.locator('#pickup-options [role=option]').click();
+  await expect(page.locator('#pickup-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(20),
+  );
+  await page.locator('#delivery-locker').fill('<img');
+  await expect(page.locator('#delivery-options')).toContainText(
+    '<img src=x onerror=alert(1)>',
+  );
+  await expect(
+    page.locator('#delivery-options img, #delivery-options script'),
+  ).toHaveCount(0);
+  await page.locator('#delivery-locker').press('ArrowDown');
+  await expect(page.locator('#delivery-options [role=option]')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#delivery-locker')).toBeFocused();
+  await expect(page.locator('#delivery-suggestions')).toBeHidden();
+});
+
+test('map geography remains above both tabs without supplying role postal input', async ({
+  page,
+}) => {
+  await data(page, [locker(1), locker(2)], false);
+  await selectRole(page, 'pickup', 1);
+  await selectRole(page, 'delivery', 2);
+  await fillShipping(page);
+  await page.route(photon, (r) =>
+    r.fulfill({
+      json: places({
+        ...place('Mapa independiente'),
+        properties: {
+          name: 'Mapa independiente',
+          countrycode: 'ES',
+          postcode: '99999',
+        },
+      }),
+    }),
+  );
+  await page.locator('#tracking-tab').click();
+  await page.locator('#location-query').fill('Madrid');
+  await page.locator('#location-results button').click();
+  await expect(page.locator('#tracking-tab')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('#location-query')).toHaveValue(
+    'Mapa independiente, 99999',
+  );
+  await expect(page.locator('.search-location')).toHaveCount(1);
+  await page.locator('#quote-tab').click();
+  await expect(page.locator('#pickup-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(1),
+  );
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(2),
+  );
+  await expect(page.locator('#origin-postal')).toHaveValue('28001');
+  await expect(page.locator('#destination-postal')).toHaveValue('01001');
+});
+
+for (const viewport of [
+  { width: 1280, height: 800, name: 'desktop' },
+  { width: 375, height: 480, name: 'mobile-short' },
+]) {
+  test(`popup inspection and explicit role actions preserve keyboard focus ${viewport.name}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await data(page, [locker(1, 'Popup seguro')], false);
+    await page.locator('#tracking-tab').click();
+    const marker = page.locator('.locker-marker');
+    await marker.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.leaflet-popup')).toContainText('Popup seguro');
+    await expect(page.locator('#tracking-tab')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.locator('#results')).toBeHidden();
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      '',
+    );
+    const delivery = page.getByRole('button', {
+        name: 'Seleccionar como locker de entrega',
+        exact: true,
+      }),
+      pickup = page.getByRole('button', {
+        name: 'Seleccionar como locker de recogida',
+        exact: true,
+      });
+    await expect(delivery).toBeVisible();
+    await expect(pickup).toBeVisible();
+    await page.screenshot({
+      path: `test-results/roles-${viewport.name}-popup.png`,
+    });
+    await pickup.focus();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.leaflet-popup')).toHaveCount(0);
+    await expect(marker).toBeFocused();
+    await page.keyboard.press('Enter');
+    await delivery.click();
+    await expect(page.locator('#quote-tab')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expectRoleUncovered(page, 'delivery');
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      '',
+    );
+    await expect(page.locator('#results')).toBeHidden();
+    await marker.focus();
+    await page.keyboard.press('Enter');
+    await pickup.click();
+    await expect(page.locator('#pickup-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#pickup-locker')).toBeFocused();
+    await expectRoleUncovered(page, 'pickup');
+    await page.locator('#origin-postal').fill('28001');
+    // With pickup's manual-CP block present, selecting delivery must reveal its
+    // input even if the menu was scrolled to the bottom before the popup action.
+    await page.locator('.left-stack').evaluate((panel) => {
+      panel.scrollTop = panel.scrollHeight;
+    });
+    expect(
+      await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
+    ).toBeGreaterThan(0);
+    await marker.focus();
+    await page.keyboard.press('Enter');
+    await delivery.click();
+    await expect(page.locator('#delivery-locker')).toHaveAttribute(
+      'data-selected-id',
+      id(1),
+    );
+    await expect(page.locator('#delivery-locker')).toBeFocused();
+    await expectRoleUncovered(page, 'delivery');
+    await expect(page.locator('#origin-postal')).toHaveValue('28001');
+    await page.locator('.left-stack').evaluate((panel) => {
+      panel.scrollTop = panel.scrollHeight;
+    });
+    expect(
+      await page.locator('.left-stack').evaluate((panel) => panel.scrollTop),
+    ).toBeGreaterThan(0);
+    await marker.focus();
+    await page.keyboard.press('Enter');
+    await pickup.click();
+    await expect(page.locator('#pickup-locker')).toBeFocused();
+    await expectRoleUncovered(page, 'pickup');
+    await expect(page.locator('#origin-postal')).toHaveValue('28001');
+    await page.screenshot({
+      path: `test-results/roles-${viewport.name}-selected.png`,
+    });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(viewport.width);
+    expect(await page.locator('#map').boundingBox()).toMatchObject({
+      x: 0,
+      y: 0,
+      width: viewport.width,
+      height: viewport.height,
+    });
+  });
+}
+
+test('changing either UUID invalidates a completed result even with identical postal codes', async ({
+  page,
+}) => {
+  let posts = 0;
+  let snapshot: unknown;
+  await data(
+    page,
+    [
+      { ...locker(1, 'Uno'), address },
+      { ...locker(2, 'Dos'), address },
+      { ...locker(3, 'Tres'), address },
+    ],
+    false,
+  );
+  await page.route('**/quotations', (r) => {
+    posts++;
+    snapshot = r.request().postDataJSON();
+    return r.fulfill({ status: 202, json: { id: quoteId, status: 'PENDING' } });
+  });
+  await page.route(`**/quotations/${quoteId}`, (r) =>
+    r.fulfill({ json: quote(snapshot) }),
+  );
+  await selectRole(page, 'pickup', 1);
+  await selectRole(page, 'delivery', 2);
+  await fillShipping(page, false);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-offers')).toContainText('12,34');
+  await expect(
+    page.locator(
+      '#results input, #results select, #results form, #results #compare-shipping',
+    ),
+  ).toHaveCount(0);
+  await page.locator('#close-results').click();
+  await reopenResults(page);
+  await expect(page.locator('#quotation-offers')).toContainText('12,34');
+  expect(posts).toBe(1);
+  await selectRole(page, 'pickup', 3);
+  await expect(page.locator('#results')).toBeHidden();
+  await expect(page.locator('#quotation-offers')).toBeEmpty();
+  await expect(page.locator('#reopen-results')).toBeHidden();
+  await expect(page.locator('#origin-postal')).toHaveValue('01001');
+  await expect(page.locator('#destination-postal')).toHaveValue('01001');
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#quotation-offers')).toContainText('12,34');
+  expect(posts).toBe(2);
+  await selectRole(page, 'delivery', 1);
+  await expect(page.locator('#quotation-offers')).toBeEmpty();
+  await expect(page.locator('#reopen-results')).toBeHidden();
+  expect(posts).toBe(2);
+});
+
+test('exact parcel limits disable Compare until correction without a write', async ({
+  page,
+}) => {
+  let posts = 0;
+  await data(page, [locker(1)], false);
+  await page.route('**/quotations', (r) => {
+    posts++;
+    return r.abort();
+  });
+  await fillShipping(page);
+  for (const [field, value] of [
+    ['length', '1.01'],
+    ['weight', '0.0001'],
+    ['height', '201'],
+    ['weight', '31'],
+  ]) {
+    await page.locator(`#parcel-${field}`).fill(value!);
+    await expect(page.locator('#compare-shipping')).toBeDisabled();
+    await fillShipping(page);
+    await expect(page.locator('#compare-shipping')).toBeEnabled();
+  }
+  expect(posts).toBe(0);
+});
+
+test('tabs preserve both role identities and parcel data while cancelling pending POST', async ({
   page,
 }) => {
   await page.addInitScript(() => {
     const original = window.fetch;
     window.fetch = (input, init) =>
-      String(input).includes('photon.komoot.io') &&
-      new URL(String(input)).searchParams.get('q') === 'Anterior recogida'
+      String(input).endsWith('/quotations')
         ? new Promise((resolve) =>
-            Reflect.set(window, 'finishPickup', () =>
+            Reflect.set(window, 'finishTabPost', () =>
               resolve(
                 new Response(
                   JSON.stringify({
-                    type: 'FeatureCollection',
-                    features: [
-                      {
-                        type: 'Feature',
-                        geometry: { type: 'Point', coordinates: [-2, 42] },
-                        properties: {
-                          name: 'Obsoleta',
-                          countrycode: 'ES',
-                          postcode: '01001',
-                        },
-                      },
-                    ],
+                    id: '00000000-0000-4000-8000-000000000101',
+                    status: 'PENDING',
                   }),
+                  { status: 202 },
                 ),
               ),
             ),
           )
         : original(input, init);
   });
-  await data(page, [locker(1)]);
-  await page.locator('#origin-postal').fill('28001');
-  await page.route(photon, (r) =>
-    r.fulfill({ json: places(place('Entrega vigente')) }),
+  await data(page, [locker(1), locker(2)], false);
+  await selectRole(page, 'pickup', 1);
+  await selectRole(page, 'delivery', 2);
+  await fillShipping(page);
+  await page.locator('#compare-shipping').click();
+  await expect(page.locator('#compare-shipping')).toBeDisabled();
+  await page.locator('#quote-tab').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#tracking-tab')).toBeFocused();
+  await expect(page.locator('#quote-view')).toBeHidden();
+  expect(
+    await page.locator('#quote-view').evaluate((n: HTMLElement) => n.inert),
+  ).toBe(true);
+  await expect(page.locator('#results')).toBeHidden();
+  await page.evaluate(() => Reflect.get(window, 'finishTabPost')());
+  await page.locator('#tracking-id').fill(trackingId(1001));
+  await page.locator('#tracking-tab').focus();
+  await page.keyboard.press('Home');
+  await expect(page.locator('#quote-tab')).toBeFocused();
+  await expect(page.locator('#pickup-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(1),
   );
-  await page.locator('#pickup-query').fill('Anterior recogida');
-  await expect(page.locator('#pickup-search')).toHaveAttribute(
-    'aria-busy',
-    'true',
+  await expect(page.locator('#delivery-locker')).toHaveAttribute(
+    'data-selected-id',
+    id(2),
   );
-  await page.locator('#delivery-query').fill('Entrega');
-  await expect(page.locator('#delivery-results button')).toHaveText(
-    'Entrega vigente',
-  );
-  const before = await page.locator('.leaflet-map-pane').getAttribute('style');
-  await page.evaluate(() => Reflect.get(window, 'finishPickup')());
-  await expect(page.locator('#pickup-query')).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
-  await expect(page.locator('#delivery-results button')).toHaveText(
-    'Entrega vigente',
-  );
-  await expect(page.locator('#origin-postal')).toHaveValue('28001');
-  expect(await page.locator('.leaflet-map-pane').getAttribute('style')).toBe(
-    before,
-  );
+  await expect(page.locator('#parcel-weight')).toHaveValue('1.001');
+  await page.locator('#skip-results').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#pickup-locker')).toBeFocused();
+  await expect(page.locator('#results')).toBeHidden();
 });

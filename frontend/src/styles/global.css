@@ -805,3 +805,147 @@ select:focus-visible {
   top: 0;
   z-index: 3;
 }
+.geography-panel {
+  padding: 14px 16px;
+}
+.geography-panel .location-search {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.locker-selector {
+  margin-bottom: 16px;
+}
+.locker-selector > label,
+.role-postal > label {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  margin-bottom: 7px;
+}
+.locker-selector > input,
+.role-postal > input {
+  width: 100%;
+  padding: 10px;
+  background: #fafcfd;
+  color: #17384d;
+  border: 1px solid #d7e1e7;
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 0;
+}
+.selection-status {
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.role-postal {
+  margin-top: 10px;
+}
+.role-postal input[readonly] {
+  background: #edf3f5;
+  color: #586e7d;
+}
+.role-postal .address {
+  margin: 6px 0 0;
+}
+.locker-options {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.locker-options button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 10px 8px;
+  border: 0;
+  overflow-wrap: anywhere;
+}
+.locker-options button span {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.locker-options button[aria-selected='true'] {
+  background: #edf6f4;
+}
+.locker-options button:focus-visible {
+  outline-offset: -3px;
+}
+#compare-shipping {
+  margin-top: 16px;
+}
+#reopen-results {
+  width: 100%;
+  margin-top: 10px;
+}
+#results-title:focus {
+  outline: none;
+}
+.locker-popup {
+  max-height: min(300px, calc(100dvh - 130px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+  font-size: 12px;
+}
+.locker-popup strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.locker-popup p {
+  margin: 0 0 12px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.locker-popup button {
+  display: flex;
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px;
+  font-size: 11px;
+  white-space: normal;
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .locker-selector > input,
+  .role-postal > input {
+    font-size: 16px;
+  }
+  .geography-panel {
+    padding: 12px 16px;
+  }
+}
+.inspection-pane .leaflet-popup-close-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: 0;
+  text-align: center;
+  width: 28px;
+  height: 28px;
+  font: 18px/28px sans-serif;
+  color: #647587;
+  text-decoration: none;
+  background: transparent;
+}
+.inspection-pane .leaflet-popup-close-button:hover {
+  color: #18354a;
+}
+/* Reveal a chosen role below the sticky tab bar in the scrolling menu. */
+.locker-selector > input {
+  scroll-margin-top: 64px;
+  scroll-margin-bottom: 12px;
+}

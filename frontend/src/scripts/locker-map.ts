@@ -3,32 +3,48 @@ import 'leaflet/dist/leaflet.css';
 import { loadLockers } from '../lib/locker-api';
 import { setupAutocomplete } from './autocomplete';
 import { setupTracking } from './tracking-panel';
+import { setupLockerSelector, type LockerRole } from './locker-selector';
 import type { AvailableLocker } from '../lib/lockers';
 import { setupShipping } from './shipping-panel';
 function element<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
-  if (!node) throw new Error(`Falta el elemento ${id}`);
+  if (!node) throw new Error(`Falta ${id}`);
   return node as T;
 }
-const status = element('status');
-const retry = element<HTMLButtonElement>('retry');
-const results = element('results');
-const selector = element<HTMLSelectElement>('destination-locker');
-const shipping = setupShipping(element);
+const status = element('status'),
+  retry = element<HTMLButtonElement>('retry'),
+  results = element('results');
 let activeMode: 'quote' | 'tracking' = 'quote';
-let opener: HTMLElement = element('skip-results');
-function setResultsOpen(open: boolean, focus = true): void {
+let opener: HTMLElement = element('compare-shipping');
+function hideResults() {
+  results.hidden = true;
+  element('explorer').dataset.resultsOpen = 'false';
+}
+function setResultsOpen(open: boolean, focus = true) {
+  if (open && results.hidden && document.activeElement instanceof HTMLElement)
+    opener = document.activeElement;
   results.hidden = !open;
   element('explorer').dataset.resultsOpen = String(open);
   if (!open) shipping.close();
   if (focus)
     (open
-      ? selector
+      ? element('results-title')
       : opener.isConnected
         ? opener
-        : element('skip-results')
+        : element('compare-shipping')
     ).focus({ preventScroll: true });
 }
+const shipping = setupShipping(
+  element,
+  () => setResultsOpen(true),
+  hideResults,
+);
+const pickup = setupLockerSelector('pickup', (locker) =>
+  selectRole('pickup', locker),
+);
+const delivery = setupLockerSelector('delivery', (locker) =>
+  selectRole('delivery', locker),
+);
 element('close-results').addEventListener('click', () => setResultsOpen(false));
 results.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
@@ -39,12 +55,8 @@ results.addEventListener('keydown', (event) => {
 element('skip-results').addEventListener('click', (event) => {
   event.preventDefault();
   setMode('quote');
-  opener = element('skip-results');
-  setResultsOpen(true);
+  element('pickup-locker').focus();
 });
-element('parcel-form').addEventListener('submit', (event) =>
-  event.preventDefault(),
-);
 for (const panel of [element('map-panels'), results]) {
   L.DomEvent.disableClickPropagation(panel);
   L.DomEvent.disableScrollPropagation(panel);
@@ -103,40 +115,148 @@ function revealPosition(position: [number, number]): boolean {
 const markers = new Map<string, L.Marker>();
 let lockers: AvailableLocker[] = [];
 let busy = false;
-function select(id: string, center = true): void {
-  const locker = lockers.find((item) => item.id === id);
-  selector.value = locker?.id ?? '';
-  shipping.setDestination(locker ?? null);
-  if (!locker) return;
-  setResultsOpen(true, false);
-  for (const marker of markers.values()) marker.setZIndexOffset(0);
-  markers.get(id)?.setZIndexOffset(1000);
-  if (locker.position) {
-    if (center) map.setView(locker.position, 14, { animate: false });
-    revealPosition(locker.position);
-  }
+// Render inspection above the HTML overlays without lifting the map itself.
+map.createPane('inspection', element('explorer'));
+
+const inspection = map.getPane('inspection');
+if (inspection) {
+  inspection.style.zIndex = '800';
+  inspection.classList.add('inspection-pane');
+  const syncInspection = () => {
+    const pane = map.getPane('mapPane');
+    if (pane) L.DomUtil.setPosition(inspection, L.DomUtil.getPosition(pane));
+  };
+  map.on('move zoom viewreset', syncInspection);
+  syncInspection();
 }
-selector.addEventListener('change', () => select(selector.value));
-function clear(): void {
+function selectRole(role: LockerRole, locker: AvailableLocker | null) {
+  shipping.setRole(role, locker);
+  if (!locker?.position) return;
+  map.closePopup();
+  for (const marker of markers.values()) marker.setZIndexOffset(0);
+  markers.get(locker.id)?.setZIndexOffset(1000);
+  map.setView(locker.position, 14, { animate: false });
+  revealPosition(locker.position);
+}
+function text(tag: string, value: string) {
+  const node = document.createElement(tag);
+  node.textContent = value;
+  return node;
+}
+function chooseRole(role: LockerRole, locker: AvailableLocker) {
+  setMode('quote');
+  map.closePopup();
+  (role === 'pickup' ? pickup : delivery).select(locker);
+}
+function bindInspection(
+  marker: L.Marker,
+  label: string,
+  address: string | null,
+  available: AvailableLocker | null,
+) {
+  const content = document.createElement('div');
+  content.className = 'locker-popup';
+  content.append(
+    text('strong', label),
+    text('p', address ?? 'Dirección no registrada'),
+  );
+  if (available) {
+    for (const [role, label] of [
+      ['delivery', 'Seleccionar como locker de entrega'],
+      ['pickup', 'Seleccionar como locker de recogida'],
+    ] as const) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.addEventListener('click', () => chooseRole(role, available));
+      content.append(button);
+    }
+  }
+  L.DomEvent.disableClickPropagation(content);
+  L.DomEvent.disableScrollPropagation(content);
+  const popup = L.popup({
+    pane: 'inspection',
+    autoPan: false,
+    maxWidth: 260,
+    minWidth: 220,
+    closeOnEscapeKey: false,
+  }).setContent(content);
+  marker.bindPopup(popup);
+  const open = () => {
+    for (const other of markers.values()) other.setZIndexOffset(0);
+    marker.setZIndexOffset(1000);
+    marker.openPopup();
+    const size = map.getSize();
+    if (matchMedia('(max-width:760px)').matches) {
+      const desired = L.point(
+        size.x / 2,
+        Math.min(size.y - 52, Math.max(250, size.y * 0.78)),
+      );
+      map.panBy(
+        map.latLngToContainerPoint(marker.getLatLng()).subtract(desired),
+        { animate: false },
+      );
+    } else revealPosition([marker.getLatLng().lat, marker.getLatLng().lng]);
+    const popupNode = popup.getElement();
+    const focus = popupNode?.querySelector<HTMLElement>('button, a');
+    focus?.focus({ preventScroll: true });
+  };
+  // Own keyboard/click activation so inspection never implies selecting a role.
+  marker.off('click');
+  marker.on('click', open);
+  marker.getElement()?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      open();
+    }
+  });
+  content.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      marker.closePopup();
+      marker.getElement()?.focus({ preventScroll: true });
+    }
+  });
+  marker.on('popupopen', () => {
+    const close = popup
+      .getElement()
+      ?.querySelector<HTMLElement>('.leaflet-popup-close-button');
+    close?.addEventListener('click', () =>
+      marker.getElement()?.focus({ preventScroll: true }),
+    );
+    popup.getElement()?.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        marker.closePopup();
+        marker.getElement()?.focus({ preventScroll: true });
+      }
+    });
+  });
+}
+function clear() {
+  map.closePopup();
   for (const marker of markers.values()) marker.remove();
   markers.clear();
-  selector.replaceChildren(new Option('Elige un locker disponible', ''));
-  shipping.setDestination(null);
+  pickup.setLockers([]);
+  delivery.setLockers([]);
 }
-function render(): void {
-  clear();
+function render() {
   element('available-count').textContent = String(lockers.length);
   element('available-label').textContent =
     lockers.length === 1 ? 'disponible' : 'disponibles';
   element('positioned-count').textContent = String(
     lockers.filter((item) => item.position).length,
   );
+  pickup.setLockers(lockers);
+  delivery.setLockers(lockers);
   for (const locker of lockers) {
-    selector.add(new Option(locker.label, locker.id));
     if (!locker.position) continue;
     const marker = L.marker(locker.position, {
       title: locker.label,
-      alt: `Elegir ${locker.label}`,
+      alt: `Ver ${locker.label}`,
       icon: L.divIcon({
         className: 'locker-marker',
         html: '<span aria-hidden="true">▦</span>',
@@ -144,24 +264,11 @@ function render(): void {
         iconAnchor: [17, 40],
       }),
     }).addTo(map);
-    const openDestination = () => {
-      if (activeMode !== 'quote') return;
-      opener = marker.getElement() ?? element('skip-results');
-      select(locker.id, false);
-      selector.focus({ preventScroll: true });
-    };
-    marker.on('click', openDestination);
-    marker.getElement()?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        event.stopPropagation();
-        openDestination();
-      }
-    });
     markers.set(locker.id, marker);
+    bindInspection(marker, locker.label, locker.address, locker);
   }
 }
-async function update(): Promise<void> {
+async function update() {
   if (busy) return;
   busy = true;
   retry.hidden = true;
@@ -193,11 +300,10 @@ async function update(): Promise<void> {
     busy = false;
   }
 }
-retry.addEventListener('click', update);
+retry.addEventListener('click', () => void update());
 void update();
-
 let searchMarker: L.Marker | null = null;
-const delivery = setupAutocomplete('delivery', {
+const geography = setupAutocomplete('location', {
   onSelect(place, postal) {
     searchMarker?.remove();
     searchMarker = L.marker(place.position, {
@@ -211,25 +317,6 @@ const delivery = setupAutocomplete('delivery', {
     }).addTo(map);
     map.setView(place.position, postal ? 13 : 16, { animate: false });
     revealPosition(place.position);
-  },
-});
-const origin = element<HTMLInputElement>('origin-postal');
-let derivedOrigin = false;
-origin.addEventListener('input', () => {
-  derivedOrigin = false;
-});
-const pickup = setupAutocomplete('pickup', {
-  onSelect(place) {
-    origin.value = place.postalCode ?? '';
-    derivedOrigin = place.postalCode !== null;
-    shipping.invalidate();
-  },
-  onEdit() {
-    if (derivedOrigin) {
-      origin.value = '';
-      derivedOrigin = false;
-    }
-    shipping.invalidate();
   },
 });
 let trackingMarker: L.Marker | null = null;
@@ -251,6 +338,14 @@ const tracking = setupTracking(element, (parcel) => {
     }),
     zIndexOffset: 2000,
   }).addTo(map);
+  const marker = trackingMarker;
+  const available = lockers.find((item) => item.id === parcel.lockerId) ?? null;
+  bindInspection(
+    marker,
+    `${label}: ${parcel.locker.label}`,
+    parcel.locker.address,
+    available,
+  );
   map.setView(parcel.locker.position, 14, { animate: false });
   revealPosition(parcel.locker.position);
 });
@@ -258,11 +353,11 @@ function setMode(mode: 'quote' | 'tracking') {
   if (mode === activeMode) return;
   pickup.close();
   delivery.close();
+  geography.close();
+  map.closePopup();
   tracking.leave();
   if (activeMode === 'quote') {
     setResultsOpen(false, false);
-    searchMarker?.remove();
-    searchMarker = null;
   }
   activeMode = mode;
   for (const item of ['quote', 'tracking'] as const) {
