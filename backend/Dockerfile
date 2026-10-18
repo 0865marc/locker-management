@@ -9,7 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /code
 
-COPY pyproject.toml uv.lock main.py worker.py ./
+COPY pyproject.toml uv.lock composition.py ./
+COPY entrypoints ./entrypoints
 COPY domain ./domain
 COPY application ./application
 COPY adapters ./adapters
@@ -20,4 +21,4 @@ COPY alembic.ini ./
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "entrypoints.server.api:app", "--host", "0.0.0.0", "--port", "8000"]

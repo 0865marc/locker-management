@@ -8,28 +8,37 @@ Run the API with its dependencies wired together, resolve the database connectio
 
 ### Requirement: Resolve the database connection
 
-The API SHALL resolve its connection in this order of precedence: a non-empty explicit URL, `DATABASE_URL`, and the default connection. Migrations SHALL use `DATABASE_URL` and, if it is not set, the default connection. In both cases, the default SHALL be `postgresql+asyncpg://locker_management_demo:locker_management_demo@localhost:5432/locker_management_demo`.
+En el perfil PostgreSQL, la API SHALL resolver la conexión por URL explícita no vacía, DATABASE_URL y conexión predeterminada, en ese orden. Sus migraciones SHALL usar DATABASE_URL o el valor predeterminado `postgresql+asyncpg://locker_management_demo:locker_management_demo@localhost:5432/locker_management_demo`. El perfil Cloudflare SHALL usar el binding D1 de su entorno, sin interpretar DATABASE_URL como selección o respaldo de D1.
 
 #### Scenario: Configuration through the environment
-- **WHEN** `DATABASE_URL` is set and the API receives no explicit URL
-- **THEN** both the API and migrations use the configured value
-- **AND** previously configured database names and credentials remain valid
+- **WHEN** DATABASE_URL está configurada y la API PostgreSQL no recibe URL explícita
+- **THEN** tanto API como migraciones PostgreSQL usan ese valor
+- **AND** los nombres y credenciales configurados previamente siguen siendo válidos
 
 #### Scenario: Explicit URL
-- **WHEN** an API instance is constructed with a non-empty explicit URL
-- **THEN** that instance uses the supplied URL even if `DATABASE_URL` has a different value
+- **WHEN** se construye una instancia PostgreSQL con URL explícita no vacía
+- **THEN** usa esa URL aunque DATABASE_URL tenga otro valor
 
 #### Scenario: Default connection
-- **WHEN** `DATABASE_URL` is not set and the API receives no non-empty explicit URL
-- **THEN** the API and migrations use the default local connection
+- **WHEN** no hay DATABASE_URL ni URL explícita no vacía en el perfil PostgreSQL
+- **THEN** API y migraciones usan la conexión local predeterminada
+
+#### Scenario: Cloudflare binding does not fall back
+- **WHEN** el perfil Cloudflare tiene un binding D1 ausente o incorrecto
+- **THEN** informa del error de configuración y no abre PostgreSQL ni selecciona otra base silenciosamente
 
 ### Requirement: Manage resources per application instance
 
-Each API instance SHALL wire together and reuse its delivery, return, locker and quotation services and connection resources. Its quotation publisher SHALL use RABBITMQ_URL and SHALL not run provider comparisons. On lifecycle exit, including exceptions, the API SHALL dispose of its database engine and close any acquired broker resources.
+Cada perfil SHALL componer y reutilizar los servicios de entregas, devoluciones, lockers y cotizaciones. PostgreSQL SHALL mantener RABBITMQ_URL para su publicador y cerrar motor/broker al salir, incluso por excepción. Cloudflare SHALL usar únicamente los bindings del evento actual, aislar peticiones concurrentes y no abrir conexiones PostgreSQL/AMQP ni consultar bindings durante import/snapshot. La API SHALL no ejecutar comparaciones de proveedores.
 
 #### Scenario: Resource reuse and cleanup
-- **WHEN** an API instance handles operations and then exits normally or due to an exception
-- **THEN** it reuses its composed services and closes its database and broker resources
+- **WHEN** una instancia PostgreSQL atiende operaciones y termina normalmente o por excepción
+- **THEN** reutiliza sus servicios compuestos y cierra sus recursos de base de datos y broker
+
+#### Scenario: Reuse Cloudflare services without mixing bindings
+- **WHEN** dos eventos concurrentes usan entornos Cloudflare distintos y uno falla
+- **THEN** cada operación accede exclusivamente a sus bindings, se limpia su contexto y eventos posteriores no heredan el entorno anterior
+- **AND** importar el paquete no abre conexiones ni reconstruye las rutas en cada petición
 
 ### Requirement: Coordinate readiness and persistence with Compose
 
@@ -70,11 +79,19 @@ The API SHALL identify itself as `Locker Management Demo` in its OpenAPI title a
 
 ### Requirement: Run one worker with simple runtime configuration
 
-One worker SHALL process messages sequentially using the existing database URL policy and RABBITMQ_URL. It SHALL construct the three self-contained simulators without arguments, avoid migrations at startup and close resources and cancel/await provider calls on shutdown. It SHALL not automatically retry or recover consumed quotations.
+El consumidor SHALL procesar cotizaciones secuencialmente con los tres simuladores autónomos construidos sin argumentos, sin migrar, reintentar ni recuperar trabajo consumido. PostgreSQL SHALL conservar DATABASE_URL/RABBITMQ_URL y cerrar recursos y cancelar/esperar llamadas al apagarse. Cloudflare SHALL usar su entorno de evento y limitar el procesamiento simultáneo a una cotización por consumidor, completando o cancelando sus tareas dentro del evento.
 
 #### Scenario: Start and stop the worker
-- **WHEN** the worker starts with valid settings and later stops
-- **THEN** it consumes sequentially without schema changes and cleans up its resources and active calls without replaying unfinished work
+- **WHEN** el worker PostgreSQL arranca con configuración válida y después se detiene
+- **THEN** consume secuencialmente sin cambiar el esquema y limpia recursos y llamadas activas sin reproducir trabajo incompleto
+
+#### Scenario: Handle Cloudflare queue events
+- **WHEN** hay varias cotizaciones en la cola Cloudflare
+- **THEN** el consumidor las procesa secuencialmente con los perfiles internos fijos de los proveedores y no inicia un bucle AMQP ni deja tareas desprendidas del evento
+
+#### Scenario: Ignore legacy simulation settings in both profiles
+- **WHEN** cualquiera de los consumidores arranca con antiguas variables de simulación SHIPPING_* presentes
+- **THEN** construye los proveedores sin argumentos y sus perfiles privados y tarifas permanecen iguales a los del uso directo
 
 ### Requirement: Keep provider behavior out of worker configuration
 
@@ -191,12 +208,18 @@ CORS SHALL use the existing exact-origin allowlist, without credentials or wildc
 
 #### Scenario: No Origin and invalid configuration
 - **WHEN** requests omit Origin or the allowlist is configured with an invalid origin
-- **THEN** normal endpoint behavior remains unchanged for requests without Origin, while invalid configuration fails clearly before application startup
+- **THEN** normal endpoint behavior remains unchanged for requests without Origin, while invalid configuration in the server profile fails clearly before application startup and database-engine allocation
 
 #### Scenario: Uniform policy beyond quotations
 - **WHEN** a listed origin requests GET or POST preflight with Content-Type for /lockers, /deliveries, /returns, /quotations/ or a nonexistent path
 - **THEN** the same CORS policy permits that preflight without credentials, regardless of path
 - **AND** preflight does not invoke business handlers or create an endpoint; subsequent requests still follow the existing routing and payload validation
+
+#### Scenario: Validate the Workers event configuration before handling requests
+- **WHEN** a Workers HTTP event supplies its own CORS_ALLOWED_ORIGINS binding
+- **THEN** that binding is validated before invoking business handlers, routes or persistence/queue I/O, including for requests without Origin
+- **AND** missing or empty configuration allows no browser origin; invalid configuration fails without falling back to process configuration or another event's allowlist
+- **AND** imports do not read event bindings, concurrent events do not leak configuration to each other, and the event context is restored after success or failure
 
 ### Requirement: Document static Cloudflare Pages publication
 
@@ -206,3 +229,54 @@ The repository SHALL document preparation for Cloudflare Pages static hosting us
 - **WHEN** an operator follows the Pages instructions
 - **THEN** placeholders identify the public HTTPS API and the exact Pages or custom-domain origin to configure
 - **AND** the instructions describe static hosting without frontend server functions and require a rebuild when the API URL changes
+
+### Requirement: Select infrastructure at deployment composition
+
+El sistema SHALL ofrecer perfiles PostgreSQL/RabbitMQ y Cloudflare/D1/Queues seleccionados por su configuración de despliegue. Los contratos HTTP y de negocio SHALL ser compartidos, conservando PostgreSQL/RabbitMQ por defecto en Compose y en sus comandos documentados. La elección SHALL no depender de entradas HTTP ni copiar o escribir datos en ambos perfiles.
+
+#### Scenario: Preserve an existing Compose installation
+- **WHEN** una instalación existente ejecuta los mismos comandos, URLs y credenciales Compose
+- **THEN** usa PostgreSQL/RabbitMQ con los mismos volúmenes, migraciones y semántica y no requiere herramientas ni cuenta Cloudflare
+
+#### Scenario: Package the Cloudflare profile independently
+- **WHEN** se prepara el paquete Cloudflare desde un checkout limpio
+- **THEN** puede construir su runtime sin cargar SQLModel, asyncpg, Alembic o aio-pika y mantiene los mismos endpoints y reglas
+- **AND** incluye los init de `entrypoints` y `entrypoints.cloudflare`, su API, consumidor, runtime y todos sus módulos compartidos, excluyendo `entrypoints.server`
+
+#### Scenario: Start the grouped CPython entrypoints
+- **WHEN** se ejecutan `uvicorn entrypoints.server.api:app` y `python -m entrypoints.server.consumer` con la configuración PostgreSQL/RabbitMQ correspondiente, dentro o fuera de Docker
+- **THEN** conservan la API, el procesamiento secuencial y la limpieza de recursos del perfil original
+
+#### Scenario: Import the entrypoint package without selecting a profile
+- **WHEN** se importa únicamente `entrypoints`, `entrypoints.server` o `entrypoints.cloudflare`
+- **THEN** no se importan sus entradas ni se construyen aplicaciones, SDKs o recursos de ningún perfil
+
+#### Scenario: Delegate Cloudflare messages within the same deployment
+- **WHEN** la entrada `entrypoints/cloudflare/api.py` recibe eventos HTTP y de cola sucesivos
+- **THEN** `Default.fetch` sirve la API y `Default.queue` delega en `entrypoints/cloudflare/consumer.py`, reutilizando una aplicación y un procesador con el repositorio compartido
+- **AND** el consumidor conserva reconocimiento previo, secuencia y limpieza del contexto del evento sin otro despliegue
+
+#### Scenario: Import the Cloudflare consumer independently
+- **WHEN** se importa `entrypoints.cloudflare.consumer` sin importar la API
+- **THEN** no se carga `entrypoints.cloudflare.api`, la composición HTTP ni sus routers, ni se construye una aplicación o consulta bindings
+
+#### Scenario: Keep event context within the Cloudflare entrypoints
+- **WHEN** las entradas Cloudflare resuelven los bindings de un evento mediante `entrypoints.cloudflare.runtime`
+- **THEN** conservan el aislamiento y la limpieza del contexto, y los adaptadores de base de datos y cola reciben sus proveedores sin importar `entrypoints`
+
+### Requirement: Accept the Cloudflare queue event invocation
+
+Las entradas Queues de producción y del spike SHALL aceptar el lote, entorno y contexto suministrados por el runtime, además de la llamada abreviada con solo lote. SHALL conservar los bindings de la instancia del evento, el reconocimiento previo y la restauración del contexto, sin reintentos ni cambios en el procesamiento.
+
+#### Scenario: Invoke with the complete platform arguments
+- **WHEN** el runtime entrega lote, entorno y contexto a cualquiera de las dos entradas
+- **THEN** la entrada alcanza el consumidor sin error por número de argumentos y utiliza el entorno de su instancia, sin sustituirlo por el argumento adicional del callback
+- **AND** reconoce cada mensaje antes de leer su cuerpo o realizar trabajo de persistencia o aplicación
+
+#### Scenario: Preserve the abbreviated invocation
+- **WHEN** una llamada suministra únicamente el lote a una instancia con su entorno establecido
+- **THEN** conserva la misma delegación y procesamiento que la invocación completa
+
+#### Scenario: Restore the event context after success or failure
+- **WHEN** termina el procesamiento o falla el reconocimiento o el trabajo posterior
+- **THEN** el contexto anterior queda restaurado; un reconocimiento fallido impide leer el cuerpo o iniciar trabajo y no se añade ningún reintento

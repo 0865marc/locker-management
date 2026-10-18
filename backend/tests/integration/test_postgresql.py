@@ -9,9 +9,9 @@ import httpx
 from fastapi import FastAPI
 from sqlalchemy import event, text
 
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.lockers import SqlModelLockerRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from adapters.http.routes import create_router
 from application.deliveries.use_cases import DeliveryService
 from application.lockers.use_cases import LockerService
@@ -341,7 +341,7 @@ class PostgreSQLCustodyTests(PostgresTestCase):
         self.assertEqual(await self.snapshot(), current)
 
     async def test_populated_locker_downgrade_preserves_full_schema_and_history(self):
-        from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
+        from adapters.database.sqlmodel.lockers import SqlModelLockerRepository
         from domain.lockers import CompartmentBatch, Dimensions
 
         lockers = SqlModelLockerRepository(self.sessions)

@@ -1,0 +1,3 @@
+"""Native JavaScript rejection type supplied by the Pyodide runtime."""
+
+class JsException(Exception): ...

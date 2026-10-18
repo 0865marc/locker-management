@@ -9,9 +9,9 @@ import httpx
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError
 
-from adapters.database.sqlmodel_deliveries import SqlModelDeliveryRepository
-from adapters.database.sqlmodel_lockers import SqlModelLockerRepository
-from adapters.database.sqlmodel_returns import SqlModelReturnRepository
+from adapters.database.sqlmodel.deliveries import SqlModelDeliveryRepository
+from adapters.database.sqlmodel.lockers import SqlModelLockerRepository
+from adapters.database.sqlmodel.returns import SqlModelReturnRepository
 from domain.deliveries import Delivery
 from domain.lockers import CompartmentBatch, Dimensions, Locker
 from domain.returns import Return

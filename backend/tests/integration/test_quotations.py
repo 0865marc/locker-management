@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from adapters.database.sqlmodel_quotations import SqlModelQuotationRepository
+from adapters.database.sqlmodel.quotations import SqlModelQuotationRepository
 from application.quotations.errors import QuotationStorageError
 from application.quotations.models import (
     ProcessErrorCode,
@@ -214,7 +214,7 @@ class QuotationPersistenceTests(PostgresTestCase):
         self.assertEqual(response.json()["results"], [])
 
     async def test_unavailable_database_returns_503_without_publication(self):
-        from main import create_app
+        from entrypoints.server.api import create_app
 
         # Port 1 is deliberately unavailable; no credentials appear in HTTP responses.
         publisher = AsyncMock()
